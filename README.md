@@ -15,7 +15,7 @@ By [21st.dev](https://21st.dev)
 
 ## Installation
 
-Download the latest release for your platform from the [Releases](https://github.com/21st-dev/21st/releases) page.
+Download the latest release for your platform from the [Releases](https://github.com/21st-dev/1code/releases) page.
 
 - **macOS**: `.dmg` (Intel & Apple Silicon)
 - **Windows**: `.exe` installer or portable
