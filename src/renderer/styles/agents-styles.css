@@ -22,8 +22,9 @@
   /* Agents positioning */
   position: relative;
 
-  /* Use Geist font (inherited from root layout) */
-  font-family: var(--font-geist-sans), system-ui, -apple-system, sans-serif;
+  /* Use customizable UI font (falls back to Geist if not set) */
+  font-family: var(--ui-font-family), var(--font-geist-sans), system-ui, -apple-system, sans-serif;
+  font-size: var(--ui-font-size);
   font-weight: 400;
 }
 
@@ -33,7 +34,8 @@ body:has([data-agents-page]) [data-radix-popper-content-wrapper],
 body:has([data-agents-page]) [role="dialog"],
 body:has([data-agents-page]) [data-sonner-toaster],
 body:has([data-agents-page]) [data-sonner-toast] {
-  font-family: var(--font-geist-sans), system-ui, -apple-system, sans-serif;
+  font-family: var(--ui-font-family), var(--font-geist-sans), system-ui, -apple-system, sans-serif;
+  font-size: var(--ui-font-size);
   font-weight: 400;
 
   /* Custom text selection colors - uses theme's editor.selectionBackground */
@@ -246,12 +248,12 @@ body:has([data-agents-page]) .canvas-dialog,
    9. GIT DIFF VIEW STYLES
    ======================================== */
 
-/* Git Diff View Customization - compact 12px font size for diffs */
+/* Git Diff View Customization - uses customizable editor font */
 .agent-diff-wrapper {
   /* Set CSS variables that @git-diff-view/react uses */
-  --diff-font-size--: 12px;
+  --diff-font-size--: var(--editor-font-size);
   --diff-line-height--: 1.5;
-  font-size: 12px;
+  font-size: var(--editor-font-size);
   line-height: 1.5;
   width: 100%;
   overflow-x: auto;
@@ -263,13 +265,43 @@ body:has([data-agents-page]) .canvas-dialog,
 .agent-diff-wrapper .diff-line-syntax-raw,
 .agent-diff-wrapper .unified-diff-table,
 .agent-diff-wrapper .diff-line-num {
-  font-size: 12px;
+  font-size: var(--editor-font-size);
   line-height: 1.5;
 }
 
 /* Monospace font for code elements */
 .agent-diff-wrapper code,
 .agent-diff-wrapper pre {
-  font-size: 12px;
-  font-family: "Monaco", "Menlo", "Consolas", monospace;
+  font-size: var(--editor-font-size);
+  font-family: var(--editor-font-family), "Monaco", "Menlo", "Consolas", monospace;
+}
+
+/* ========================================
+   10. CODE BLOCK STYLES
+   ======================================== */
+
+/* Apply editor font to all code blocks in agents pages */
+[data-agents-page] code,
+[data-agents-page] pre,
+[data-agents-page] .shiki,
+[data-agents-page] [class*="language-"],
+[data-agents-page] .code-block,
+[data-agents-page] .inline-code,
+[data-agents-page] .syntax-highlighted {
+  font-family: var(--editor-font-family), ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  font-size: var(--editor-font-size);
+}
+
+/* Inline code styling */
+[data-agents-page] :not(pre) > code {
+  font-family: var(--editor-font-family), ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  font-size: calc(var(--editor-font-size) * 0.9);
+}
+
+/* Terminal/xterm styling */
+[data-agents-page] .xterm,
+[data-agents-page] .xterm-screen,
+[data-agents-page] .xterm-rows {
+  font-family: var(--editor-font-family), ui-monospace, "SF Mono", Menlo, Consolas, monospace !important;
+  font-size: var(--editor-font-size) !important;
 }

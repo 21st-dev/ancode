@@ -1,11 +1,32 @@
 import { router, publicProcedure } from "../index"
 import { getDatabase, projects, chats, subChats } from "../../db"
 import { app, shell } from "electron"
-import { getAuthManager } from "../../../index"
+import { join } from "path"
+import { existsSync, readFileSync } from "fs"
 
 // Protocol constant (must match main/index.ts)
 const IS_DEV = !!process.env.ELECTRON_RENDERER_URL
-const PROTOCOL = IS_DEV ? "twentyfirst-agents-dev" : "twentyfirst-agents"
+const PROTOCOL = IS_DEV ? "2code-dev" : "2code"
+
+/**
+ * Get Claude Code version from bundled binary
+ */
+function getClaudeCodeVersion(): string {
+  try {
+    const isDev = !app.isPackaged
+    const versionPath = isDev
+      ? join(app.getAppPath(), "resources/bin/VERSION")
+      : join(process.resourcesPath, "bin/VERSION")
+
+    if (existsSync(versionPath)) {
+      const versionContent = readFileSync(versionPath, "utf-8")
+      return versionContent.split("\n")[0]?.trim() || "unknown"
+    }
+  } catch (error) {
+    console.warn("[Debug] Failed to read Claude Code version:", error)
+  }
+  return "unknown"
+}
 
 export const debugRouter = router({
   /**
@@ -28,6 +49,7 @@ export const debugRouter = router({
 
     return {
       version: app.getVersion(),
+      claudeCodeVersion: getClaudeCodeVersion(),
       platform: process.platform,
       arch: process.arch,
       isDev: IS_DEV,
@@ -74,16 +96,6 @@ export const debugRouter = router({
     db.delete(chats).run()
     db.delete(projects).run()
     console.log("[Debug] Cleared all database data")
-    return { success: true }
-  }),
-
-  /**
-   * Logout (clear auth only)
-   */
-  logout: publicProcedure.mutation(() => {
-    const authManager = getAuthManager()
-    authManager.logout()
-    console.log("[Debug] User logged out")
     return { success: true }
   }),
 

@@ -10,6 +10,13 @@ import {
   fullThemeDataAtom,
   systemLightThemeIdAtom,
   systemDarkThemeIdAtom,
+  editorFontFamilyAtom,
+  editorFontSizeAtom,
+  uiFontFamilyAtom,
+  uiFontSizeAtom,
+  EDITOR_FONTS,
+  UI_FONTS,
+  FONT_SIZES,
   type VSCodeFullTheme,
 } from "../../../../lib/atoms"
 import {
@@ -74,9 +81,24 @@ export function AgentsAppearanceTab() {
   const [systemDarkThemeId, setSystemDarkThemeId] = useAtom(systemDarkThemeIdAtom)
   const setFullThemeData = useSetAtom(fullThemeDataAtom)
 
+  // Font atoms
+  const [editorFontFamily, setEditorFontFamily] = useAtom(editorFontFamilyAtom)
+  const [editorFontSize, setEditorFontSize] = useAtom(editorFontSizeAtom)
+  const [uiFontFamily, setUIFontFamily] = useAtom(uiFontFamilyAtom)
+  const [uiFontSize, setUIFontSize] = useAtom(uiFontSizeAtom)
+
   useEffect(() => {
     setMounted(true)
   }, [])
+
+  // Apply font CSS variables when fonts change
+  useEffect(() => {
+    if (!mounted) return
+    document.documentElement.style.setProperty('--editor-font-family', editorFontFamily)
+    document.documentElement.style.setProperty('--editor-font-size', `${editorFontSize}px`)
+    document.documentElement.style.setProperty('--ui-font-family', uiFontFamily)
+    document.documentElement.style.setProperty('--ui-font-size', `${uiFontSize}px`)
+  }, [mounted, editorFontFamily, editorFontSize, uiFontFamily, uiFontSize])
 
   // Group themes by type
   const darkThemes = useMemo(() => BUILTIN_THEMES.filter(t => t.type === "dark"), [])
@@ -359,6 +381,131 @@ export function AgentsAppearanceTab() {
             </motion.div>
           )}
         </AnimatePresence>
+      </div>
+
+      {/* Typography Section */}
+      <div className="bg-background rounded-lg border border-border overflow-hidden">
+        {/* Editor Font selector */}
+        <div className="flex items-center justify-between p-4">
+          <div className="flex flex-col space-y-1">
+            <span className="text-sm font-medium text-foreground">
+              Editor font
+            </span>
+            <span className="text-xs text-muted-foreground">
+              Monospace font for code and terminal
+            </span>
+          </div>
+
+          <Select
+            value={editorFontFamily}
+            onValueChange={setEditorFontFamily}
+          >
+            <SelectTrigger className="w-auto px-2 min-w-[140px]">
+              <span
+                className="text-xs truncate"
+                style={{ fontFamily: editorFontFamily }}
+              >
+                {EDITOR_FONTS.find(f => f.value === editorFontFamily)?.name || "Select"}
+              </span>
+            </SelectTrigger>
+            <SelectContent>
+              {EDITOR_FONTS.map((font) => (
+                <SelectItem key={font.value} value={font.value}>
+                  <span style={{ fontFamily: font.value }}>{font.name}</span>
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+
+        {/* Editor Font Size selector */}
+        <div className="flex items-center justify-between p-4 border-t border-border">
+          <div className="flex flex-col space-y-1">
+            <span className="text-sm font-medium text-foreground">
+              Editor font size
+            </span>
+            <span className="text-xs text-muted-foreground">
+              Size in pixels for code text
+            </span>
+          </div>
+
+          <Select
+            value={String(editorFontSize)}
+            onValueChange={(v) => setEditorFontSize(Number(v))}
+          >
+            <SelectTrigger className="w-auto px-2 min-w-[80px]">
+              <span className="text-xs">{editorFontSize}px</span>
+            </SelectTrigger>
+            <SelectContent>
+              {FONT_SIZES.map((size) => (
+                <SelectItem key={size} value={String(size)}>
+                  {size}px
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+
+        {/* UI Font selector */}
+        <div className="flex items-center justify-between p-4 border-t border-border">
+          <div className="flex flex-col space-y-1">
+            <span className="text-sm font-medium text-foreground">
+              UI font
+            </span>
+            <span className="text-xs text-muted-foreground">
+              Font for interface text and labels
+            </span>
+          </div>
+
+          <Select
+            value={uiFontFamily}
+            onValueChange={setUIFontFamily}
+          >
+            <SelectTrigger className="w-auto px-2 min-w-[140px]">
+              <span
+                className="text-xs truncate"
+                style={{ fontFamily: uiFontFamily }}
+              >
+                {UI_FONTS.find(f => f.value === uiFontFamily)?.name || "Select"}
+              </span>
+            </SelectTrigger>
+            <SelectContent>
+              {UI_FONTS.map((font) => (
+                <SelectItem key={font.value} value={font.value}>
+                  <span style={{ fontFamily: font.value }}>{font.name}</span>
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+
+        {/* UI Font Size selector */}
+        <div className="flex items-center justify-between p-4 border-t border-border">
+          <div className="flex flex-col space-y-1">
+            <span className="text-sm font-medium text-foreground">
+              UI font size
+            </span>
+            <span className="text-xs text-muted-foreground">
+              Base size for interface text
+            </span>
+          </div>
+
+          <Select
+            value={String(uiFontSize)}
+            onValueChange={(v) => setUIFontSize(Number(v))}
+          >
+            <SelectTrigger className="w-auto px-2 min-w-[80px]">
+              <span className="text-xs">{uiFontSize}px</span>
+            </SelectTrigger>
+            <SelectContent>
+              {FONT_SIZES.map((size) => (
+                <SelectItem key={size} value={String(size)}>
+                  {size}px
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
       </div>
     </div>
   )

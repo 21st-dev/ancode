@@ -4,7 +4,6 @@ import { memo, useState, useEffect, useRef } from "react"
 import { ChevronRight } from "lucide-react"
 import { cn } from "../../../lib/utils"
 import { ChatMarkdownRenderer } from "../../../components/chat-markdown-renderer"
-import { AgentToolInterrupted } from "./agent-tool-interrupted"
 
 interface ThinkingToolPart {
   type: string
@@ -33,7 +32,6 @@ export const AgentThinkingTool = memo(function AgentThinkingTool({
   const isPending =
     part.state !== "output-available" && part.state !== "output-error"
   const isStreaming = isPending && chatStatus === "streaming"
-  const isInterrupted = isPending && chatStatus !== "streaming" && chatStatus !== undefined
 
   // Default: expanded while streaming, collapsed when done
   const [isExpanded, setIsExpanded] = useState(isStreaming)
@@ -60,11 +58,6 @@ export const AgentThinkingTool = memo(function AgentThinkingTool({
 
   // Build preview for collapsed state
   const previewText = thinkingText.slice(0, PREVIEW_LENGTH).replace(/\n/g, " ")
-
-  // Show interrupted state if thinking was interrupted without completing
-  if (isInterrupted && !thinkingText) {
-    return <AgentToolInterrupted toolName="Thinking" />
-  }
 
   return (
     <div>

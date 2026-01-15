@@ -6,7 +6,45 @@ interface LogoProps extends React.SVGProps<SVGSVGElement> {
   fill?: string
 }
 
+/**
+ * 2code Logo - A stylized "2" integrated with code brackets
+ * Design: The "2" flows into angle brackets representing code
+ */
 export function Logo({ fill = "currentColor", className, ...props }: LogoProps) {
+  return (
+    <svg
+      viewBox="0 0 400 400"
+      fill="none"
+      xmlns="http://www.w3.org/2000/svg"
+      className={cn("w-full h-full", className)}
+      aria-label="2code logo"
+      {...props}
+    >
+      {/* Stylized "2" with integrated code brackets */}
+      <path
+        d="M80 120C80 75.8172 115.817 40 160 40H240C284.183 40 320 75.8172 320 120V160C320 182.091 302.091 200 280 200H160L280 320H320C342.091 320 360 337.909 360 360H80V320H240L120 200V160C120 137.909 137.909 120 160 120H240C262.091 120 280 102.091 280 80H160C137.909 80 120 97.9086 120 120H80Z"
+        fill={fill}
+      />
+      {/* Opening code bracket < */}
+      <path
+        d="M40 200L100 140V172L64 200L100 228V260L40 200Z"
+        fill={fill}
+        opacity="0.6"
+      />
+      {/* Closing code bracket > */}
+      <path
+        d="M360 200L300 140V172L336 200L300 228V260L360 200Z"
+        fill={fill}
+        opacity="0.6"
+      />
+    </svg>
+  )
+}
+
+/**
+ * Original 21st Logo (kept for backward compatibility)
+ */
+export function Logo21st({ fill = "currentColor", className, ...props }: LogoProps) {
   return (
     <svg
       viewBox="0 0 400 400"

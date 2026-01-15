@@ -90,9 +90,9 @@ const CodexIcon = (props: React.SVGProps<SVGSVGElement>) => (
 
 // Model options for Claude Code
 const claudeModels = [
-  { id: "opus", name: "Opus" },
-  { id: "sonnet", name: "Sonnet" },
-  { id: "haiku", name: "Haiku" },
+  { id: "opus", name: "Opus", version: "4.5", description: "Most capable, best for complex tasks" },
+  { id: "sonnet", name: "Sonnet", version: "4", description: "Balanced speed and capability" },
+  { id: "haiku", name: "Haiku", version: "3.5", description: "Fastest, best for quick tasks" },
 ]
 
 // Agent providers
@@ -1039,14 +1039,14 @@ export function NewChatForm({
                             <ClaudeCodeIcon className="h-3.5 w-3.5" />
                             <span>
                               {selectedModel?.name}{" "}
-                              <span className="text-muted-foreground">4.5</span>
+                              <span className="text-muted-foreground">{selectedModel?.version}</span>
                             </span>
                             <IconChevronDown className="h-3 w-3 shrink-0 opacity-50" />
                           </button>
                         </DropdownMenuTrigger>
                         <DropdownMenuContent
                           align="start"
-                          className="w-[150px]"
+                          className="w-[220px]"
                         >
                           {claudeModels.map((model) => {
                             const isSelected = selectedModel?.id === model.id
@@ -1057,15 +1057,20 @@ export function NewChatForm({
                                   setSelectedModel(model)
                                   setLastSelectedModelId(model.id)
                                 }}
-                                className="gap-2 justify-between"
+                                className="gap-2 justify-between py-2"
                               >
-                                <div className="flex items-center gap-1.5">
-                                  <ClaudeCodeIcon className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
-                                  <span>
-                                    {model.name}{" "}
-                                    <span className="text-muted-foreground">
-                                      4.5
+                                <div className="flex flex-col gap-0.5">
+                                  <div className="flex items-center gap-1.5">
+                                    <ClaudeCodeIcon className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+                                    <span>
+                                      {model.name}{" "}
+                                      <span className="text-muted-foreground">
+                                        {model.version}
+                                      </span>
                                     </span>
+                                  </div>
+                                  <span className="text-[10px] text-muted-foreground ml-5">
+                                    {model.description}
                                   </span>
                                 </div>
                                 {isSelected && (

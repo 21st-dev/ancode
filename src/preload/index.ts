@@ -1,13 +1,6 @@
 import { contextBridge, ipcRenderer } from "electron"
 import { exposeElectronTRPC } from "trpc-electron/main"
 
-// Only initialize Sentry in production to avoid IPC errors in dev mode
-if (process.env.NODE_ENV === "production") {
-  import("@sentry/electron/renderer").then((Sentry) => {
-    Sentry.init()
-  })
-}
-
 // Expose tRPC IPC bridge for type-safe communication
 exposeElectronTRPC()
 
@@ -58,11 +51,6 @@ contextBridge.exposeInMainWorld("desktopApi", {
     const handler = (_event: unknown, error: string) => callback(error)
     ipcRenderer.on("update:error", handler)
     return () => ipcRenderer.removeListener("update:error", handler)
-  },
-  onUpdateManualCheck: (callback: () => void) => {
-    const handler = () => callback()
-    ipcRenderer.on("update:manual-check", handler)
-    return () => ipcRenderer.removeListener("update:manual-check", handler)
   },
 
   // Window controls
@@ -166,7 +154,6 @@ export interface DesktopApi {
   onUpdateProgress: (callback: (progress: UpdateProgress) => void) => () => void
   onUpdateDownloaded: (callback: (info: UpdateInfo) => void) => () => void
   onUpdateError: (callback: (error: string) => void) => () => void
-  onUpdateManualCheck: (callback: () => void) => () => void
   // Window controls
   windowMinimize: () => Promise<void>
   windowMaximize: () => Promise<void>

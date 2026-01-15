@@ -3,11 +3,15 @@ import {
   ContextMenuContent,
   ContextMenuItem,
   ContextMenuSeparator,
+  ContextMenuSub,
+  ContextMenuSubTrigger,
+  ContextMenuSubContent,
 } from "../../../components/ui/context-menu"
 import { Kbd } from "../../../components/ui/kbd"
 import { isMac } from "../../../lib/utils"
-import type { SubChatMeta } from "../stores/sub-chat-store"
+import { type SubChatMeta, TAB_COLORS } from "../stores/sub-chat-store"
 import { getShortcutKey } from "../../../lib/utils/platform"
+import { Check } from "lucide-react"
 
 // Platform-aware keyboard shortcut
 // Web: ⌥⌘W (browser uses Cmd+W to close tab)
@@ -24,6 +28,7 @@ interface SubChatContextMenuProps {
   isPinned: boolean
   onTogglePin: (subChatId: string) => void
   onRename: (subChat: SubChatMeta) => void
+  onSetColor?: (subChatId: string, color: string | undefined) => void
   onArchive: (subChatId: string) => void
   onArchiveOthers: (subChatId: string) => void
   onArchiveAllBelow?: (subChatId: string) => void
@@ -44,6 +49,7 @@ export function SubChatContextMenu({
   isPinned,
   onTogglePin,
   onRename,
+  onSetColor,
   onArchive,
   onArchiveOthers,
   onArchiveAllBelow,
@@ -68,6 +74,43 @@ export function SubChatContextMenu({
       <ContextMenuItem onClick={() => onRename(subChat)}>
         Rename agent
       </ContextMenuItem>
+      {onSetColor && (
+        <ContextMenuSub>
+          <ContextMenuSubTrigger>
+            <span className="flex items-center gap-2">
+              {subChat.color && (
+                <span
+                  className="h-2.5 w-2.5 rounded-full"
+                  style={{ backgroundColor: subChat.color }}
+                />
+              )}
+              Set color
+            </span>
+          </ContextMenuSubTrigger>
+          <ContextMenuSubContent className="w-36">
+            {TAB_COLORS.map((colorOption) => (
+              <ContextMenuItem
+                key={colorOption.name}
+                onClick={() => onSetColor(subChat.id, colorOption.value)}
+                className="flex items-center gap-2"
+              >
+                {colorOption.value ? (
+                  <span
+                    className="h-3 w-3 rounded-full border border-white/20"
+                    style={{ backgroundColor: colorOption.value }}
+                  />
+                ) : (
+                  <span className="h-3 w-3 rounded-full border border-dashed border-muted-foreground/50" />
+                )}
+                <span className="flex-1">{colorOption.name}</span>
+                {subChat.color === colorOption.value && (
+                  <Check className="h-3.5 w-3.5 text-muted-foreground" />
+                )}
+              </ContextMenuItem>
+            ))}
+          </ContextMenuSubContent>
+        </ContextMenuSub>
+      )}
       <ContextMenuSeparator />
 
       {showCloseTabOptions ? (

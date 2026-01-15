@@ -9,7 +9,6 @@ import {
 } from "../../../components/ui/icons"
 import { TextShimmer } from "../../../components/ui/text-shimmer"
 import { getToolStatus } from "./agent-tool-registry"
-import { AgentToolInterrupted } from "./agent-tool-interrupted"
 import { cn } from "../../../lib/utils"
 
 interface AgentBashToolProps {
@@ -72,33 +71,32 @@ export const AgentBashTool = memo(function AgentBashTool({
   )
 
   // Check if command input is still being streamed
-  // Only consider streaming if chat is actively streaming (prevents hang on stop)
-  const isInputStreaming = part.state === "input-streaming" && chatStatus === "streaming"
+  const isInputStreaming = part.state === "input-streaming"
 
-  // If command is still being generated (input-streaming state), show loading state
-  if (isInputStreaming) {
+  // If command is still being generated (input-streaming state), show like other tools
+  // Use isPending to stop shimmer when chat is stopped (consistent with other tools)
+  if (isInputStreaming || !command) {
     return (
       <div className="flex items-start gap-1.5 rounded-md py-0.5 px-2">
         <div className="flex-1 min-w-0 flex items-center gap-1.5">
           <div className="text-xs text-muted-foreground flex items-center gap-1.5 min-w-0">
             <span className="font-medium whitespace-nowrap flex-shrink-0">
-              <TextShimmer
-                as="span"
-                duration={1.2}
-                className="inline-flex items-center text-xs leading-none h-4 m-0"
-              >
-                Generating command
-              </TextShimmer>
+              {isPending ? (
+                <TextShimmer
+                  as="span"
+                  duration={1.2}
+                  className="inline-flex items-center text-xs leading-none h-4 m-0"
+                >
+                  Generating command
+                </TextShimmer>
+              ) : (
+                "Generating command"
+              )}
             </span>
           </div>
         </div>
       </div>
     )
-  }
-
-  // If no command and not streaming, tool was interrupted
-  if (!command) {
-    return <AgentToolInterrupted toolName="Command" />
   }
 
   return (

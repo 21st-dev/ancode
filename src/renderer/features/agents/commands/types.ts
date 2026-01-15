@@ -2,7 +2,13 @@
  * Slash command types for agent chat
  */
 
-export type SlashCommandCategory = "builtin" | "repository"
+export type SlashCommandCategory =
+  | "builtin"
+  | "mcp"
+  | "cli"
+  | "ssh"
+  | "repos"
+  | "repository"
 
 export interface SlashCommand {
   id: string
@@ -38,6 +44,20 @@ export type BuiltinCommandAction =
   | { type: "pr-comments" }
   | { type: "release-notes" }
   | { type: "security-review" }
+  // MCP tool commands
+  | { type: "mcp-list" }
+  | { type: "mcp-run"; tool?: string }
+  // CLI tool commands
+  | { type: "cli-bash" }
+  | { type: "cli-git" }
+  | { type: "cli-npm" }
+  // SSH commands
+  | { type: "ssh-connect"; host?: string }
+  | { type: "ssh-tower" }
+  // Repo commands
+  | { type: "repo-status" }
+  | { type: "repo-diff" }
+  | { type: "repo-commit" }
 
 // Result of selecting a slash command
 export type SlashCommandSelection =

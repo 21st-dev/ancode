@@ -351,12 +351,74 @@ export const isFullscreenAtom = atom<boolean | null>(null)
 // ANTHROPIC ONBOARDING ATOMS
 // ============================================
 
-// Whether user has completed Anthropic OAuth during onboarding
-// This is used to show the onboarding screen after 21st.dev sign-in
-// Reset on logout
+// Whether user has completed onboarding
+// Default to true to skip broken OAuth flow - app uses Claude Code CLI auth directly
 export const anthropicOnboardingCompletedAtom = atomWithStorage<boolean>(
   "onboarding:anthropic-completed",
-  false,
+  true,
+  undefined,
+  { getOnInit: true },
+)
+
+// ============================================
+// FONT CUSTOMIZATION ATOMS
+// ============================================
+
+// Available monospace fonts for code/editor
+export const EDITOR_FONTS = [
+  { name: "System Default", value: "ui-monospace" },
+  { name: "JetBrains Mono", value: "'JetBrains Mono', monospace" },
+  { name: "Fira Code", value: "'Fira Code', monospace" },
+  { name: "SF Mono", value: "'SF Mono', monospace" },
+  { name: "Menlo", value: "Menlo, monospace" },
+  { name: "Monaco", value: "Monaco, monospace" },
+  { name: "Cascadia Code", value: "'Cascadia Code', monospace" },
+  { name: "Source Code Pro", value: "'Source Code Pro', monospace" },
+  { name: "IBM Plex Mono", value: "'IBM Plex Mono', monospace" },
+  { name: "Roboto Mono", value: "'Roboto Mono', monospace" },
+] as const
+
+// Available UI fonts
+export const UI_FONTS = [
+  { name: "System Default", value: "system-ui" },
+  { name: "Inter", value: "'Inter', sans-serif" },
+  { name: "SF Pro", value: "'SF Pro', sans-serif" },
+  { name: "Geist", value: "'Geist', sans-serif" },
+  { name: "Plus Jakarta Sans", value: "'Plus Jakarta Sans', sans-serif" },
+  { name: "DM Sans", value: "'DM Sans', sans-serif" },
+] as const
+
+// Font sizes
+export const FONT_SIZES = [11, 12, 13, 14, 15, 16, 18] as const
+
+// Editor/code font family
+export const editorFontFamilyAtom = atomWithStorage<string>(
+  "preferences:editor-font-family",
+  "ui-monospace",
+  undefined,
+  { getOnInit: true },
+)
+
+// Editor/code font size (in pixels)
+export const editorFontSizeAtom = atomWithStorage<number>(
+  "preferences:editor-font-size",
+  13,
+  undefined,
+  { getOnInit: true },
+)
+
+// UI font family
+export const uiFontFamilyAtom = atomWithStorage<string>(
+  "preferences:ui-font-family",
+  "system-ui",
+  undefined,
+  { getOnInit: true },
+)
+
+// UI font size (in pixels)
+export const uiFontSizeAtom = atomWithStorage<number>(
+  "preferences:ui-font-size",
+  13,
   undefined,
   { getOnInit: true },
 )

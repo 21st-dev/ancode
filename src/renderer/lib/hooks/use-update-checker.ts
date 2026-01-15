@@ -114,14 +114,6 @@ export function useUpdateChecker() {
       }),
     )
 
-    // Manual check from menu - clear dismiss state
-    unsubs.push(
-      api.onUpdateManualCheck?.(() => {
-        console.log("[Update] Manual check triggered - clearing dismiss state")
-        localStorage.removeItem(DISMISSED_KEY)
-      }),
-    )
-
     // Cleanup
     return () => {
       unsubs.forEach((unsub) => unsub?.())
@@ -172,21 +164,4 @@ export function useUpdateChecker() {
  */
 export function clearDismissedUpdate() {
   localStorage.removeItem(DISMISSED_KEY)
-}
-
-/**
- * Clear dismiss for a specific version
- */
-export function clearDismissedVersion(version: string) {
-  try {
-    const dismissed = localStorage.getItem(DISMISSED_KEY)
-    if (!dismissed) return
-
-    const { version: dismissedVersion } = JSON.parse(dismissed)
-    if (dismissedVersion === version) {
-      localStorage.removeItem(DISMISSED_KEY)
-    }
-  } catch {
-    // Ignore errors
-  }
 }

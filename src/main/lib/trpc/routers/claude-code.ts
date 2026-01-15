@@ -1,93 +1,256 @@
 import { z } from "zod"
 import { shell, safeStorage } from "electron"
+import { spawn, execSync } from "node:child_process"
+import fs from "node:fs"
+import path from "node:path"
+import os from "node:os"
 import { router, publicProcedure } from "../index"
-import { getAuthManager } from "../../../index"
-import { getApiUrl } from "../../config"
 import { getDatabase, claudeCodeCredentials } from "../../db"
 import { eq } from "drizzle-orm"
+import { getBundledClaudeBinaryPath, buildClaudeEnv } from "../../claude/env"
 
 /**
- * Get desktop auth token for server API calls
+ * Check if user is logged into Claude Code CLI
+ * Looks for credentials in ~/.claude/ directory
  */
-async function getDesktopToken(): Promise<string | null> {
-  const authManager = getAuthManager()
-  return authManager.getValidToken()
-}
+function checkClaudeLoginStatus(): { isLoggedIn: boolean; email?: string; error?: string } {
+  try {
+    const claudeDir = path.join(os.homedir(), ".claude")
 
-/**
- * Encrypt token using Electron's safeStorage
- */
-function encryptToken(token: string): string {
-  if (!safeStorage.isEncryptionAvailable()) {
-    console.warn("[ClaudeCode] Encryption not available, storing as base64")
-    return Buffer.from(token).toString("base64")
+    // Check if .claude directory exists
+    if (!fs.existsSync(claudeDir)) {
+      console.log("[ClaudeCode] ~/.claude directory not found")
+      return { isLoggedIn: false }
+    }
+
+    // Check for credentials file or settings that indicate login
+    // Claude stores auth state in different locations depending on version
+    const credentialsPath = path.join(claudeDir, ".credentials.json")
+    const settingsPath = path.join(claudeDir, "settings.json")
+
+    // Try to detect login via credentials file
+    if (fs.existsSync(credentialsPath)) {
+      try {
+        const credentials = JSON.parse(fs.readFileSync(credentialsPath, "utf-8"))
+        if (credentials.claudeAiOauth?.accessToken || credentials.claudeAiOauth?.refreshToken) {
+          console.log("[ClaudeCode] Found OAuth credentials - logged in")
+          return {
+            isLoggedIn: true,
+            email: credentials.claudeAiOauth?.email || undefined
+          }
+        }
+      } catch (e) {
+        console.log("[ClaudeCode] Error reading credentials file:", e)
+      }
+    }
+
+    // Alternative: run `claude --version` or similar to verify binary works
+    // If it runs without auth error, we're good
+    try {
+      const binaryPath = getBundledClaudeBinaryPath()
+      if (fs.existsSync(binaryPath)) {
+        const env = buildClaudeEnv()
+        const result = execSync(`"${binaryPath}" --version`, {
+          encoding: "utf-8",
+          timeout: 5000,
+          env,
+          stdio: ["ignore", "pipe", "pipe"]
+        })
+        console.log("[ClaudeCode] CLI version check passed:", result.trim())
+        // If version check works, assume CLI is properly set up
+        // User may still need to login but the CLI is functioning
+        return { isLoggedIn: fs.existsSync(credentialsPath), email: undefined }
+      }
+    } catch (versionError) {
+      console.log("[ClaudeCode] CLI version check error:", versionError)
+    }
+
+    return { isLoggedIn: false }
+  } catch (error) {
+    console.error("[ClaudeCode] Error checking login status:", error)
+    return { isLoggedIn: false, error: String(error) }
   }
-  return safeStorage.encryptString(token).toString("base64")
 }
 
 /**
- * Decrypt token using Electron's safeStorage
- */
-function decryptToken(encrypted: string): string {
-  if (!safeStorage.isEncryptionAvailable()) {
-    return Buffer.from(encrypted, "base64").toString("utf-8")
-  }
-  const buffer = Buffer.from(encrypted, "base64")
-  return safeStorage.decryptString(buffer)
-}
-
-/**
- * Claude Code OAuth router for desktop
- * Uses server only for sandbox creation, stores token locally
+ * Claude Code router - uses bundled CLI for authentication
  */
 export const claudeCodeRouter = router({
   /**
-   * Check if user has Claude Code connected (local check)
+   * Check if user is logged into Claude Code CLI
+   */
+  getLoginStatus: publicProcedure.query(() => {
+    const status = checkClaudeLoginStatus()
+    console.log("[ClaudeCode] getLoginStatus:", status)
+    return status
+  }),
+
+  /**
+   * Legacy: Check if user has Claude Code connected
+   * Kept for API compatibility with old UI code
    */
   getIntegration: publicProcedure.query(() => {
-    const db = getDatabase()
-    const cred = db
-      .select()
-      .from(claudeCodeCredentials)
-      .where(eq(claudeCodeCredentials.id, "default"))
-      .get()
-
+    const status = checkClaudeLoginStatus()
     return {
-      isConnected: !!cred?.oauthToken,
-      connectedAt: cred?.connectedAt?.toISOString() ?? null,
+      isConnected: status.isLoggedIn,
+      connectedAt: status.isLoggedIn ? new Date().toISOString() : null,
+      email: status.email,
     }
   }),
 
   /**
-   * Start OAuth flow - calls server to create sandbox
+   * Start login flow using bundled Claude CLI
+   * Opens browser for OAuth authentication
+   */
+  login: publicProcedure.mutation(async () => {
+    return new Promise<{ success: boolean; error?: string }>((resolve) => {
+      try {
+        const binaryPath = getBundledClaudeBinaryPath()
+
+        if (!fs.existsSync(binaryPath)) {
+          console.error("[ClaudeCode] Bundled binary not found at:", binaryPath)
+          resolve({ success: false, error: "Claude CLI binary not found" })
+          return
+        }
+
+        console.log("[ClaudeCode] Starting login with binary:", binaryPath)
+
+        const env = buildClaudeEnv()
+
+        // Spawn claude login process
+        const loginProcess = spawn(binaryPath, ["login"], {
+          env,
+          stdio: ["inherit", "pipe", "pipe"],
+          detached: false,
+        })
+
+        let stdout = ""
+        let stderr = ""
+
+        loginProcess.stdout?.on("data", (data) => {
+          const text = data.toString()
+          stdout += text
+          console.log("[ClaudeCode] login stdout:", text.trim())
+        })
+
+        loginProcess.stderr?.on("data", (data) => {
+          const text = data.toString()
+          stderr += text
+          console.log("[ClaudeCode] login stderr:", text.trim())
+        })
+
+        loginProcess.on("close", (code) => {
+          console.log("[ClaudeCode] login process exited with code:", code)
+          if (code === 0) {
+            resolve({ success: true })
+          } else {
+            resolve({
+              success: false,
+              error: stderr || stdout || `Process exited with code ${code}`
+            })
+          }
+        })
+
+        loginProcess.on("error", (error) => {
+          console.error("[ClaudeCode] login process error:", error)
+          resolve({ success: false, error: error.message })
+        })
+
+        // Set a timeout (login can take a while as user goes through OAuth)
+        setTimeout(() => {
+          // Don't kill the process - just resolve as pending
+          // The user is probably in the middle of OAuth
+          resolve({ success: true })
+        }, 60000) // 60 second timeout
+
+      } catch (error) {
+        console.error("[ClaudeCode] login error:", error)
+        resolve({ success: false, error: String(error) })
+      }
+    })
+  }),
+
+  /**
+   * Logout from Claude Code CLI
+   */
+  logout: publicProcedure.mutation(async () => {
+    return new Promise<{ success: boolean; error?: string }>((resolve) => {
+      try {
+        const binaryPath = getBundledClaudeBinaryPath()
+
+        if (!fs.existsSync(binaryPath)) {
+          console.error("[ClaudeCode] Bundled binary not found at:", binaryPath)
+          resolve({ success: false, error: "Claude CLI binary not found" })
+          return
+        }
+
+        console.log("[ClaudeCode] Starting logout with binary:", binaryPath)
+
+        const env = buildClaudeEnv()
+
+        // Spawn claude logout process
+        const logoutProcess = spawn(binaryPath, ["logout"], {
+          env,
+          stdio: ["inherit", "pipe", "pipe"],
+          detached: false,
+        })
+
+        let stdout = ""
+        let stderr = ""
+
+        logoutProcess.stdout?.on("data", (data) => {
+          const text = data.toString()
+          stdout += text
+          console.log("[ClaudeCode] logout stdout:", text.trim())
+        })
+
+        logoutProcess.stderr?.on("data", (data) => {
+          const text = data.toString()
+          stderr += text
+          console.log("[ClaudeCode] logout stderr:", text.trim())
+        })
+
+        logoutProcess.on("close", (code) => {
+          console.log("[ClaudeCode] logout process exited with code:", code)
+          if (code === 0) {
+            resolve({ success: true })
+          } else {
+            resolve({
+              success: false,
+              error: stderr || stdout || `Process exited with code ${code}`
+            })
+          }
+        })
+
+        logoutProcess.on("error", (error) => {
+          console.error("[ClaudeCode] logout process error:", error)
+          resolve({ success: false, error: error.message })
+        })
+
+        // Set a timeout
+        setTimeout(() => {
+          resolve({ success: false, error: "Logout timed out" })
+        }, 10000) // 10 second timeout
+
+      } catch (error) {
+        console.error("[ClaudeCode] logout error:", error)
+        resolve({ success: false, error: String(error) })
+      }
+    })
+  }),
+
+  /**
+   * Legacy stubs for API compatibility
    */
   startAuth: publicProcedure.mutation(async () => {
-    const token = await getDesktopToken()
-    if (!token) {
-      throw new Error("Not authenticated with 21st.dev")
-    }
-
-    // Server creates sandbox (has CodeSandbox SDK)
-    const response = await fetch(`${getApiUrl()}/api/auth/claude-code/start`, {
-      method: "POST",
-      headers: { "x-desktop-token": token },
-    })
-
-    if (!response.ok) {
-      const error = await response.json().catch(() => ({ error: "Unknown error" }))
-      throw new Error(error.error || `Start auth failed: ${response.status}`)
-    }
-
-    return (await response.json()) as {
-      sandboxId: string
-      sandboxUrl: string
-      sessionId: string
+    console.log("[ClaudeCode] startAuth called - use login instead")
+    return {
+      sandboxId: "bundled-cli",
+      sandboxUrl: "",
+      sessionId: "bundled",
     }
   }),
 
-  /**
-   * Poll for OAuth URL - calls sandbox directly
-   */
   pollStatus: publicProcedure
     .input(
       z.object({
@@ -95,31 +258,14 @@ export const claudeCodeRouter = router({
         sessionId: z.string(),
       })
     )
-    .query(async ({ input }) => {
-      try {
-        const response = await fetch(
-          `${input.sandboxUrl}/api/auth/${input.sessionId}/status`
-        )
-
-        if (!response.ok) {
-          return { state: "error" as const, oauthUrl: null, error: "Failed to poll status" }
-        }
-
-        const data = await response.json()
-        return {
-          state: data.state as string,
-          oauthUrl: data.oauthUrl ?? null,
-          error: data.error ?? null,
-        }
-      } catch (error) {
-        console.error("[ClaudeCode] Poll status error:", error)
-        return { state: "error" as const, oauthUrl: null, error: "Connection failed" }
+    .query(async () => {
+      return {
+        state: "success" as const,
+        oauthUrl: null,
+        error: null,
       }
     }),
 
-  /**
-   * Submit OAuth code - calls sandbox directly, stores token locally
-   */
   submitCode: publicProcedure
     .input(
       z.object({
@@ -128,120 +274,29 @@ export const claudeCodeRouter = router({
         code: z.string().min(1),
       })
     )
-    .mutation(async ({ input }) => {
-      // Submit code to sandbox
-      const codeRes = await fetch(
-        `${input.sandboxUrl}/api/auth/${input.sessionId}/code`,
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ code: input.code }),
-        }
-      )
-
-      if (!codeRes.ok) {
-        throw new Error(`Code submission failed: ${codeRes.statusText}`)
-      }
-
-      // Poll for OAuth token (max 10 seconds)
-      let oauthToken: string | null = null
-
-      for (let i = 0; i < 10; i++) {
-        await new Promise((r) => setTimeout(r, 1000))
-
-        const statusRes = await fetch(
-          `${input.sandboxUrl}/api/auth/${input.sessionId}/status`
-        )
-
-        if (!statusRes.ok) continue
-
-        const status = await statusRes.json()
-
-        if (status.state === "success" && status.oauthToken) {
-          oauthToken = status.oauthToken
-          break
-        }
-
-        if (status.state === "error") {
-          throw new Error(status.error || "Authentication failed")
-        }
-      }
-
-      if (!oauthToken) {
-        throw new Error("Timeout waiting for OAuth token")
-      }
-
-      // Validate token format
-      if (!oauthToken.startsWith("sk-ant-oat01-")) {
-        throw new Error("Invalid OAuth token format")
-      }
-
-      // Get user ID for reference
-      const authManager = getAuthManager()
-      const user = authManager.getUser()
-
-      // Encrypt and store locally
-      const encryptedToken = encryptToken(oauthToken)
-      const db = getDatabase()
-
-      // Upsert - delete existing and insert new
-      db.delete(claudeCodeCredentials)
-        .where(eq(claudeCodeCredentials.id, "default"))
-        .run()
-
-      db.insert(claudeCodeCredentials)
-        .values({
-          id: "default",
-          oauthToken: encryptedToken,
-          connectedAt: new Date(),
-          userId: user?.id ?? null,
-        })
-        .run()
-
-      console.log("[ClaudeCode] Token stored locally")
+    .mutation(async () => {
       return { success: true }
     }),
 
-  /**
-   * Get decrypted OAuth token (local)
-   */
   getToken: publicProcedure.query(() => {
-    const db = getDatabase()
-    const cred = db
-      .select()
-      .from(claudeCodeCredentials)
-      .where(eq(claudeCodeCredentials.id, "default"))
-      .get()
-
-    if (!cred?.oauthToken) {
-      return { token: null, error: "Not connected" }
-    }
-
-    try {
-      const token = decryptToken(cred.oauthToken)
-      return { token, error: null }
-    } catch (error) {
-      console.error("[ClaudeCode] Decrypt error:", error)
-      return { token: null, error: "Failed to decrypt token" }
-    }
+    return { token: null, error: null }
   }),
 
-  /**
-   * Disconnect - delete local credentials
-   */
-  disconnect: publicProcedure.mutation(() => {
-    const db = getDatabase()
-    db.delete(claudeCodeCredentials)
-      .where(eq(claudeCodeCredentials.id, "default"))
-      .run()
-
-    console.log("[ClaudeCode] Disconnected")
+  disconnect: publicProcedure.mutation(async () => {
+    // Call the actual logout
+    const binaryPath = getBundledClaudeBinaryPath()
+    if (fs.existsSync(binaryPath)) {
+      try {
+        const env = buildClaudeEnv()
+        execSync(`"${binaryPath}" logout`, { env, timeout: 10000 })
+        return { success: true }
+      } catch (e) {
+        console.error("[ClaudeCode] disconnect error:", e)
+      }
+    }
     return { success: true }
   }),
 
-  /**
-   * Open OAuth URL in browser
-   */
   openOAuthUrl: publicProcedure
     .input(z.string())
     .mutation(async ({ input: url }) => {

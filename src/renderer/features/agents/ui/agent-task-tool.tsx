@@ -4,7 +4,6 @@ import { memo, useState, useEffect, useRef } from "react"
 import { ChevronRight } from "lucide-react"
 import { AgentToolRegistry, getToolStatus } from "./agent-tool-registry"
 import { AgentToolCall } from "./agent-tool-call"
-import { AgentToolInterrupted } from "./agent-tool-interrupted"
 import { TextShimmer } from "../../../components/ui/text-shimmer"
 import { cn } from "../../../lib/utils"
 
@@ -34,7 +33,7 @@ export const AgentTaskTool = memo(function AgentTaskTool({
   nestedTools,
   chatStatus,
 }: AgentTaskToolProps) {
-  const { isPending, isInterrupted } = getToolStatus(part, chatStatus)
+  const { isPending } = getToolStatus(part, chatStatus)
 
   // Default: expanded while streaming, collapsed when done
   const [isExpanded, setIsExpanded] = useState(isPending)
@@ -101,11 +100,6 @@ export const AgentTaskTool = memo(function AgentTaskTool({
   // Get title text - always use "Task"
   const getTitle = () => {
     return isPending ? "Running Task" : "Task"
-  }
-
-  // Show interrupted state if task was interrupted without completing
-  if (isInterrupted && !part.output) {
-    return <AgentToolInterrupted toolName="Task" subtitle={subtitle} />
   }
 
   return (

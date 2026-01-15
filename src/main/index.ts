@@ -1,18 +1,9 @@
-import { app, BrowserWindow, session, Menu } from "electron"
+import { app, BrowserWindow, Menu } from "electron"
 import { join } from "path"
 import { createServer } from "http"
-import { readFileSync, existsSync, unlinkSync, readlinkSync } from "fs"
-import * as Sentry from "@sentry/electron/main"
+import { readFileSync, existsSync } from "fs"
 import { initDatabase, closeDatabase } from "./lib/db"
-import { createMainWindow, getWindow, showLoginPage } from "./windows/main"
-import { AuthManager } from "./auth-manager"
-import {
-  initAnalytics,
-  identify,
-  trackAppOpened,
-  trackAuthCompleted,
-  shutdown as shutdownAnalytics,
-} from "./lib/analytics"
+import { createMainWindow, getWindow } from "./windows/main"
 import {
   initAutoUpdater,
   checkForUpdates,
@@ -24,119 +15,28 @@ const IS_DEV = !!process.env.ELECTRON_RENDERER_URL
 
 // Deep link protocol (must match package.json build.protocols.schemes)
 // Use different protocol in dev to avoid conflicts with production app
-const PROTOCOL = IS_DEV ? "twentyfirst-agents-dev" : "twentyfirst-agents"
+const PROTOCOL = IS_DEV ? "2code-dev" : "2code"
 
 // Set dev mode userData path BEFORE requestSingleInstanceLock()
 // This ensures dev and prod have separate instance locks
 if (IS_DEV) {
   const { join } = require("path")
-  const devUserData = join(app.getPath("userData"), "..", "Agents Dev")
+  const devUserData = join(app.getPath("userData"), "..", "2code Dev")
   app.setPath("userData", devUserData)
   console.log("[Dev] Using separate userData path:", devUserData)
 }
 
-// Initialize Sentry before app is ready (production only)
-if (app.isPackaged && !IS_DEV) {
-  const sentryDsn = import.meta.env.MAIN_VITE_SENTRY_DSN
-  if (sentryDsn) {
-    try {
-      Sentry.init({
-        dsn: sentryDsn,
-      })
-      console.log("[App] Sentry initialized")
-    } catch (error) {
-      console.warn("[App] Failed to initialize Sentry:", error)
-    }
-  } else {
-    console.log("[App] Skipping Sentry initialization (no DSN configured)")
-  }
-} else {
-  console.log("[App] Skipping Sentry initialization (dev mode)")
-}
+// No external telemetry or authentication required
+// 2code runs locally with bundled Claude Code CLI
 
-// URL configuration (exported for use in other modules)
-export function getBaseUrl(): string {
-  return process.env.ELECTRON_RENDERER_URL
-    ? "http://localhost:3000"
-    : "https://21st.dev"
-}
-
-export function getAppUrl(): string {
-  return process.env.ELECTRON_RENDERER_URL || "https://21st.dev/agents"
-}
-
-// Auth manager singleton
-let authManager: AuthManager
-
-export function getAuthManager(): AuthManager {
-  return authManager
-}
-
-// Handle auth code from deep link (exported for IPC handlers)
-export async function handleAuthCode(code: string): Promise<void> {
-  console.log("[Auth] Handling auth code:", code.slice(0, 8) + "...")
-
-  try {
-    const authData = await authManager.exchangeCode(code)
-    console.log("[Auth] Success for user:", authData.user.email)
-
-    // Track successful authentication
-    trackAuthCompleted(authData.user.id, authData.user.email)
-
-    // Set desktop token cookie using persist:main partition
-    const ses = session.fromPartition("persist:main")
-    try {
-      // First remove any existing cookie to avoid HttpOnly conflict
-      await ses.cookies.remove(getBaseUrl(), "x-desktop-token")
-      await ses.cookies.set({
-        url: getBaseUrl(),
-        name: "x-desktop-token",
-        value: authData.token,
-        expirationDate: Math.floor(
-          new Date(authData.expiresAt).getTime() / 1000,
-        ),
-        httpOnly: false,
-        secure: getBaseUrl().startsWith("https"),
-        sameSite: "lax" as const,
-      })
-      console.log("[Auth] Desktop token cookie set")
-    } catch (cookieError) {
-      // Cookie setting is optional - auth data is already saved to disk
-      console.warn("[Auth] Cookie set failed (non-critical):", cookieError)
-    }
-
-    // Notify renderer
-    const win = getWindow()
-    win?.webContents.send("auth:success", authData.user)
-
-    // Reload window to show app
-    if (process.env.ELECTRON_RENDERER_URL) {
-      win?.loadURL(process.env.ELECTRON_RENDERER_URL)
-    } else {
-      win?.loadFile(join(__dirname, "../renderer/index.html"))
-    }
-    win?.focus()
-  } catch (error) {
-    console.error("[Auth] Exchange failed:", error)
-    getWindow()?.webContents.send("auth:error", (error as Error).message)
-  }
-}
-
-// Handle deep link
+// Handle deep link (for future extensibility)
 function handleDeepLink(url: string): void {
   console.log("[DeepLink] Received:", url)
 
   try {
     const parsed = new URL(url)
-
-    // Handle auth callback: twentyfirstdev://auth?code=xxx
-    if (parsed.pathname === "/auth" || parsed.host === "auth") {
-      const code = parsed.searchParams.get("code")
-      if (code) {
-        handleAuthCode(code)
-        return
-      }
-    }
+    // Deep links can be used for opening projects, files, etc.
+    console.log("[DeepLink] Parsed:", parsed.pathname, parsed.searchParams.toString())
   } catch (e) {
     console.error("[DeepLink] Failed to parse:", e)
   }
@@ -210,12 +110,10 @@ console.log("[Protocol] =============================================")
 
 // Note: app.on("open-url") will be registered in app.whenReady()
 
-// SVG favicon as data URI for auth callback pages (matches web app favicon)
-const FAVICON_SVG = `<svg width="32" height="32" viewBox="0 0 1024 1024" fill="none" xmlns="http://www.w3.org/2000/svg"><rect width="1024" height="1024" fill="#0033FF"/><path fill-rule="evenodd" clip-rule="evenodd" d="M800.165 148C842.048 148 876 181.952 876 223.835V686.415C876 690.606 872.606 694 868.415 694H640.915C636.729 694 633.335 697.394 633.335 701.585V868.415C633.335 872.606 629.936 876 625.75 876H223.835C181.952 876 148 842.048 148 800.165V702.59C148 697.262 150.807 692.326 155.376 689.586L427.843 526.1C434.031 522.388 431.956 513.238 425.327 512.118L423.962 512H155.585C151.394 512 148 508.606 148 504.415V337.585C148 333.394 151.394 330 155.585 330H443.75C447.936 330 451.335 326.606 451.335 322.415V155.585C451.335 151.394 454.729 148 458.915 148H800.165ZM458.915 330C454.729 330 451.335 333.394 451.335 337.585V686.415C451.335 690.606 454.729 694 458.915 694H625.75C629.936 694 633.335 690.606 633.335 686.415V337.585C633.335 333.394 629.936 330 625.75 330H458.915Z" fill="#F4F4F4"/></svg>`
-const FAVICON_DATA_URI = `data:image/svg+xml,${encodeURIComponent(FAVICON_SVG)}`
+// 2code icon SVG for dev server pages
+const FAVICON_SVG = `<svg width="32" height="32" viewBox="0 0 400 400" fill="none" xmlns="http://www.w3.org/2000/svg"><rect width="400" height="400" rx="80" fill="#1a1a2e"/><path d="M70 110C70 70.2355 102.235 38 142 38H258C297.765 38 330 70.2355 330 110V150C330 169.882 313.882 186 294 186H150L294 318H330C349.882 318 366 334.118 366 354H70V318H230L110 186V150C110 130.118 126.118 114 146 114H254C273.882 114 290 97.8823 290 78H146C126.118 78 110 94.1177 110 114H70Z" fill="#fafafa"/><path d="M34 200L88 148V176L58 200L88 224V252L34 200Z" fill="#fafafa" opacity="0.7"/><path d="M366 200L312 148V176L342 200L312 224V252L366 200Z" fill="#fafafa" opacity="0.7"/></svg>`
 
-// Dev mode: Start local HTTP server for auth callback
-// This catches http://localhost:21321/auth/callback?code=xxx
+// Dev mode: Start local HTTP server for dev utilities
 if (process.env.ELECTRON_RENDERER_URL) {
   const server = createServer((req, res) => {
     const url = new URL(req.url || "", "http://localhost:21321")
@@ -227,155 +125,28 @@ if (process.env.ELECTRON_RENDERER_URL) {
       return
     }
 
-    if (url.pathname === "/auth/callback") {
-      const code = url.searchParams.get("code")
-      console.log(
-        "[Auth Server] Received callback with code:",
-        code?.slice(0, 8) + "...",
-      )
+    // Health check endpoint
+    if (url.pathname === "/health") {
+      res.writeHead(200, { "Content-Type": "application/json" })
+      res.end(JSON.stringify({ status: "ok", app: "2code" }))
+      return
+    }
 
-      if (code) {
-        // Handle the auth code
-        handleAuthCode(code)
-
-        // Send success response and close the browser tab
-        res.writeHead(200, { "Content-Type": "text/html" })
-        res.end(`<!DOCTYPE html>
-<html>
-<head>
-  <meta charset="UTF-8">
-  <link rel="icon" type="image/svg+xml" href="${FAVICON_DATA_URI}">
-  <title>1Code - Authentication</title>
-  <style>
-    * { margin: 0; padding: 0; box-sizing: border-box; }
-    :root {
-      --bg: #09090b;
-      --text: #fafafa;
-      --text-muted: #71717a;
-    }
-    @media (prefers-color-scheme: light) {
-      :root {
-        --bg: #ffffff;
-        --text: #09090b;
-        --text-muted: #71717a;
-      }
-    }
-    body {
-      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      justify-content: center;
-      min-height: 100vh;
-      background: var(--bg);
-      color: var(--text);
-    }
-    .container {
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      gap: 8px;
-    }
-    .logo {
-      width: 24px;
-      height: 24px;
-      margin-bottom: 8px;
-    }
-    h1 {
-      font-size: 14px;
-      font-weight: 500;
-      margin-bottom: 4px;
-    }
-    p {
-      font-size: 12px;
-      color: var(--text-muted);
-    }
-  </style>
-</head>
-<body>
-  <div class="container">
-    <svg class="logo" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
-      <path fill-rule="evenodd" clip-rule="evenodd" d="M14.3333 0C15.2538 0 16 0.746192 16 1.66667V11.8333C16 11.9254 15.9254 12 15.8333 12H10.8333C10.7413 12 10.6667 12.0746 10.6667 12.1667V15.8333C10.6667 15.9254 10.592 16 10.5 16H1.66667C0.746192 16 0 15.2538 0 14.3333V12.1888C0 12.0717 0.0617409 11.9632 0.162081 11.903L6.15043 8.30986C6.28644 8.22833 6.24077 8.02716 6.09507 8.00256L6.06511 8H0.166667C0.0746186 8 0 7.92538 0 7.83333V4.16667C0 4.07462 0.0746193 4 0.166667 4H6.5C6.59205 4 6.66667 3.92538 6.66667 3.83333V0.166667C6.66667 0.0746193 6.74129 0 6.83333 0H14.3333ZM6.83333 4C6.74129 4 6.66667 4.07462 6.66667 4.16667V11.8333C6.66667 11.9254 6.74129 12 6.83333 12H10.5C10.592 12 10.6667 11.9254 10.6667 11.8333V4.16667C10.6667 4.07462 10.592 4 10.5 4H6.83333Z" fill="#0033FF"/>
-    </svg>
-    <h1>Authentication successful</h1>
-    <p>You can close this tab</p>
-  </div>
-  <script>setTimeout(() => window.close(), 1000)</script>
-</body>
-</html>`)
-      } else {
-        res.writeHead(400, { "Content-Type": "text/plain" })
-        res.end("Missing code parameter")
-      }
-    } else {
-      res.writeHead(404, { "Content-Type": "text/plain" })
-      res.end("Not found")
-    }
+    res.writeHead(404, { "Content-Type": "text/plain" })
+    res.end("Not found")
   })
 
   server.listen(21321, () => {
-    console.log("[Auth Server] Listening on http://localhost:21321")
+    console.log("[Dev Server] Listening on http://localhost:21321")
   })
 }
 
-// Clean up stale lock files from crashed instances
-// Returns true if locks were cleaned, false otherwise
-function cleanupStaleLocks(): boolean {
-  const userDataPath = app.getPath("userData")
-  const lockPath = join(userDataPath, "SingletonLock")
-
-  if (!existsSync(lockPath)) return false
-
-  try {
-    // SingletonLock is a symlink like "hostname-pid"
-    const lockTarget = readlinkSync(lockPath)
-    const match = lockTarget.match(/-(\d+)$/)
-    if (match) {
-      const pid = parseInt(match[1], 10)
-      try {
-        // Check if process is running (signal 0 doesn't kill, just checks)
-        process.kill(pid, 0)
-        // Process exists, lock is valid
-        console.log("[App] Lock held by running process:", pid)
-        return false
-      } catch {
-        // Process doesn't exist, clean up stale locks
-        console.log("[App] Cleaning stale locks (pid", pid, "not running)")
-        const filesToRemove = ["SingletonLock", "SingletonSocket", "SingletonCookie"]
-        for (const file of filesToRemove) {
-          const filePath = join(userDataPath, file)
-          if (existsSync(filePath)) {
-            try {
-              unlinkSync(filePath)
-            } catch (e) {
-              console.warn("[App] Failed to remove", file, e)
-            }
-          }
-        }
-        return true
-      }
-    }
-  } catch (e) {
-    console.warn("[App] Failed to check lock file:", e)
-  }
-  return false
-}
-
 // Prevent multiple instances
-let gotTheLock = app.requestSingleInstanceLock()
+const gotTheLock = app.requestSingleInstanceLock()
 
 if (!gotTheLock) {
-  // Maybe stale lock - try cleanup and retry once
-  const cleaned = cleanupStaleLocks()
-  if (cleaned) {
-    gotTheLock = app.requestSingleInstanceLock()
-  }
-  if (!gotTheLock) {
-    app.quit()
-  }
-}
-
-if (gotTheLock) {
+  app.quit()
+} else {
   // Handle second instance launch (also handles deep links on Windows/Linux)
   app.on("second-instance", (_event, commandLine) => {
     // Check for deep link in command line args
@@ -395,7 +166,7 @@ if (gotTheLock) {
   app.whenReady().then(async () => {
     // Set dev mode app name (userData path was already set before requestSingleInstanceLock)
     if (IS_DEV) {
-      app.name = "Agents Dev"
+      app.name = "2code Dev"
     }
 
     // Register protocol handler (must be after app is ready)
@@ -410,10 +181,10 @@ if (gotTheLock) {
 
     // Set app user model ID for Windows (different in dev to avoid taskbar conflicts)
     if (process.platform === "win32") {
-      app.setAppUserModelId(IS_DEV ? "dev.21st.1code.dev" : "dev.21st.1code")
+      app.setAppUserModelId(IS_DEV ? "dev.wsig.2code.dev" : "dev.wsig.2code")
     }
 
-    console.log(`[App] Starting 1Code${IS_DEV ? " (DEV)" : ""}...`)
+    console.log(`[App] Starting 2code${IS_DEV ? " (DEV)" : ""}...`)
 
     // Verify protocol registration after app is ready
     // This helps diagnose first-install issues where the protocol isn't recognized yet
@@ -437,169 +208,91 @@ if (gotTheLock) {
 
     // Set About panel options with Claude Code version
     app.setAboutPanelOptions({
-      applicationName: "1Code",
+      applicationName: "2code",
       applicationVersion: app.getVersion(),
       version: `Claude Code ${claudeCodeVersion}`,
-      copyright: "Copyright © 2026 21st.dev",
+      copyright: "Copyright © 2026 wsig",
     })
 
-    // Track update availability for menu
-    let updateAvailable = false
-    let availableVersion: string | null = null
-
-    // Function to build and set application menu
-    const buildMenu = () => {
-      const template: Electron.MenuItemConstructorOptions[] = [
-        {
-          label: app.name,
-          submenu: [
-            { role: "about", label: "About 1Code" },
-            {
-              label: updateAvailable
-                ? `Update to v${availableVersion}...`
-                : "Check for Updates...",
-              click: () => {
-                // Send event to renderer to clear dismiss state
-                const win = getWindow()
-                if (win) {
-                  win.webContents.send("update:manual-check")
-                }
-                checkForUpdates(true)
-              },
+    // Set custom menu - Cmd+N sends IPC to renderer for "New Agent"
+    const template: Electron.MenuItemConstructorOptions[] = [
+      {
+        label: app.name,
+        submenu: [
+          { role: "about", label: "About 2code" },
+          {
+            label: "Check for Updates...",
+            click: () => {
+              checkForUpdates(true)
             },
-            { type: "separator" },
-            { role: "services" },
-            { type: "separator" },
-            { role: "hide" },
-            { role: "hideOthers" },
-            { role: "unhide" },
-            { type: "separator" },
-            { role: "quit" },
-          ],
-        },
-        {
-          label: "File",
-          submenu: [
-            {
-              label: "New Agent",
-              accelerator: "CmdOrCtrl+N",
-              click: () => {
-                console.log("[Menu] New Agent clicked (Cmd+N)")
-                const win = getWindow()
-                if (win) {
-                  console.log("[Menu] Sending shortcut:new-agent to renderer")
-                  win.webContents.send("shortcut:new-agent")
-                } else {
-                  console.log("[Menu] No window found!")
-                }
-              },
+          },
+          { type: "separator" },
+          { role: "services" },
+          { type: "separator" },
+          { role: "hide" },
+          { role: "hideOthers" },
+          { role: "unhide" },
+          { type: "separator" },
+          { role: "quit" },
+        ],
+      },
+      {
+        label: "File",
+        submenu: [
+          {
+            label: "New Agent",
+            accelerator: "CmdOrCtrl+N",
+            click: () => {
+              console.log("[Menu] New Agent clicked (Cmd+N)")
+              const win = getWindow()
+              if (win) {
+                console.log("[Menu] Sending shortcut:new-agent to renderer")
+                win.webContents.send("shortcut:new-agent")
+              } else {
+                console.log("[Menu] No window found!")
+              }
             },
-          ],
-        },
-        {
-          label: "Edit",
-          submenu: [
-            { role: "undo" },
-            { role: "redo" },
-            { type: "separator" },
-            { role: "cut" },
-            { role: "copy" },
-            { role: "paste" },
-            { role: "selectAll" },
-          ],
-        },
-        {
-          label: "View",
-          submenu: [
-            { role: "reload" },
-            { role: "forceReload" },
-            { role: "toggleDevTools" },
-            { type: "separator" },
-            { role: "resetZoom" },
-            { role: "zoomIn" },
-            { role: "zoomOut" },
-            { type: "separator" },
-            { role: "togglefullscreen" },
-          ],
-        },
-        {
-          label: "Window",
-          submenu: [
-            { role: "minimize" },
-            { role: "zoom" },
-            { type: "separator" },
-            { role: "front" },
-          ],
-        },
-        {
-          role: "help",
-          submenu: [
-            {
-              label: "Learn More",
-              click: async () => {
-                const { shell } = await import("electron")
-                await shell.openExternal("https://21st.dev")
-              },
-            },
-          ],
-        },
-      ]
-      Menu.setApplicationMenu(Menu.buildFromTemplate(template))
-    }
-
-    // Set update state and rebuild menu
-    const setUpdateAvailable = (available: boolean, version?: string) => {
-      updateAvailable = available
-      availableVersion = version || null
-      buildMenu()
-    }
-
-    // Expose setUpdateAvailable globally for auto-updater
-    ;(global as any).__setUpdateAvailable = setUpdateAvailable
-
-    // Build initial menu
-    buildMenu()
-
-    // Initialize auth manager
-    authManager = new AuthManager(!!process.env.ELECTRON_RENDERER_URL)
-    console.log("[App] Auth manager initialized")
-
-    // Initialize analytics after auth manager so we can identify user
-    initAnalytics()
-
-    // If user already authenticated from previous session, identify them
-    if (authManager.isAuthenticated()) {
-      const user = authManager.getUser()
-      if (user) {
-        identify(user.id, { email: user.email })
-        console.log("[Analytics] User identified from saved session:", user.id)
-      }
-    }
-
-    // Track app opened (now with correct user ID if authenticated)
-    trackAppOpened()
-
-    // Set up callback to update cookie when token is refreshed
-    authManager.setOnTokenRefresh(async (authData) => {
-      console.log("[Auth] Token refreshed, updating cookie...")
-      const ses = session.fromPartition("persist:main")
-      try {
-        await ses.cookies.set({
-          url: getBaseUrl(),
-          name: "x-desktop-token",
-          value: authData.token,
-          expirationDate: Math.floor(
-            new Date(authData.expiresAt).getTime() / 1000,
-          ),
-          httpOnly: false,
-          secure: getBaseUrl().startsWith("https"),
-          sameSite: "lax" as const,
-        })
-        console.log("[Auth] Desktop token cookie updated after refresh")
-      } catch (err) {
-        console.error("[Auth] Failed to update cookie:", err)
-      }
-    })
+          },
+        ],
+      },
+      {
+        label: "Edit",
+        submenu: [
+          { role: "undo" },
+          { role: "redo" },
+          { type: "separator" },
+          { role: "cut" },
+          { role: "copy" },
+          { role: "paste" },
+          { role: "selectAll" },
+        ],
+      },
+      {
+        label: "View",
+        submenu: [
+          { role: "reload" },
+          { role: "forceReload" },
+          { role: "toggleDevTools" },
+          { type: "separator" },
+          { role: "resetZoom" },
+          { role: "zoomIn" },
+          { role: "zoomOut" },
+          { type: "separator" },
+          { role: "togglefullscreen" },
+        ],
+      },
+      {
+        label: "Window",
+        submenu: [
+          { role: "minimize" },
+          { role: "zoom" },
+          { type: "separator" },
+          { role: "front" },
+        ],
+      },
+    ]
+    const menu = Menu.buildFromTemplate(template)
+    Menu.setApplicationMenu(menu)
 
     // Initialize database
     try {
@@ -649,7 +342,6 @@ if (gotTheLock) {
   // Cleanup before quit
   app.on("before-quit", async () => {
     console.log("[App] Shutting down...")
-    await shutdownAnalytics()
     await closeDatabase()
   })
 

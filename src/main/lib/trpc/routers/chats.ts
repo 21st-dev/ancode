@@ -1,22 +1,22 @@
+import { and, desc, eq, inArray, isNotNull, isNull } from "drizzle-orm"
+import simpleGit from "simple-git"
 import { z } from "zod"
-import { router, publicProcedure } from "../index"
-import { getDatabase, chats, subChats, projects } from "../../db"
-import { eq, desc, isNull, isNotNull, inArray, and } from "drizzle-orm"
+import {
+  trackPRCreated,
+  trackWorkspaceArchived,
+  trackWorkspaceCreated,
+  trackWorkspaceDeleted,
+} from "../../analytics"
+import { chats, getDatabase, projects, subChats } from "../../db"
 import {
   createWorktreeForChat,
-  removeWorktree,
-  getWorktreeDiff,
   fetchGitHubPRStatus,
+  getWorktreeDiff,
+  removeWorktree,
 } from "../../git"
 import { execWithShellEnv } from "../../git/shell-env"
-import simpleGit from "simple-git"
-import { getAuthManager, getBaseUrl } from "../../../index"
-import {
-  trackWorkspaceCreated,
-  trackWorkspaceArchived,
-  trackWorkspaceDeleted,
-  trackPRCreated,
-} from "../../analytics"
+import { applyRollbackStash } from "../../git/stash"
+import { publicProcedure, router } from "../index"
 
 // Fallback to truncated user message if AI generation fails
 function getFallbackName(userMessage: string): string {
@@ -422,6 +422,78 @@ export const chatsRouter = router({
     }),
 
   /**
+   * Rollback to a specific message by sdkMessageUuid
+   * Handles both git state rollback and message truncation
+   * Git rollback is done first - if it fails, the whole operation aborts
+   */
+  rollbackToMessage: publicProcedure
+    .input(
+      z.object({
+        subChatId: z.string(),
+        sdkMessageUuid: z.string(),
+      }),
+    )
+    .mutation(async ({ input }): Promise<
+      | { success: false; error: string }
+      | { success: true; messages: any[] }
+    > => {
+      const db = getDatabase()
+
+      // 1. Get the sub-chat and its messages
+      const subChat = db
+        .select()
+        .from(subChats)
+        .where(eq(subChats.id, input.subChatId))
+        .get()
+      if (!subChat) {
+        return { success: false, error: "Sub-chat not found" }
+      }
+
+      // 2. Parse messages and find the target message by sdkMessageUuid
+      const messages = JSON.parse(subChat.messages || "[]")
+      const targetIndex = messages.findIndex(
+        (m: any) => m.metadata?.sdkMessageUuid === input.sdkMessageUuid,
+      )
+
+      if (targetIndex === -1) {
+        return { success: false, error: "Message not found" }
+      }
+
+      // 3. Get the parent chat for worktreePath
+      const chat = db
+        .select()
+        .from(chats)
+        .where(eq(chats.id, subChat.chatId))
+        .get()
+
+      // 4. Rollback git state first - if this fails, abort the whole operation
+      if (chat?.worktreePath) {
+        const res = await applyRollbackStash(chat.worktreePath, input.sdkMessageUuid)
+        if (!res) {
+          return { success: false, error: `Git rollback failed` }
+        }
+      }
+
+      // 5. Truncate messages to include up to and including the target message
+      const truncatedMessages = messages.slice(0, targetIndex + 1)
+
+      // 6. Update the sub-chat with truncated messages
+      db.update(subChats)
+        .set({
+          messages: JSON.stringify(truncatedMessages),
+          updatedAt: new Date(),
+        })
+        .where(eq(subChats.id, input.subChatId))
+        .returning()
+        .get()
+
+      return {
+        success: true,
+        messages: truncatedMessages,
+      }
+    }),
+
+  /**
    * Update sub-chat session ID (for Claude resume)
    */
   updateSubChatSession: publicProcedure
@@ -510,58 +582,14 @@ export const chatsRouter = router({
     }),
 
   /**
-   * Generate a name for a sub-chat using AI (calls web API)
-   * Always uses production API since it's a lightweight call
+   * Generate a name for a sub-chat
+   * Uses local truncation - no external API needed
    */
   generateSubChatName: publicProcedure
     .input(z.object({ userMessage: z.string() }))
-    .mutation(async ({ input }) => {
-      try {
-        const authManager = getAuthManager()
-        const token = await authManager.getValidToken()
-        // Always use production API for name generation
-        const apiUrl = "https://21st.dev"
-
-        console.log(
-          "[generateSubChatName] Calling API with token:",
-          token ? "present" : "missing",
-        )
-        console.log(
-          "[generateSubChatName] URL:",
-          `${apiUrl}/api/agents/sub-chat/generate-name`,
-        )
-
-        const response = await fetch(
-          `${apiUrl}/api/agents/sub-chat/generate-name`,
-          {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-              ...(token && { "X-Desktop-Token": token }),
-            },
-            body: JSON.stringify({ userMessage: input.userMessage }),
-          },
-        )
-
-        console.log("[generateSubChatName] Response status:", response.status)
-
-        if (!response.ok) {
-          const errorText = await response.text()
-          console.error(
-            "[generateSubChatName] API error:",
-            response.status,
-            errorText,
-          )
-          return { name: getFallbackName(input.userMessage) }
-        }
-
-        const data = await response.json()
-        console.log("[generateSubChatName] Generated name:", data.name)
-        return { name: data.name || getFallbackName(input.userMessage) }
-      } catch (error) {
-        console.error("[generateSubChatName] Error:", error)
-        return { name: getFallbackName(input.userMessage) }
-      }
+    .mutation(({ input }) => {
+      // Use local fallback name generation
+      return { name: getFallbackName(input.userMessage) }
     }),
 
   // ============ PR-related procedures ============

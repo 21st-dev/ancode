@@ -42,9 +42,6 @@ export function AgentsSkillsTab() {
         <div className="flex flex-col space-y-1.5 text-center sm:text-left">
           <div className="flex items-center gap-2">
             <h3 className="text-sm font-semibold text-foreground">Skills</h3>
-            <span className="px-1.5 py-0.5 text-[10px] font-medium rounded bg-muted text-muted-foreground">
-              Beta
-            </span>
           </div>
           <a
             href="https://code.claude.com/docs/en/skills"

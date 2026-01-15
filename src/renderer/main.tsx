@@ -1,10 +1,3 @@
-// Only initialize Sentry in production to avoid IPC errors in dev mode
-if (import.meta.env.PROD) {
-  import("@sentry/electron/renderer").then((Sentry) => {
-    Sentry.init()
-  })
-}
-
 import ReactDOM from "react-dom/client"
 import { App } from "./App"
 import "./styles/globals.css"

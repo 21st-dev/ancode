@@ -14,11 +14,14 @@ import { createPortal } from "react-dom"
 import {
   EyeOpenFilledIcon,
   ProfileIconFilled,
+  SkillIcon,
 } from "../../../components/ui/icons"
 import { AgentsAppearanceTab } from "./settings-tabs/agents-appearance-tab"
 import { AgentsProfileTab } from "./settings-tabs/agents-profile-tab"
 import { AgentsDebugTab } from "./settings-tabs/agents-debug-tab"
-import { Bug } from "lucide-react"
+import { AgentsSkillsTab } from "../../../components/dialogs/settings-tabs/agents-skills-tab"
+import { AgentsPreferencesTab } from "../../../components/dialogs/settings-tabs/agents-preferences-tab"
+import { Bug, SlidersHorizontal } from "lucide-react"
 
 // Check if we're in development mode
 const isDevelopment = process.env.NODE_ENV === "development"
@@ -40,6 +43,18 @@ const ALL_TABS = [
     label: "Appearance",
     icon: EyeOpenFilledIcon,
     description: "Theme settings",
+  },
+  {
+    id: "skills" as SettingsTab,
+    label: "Skills",
+    icon: SkillIcon,
+    description: "Manage Claude Code skills",
+  },
+  {
+    id: "preferences" as SettingsTab,
+    label: "Preferences",
+    icon: SlidersHorizontal,
+    description: "App preferences and behavior",
   },
   // Debug tab - only shown in development
   ...(isDevelopment
@@ -120,6 +135,10 @@ export function AgentsSettingsDialog({
         return <AgentsProfileTab />
       case "appearance":
         return <AgentsAppearanceTab />
+      case "skills":
+        return <AgentsSkillsTab />
+      case "preferences":
+        return <AgentsPreferencesTab />
       case "debug":
         return isDevelopment ? <AgentsDebugTab /> : null
       default:

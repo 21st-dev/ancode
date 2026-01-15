@@ -23,6 +23,7 @@ import {
   useAgentSubChatStore,
   type SubChatMeta,
 } from "../stores/sub-chat-store"
+const updateSubChatColor = useAgentSubChatStore.getState().updateSubChatColor
 import { PopoverTrigger } from "../../../components/ui/popover"
 import {
   Tooltip,
@@ -522,7 +523,9 @@ export function SubChatSelector({
                           isActive
                             ? "bg-muted text-foreground max-w-[180px]"
                             : "hover:bg-muted/80 max-w-[150px]",
+                          subChat.color && "border-l-2",
                         )}
+                        style={subChat.color ? { borderLeftColor: subChat.color } : undefined}
                       >
                         {/* Icon: loading spinner OR mode icon with badge (hide when editing) */}
                         {editingSubChatId !== subChat.id && (
@@ -633,6 +636,7 @@ export function SubChatSelector({
                       isPinned={isPinned}
                       onTogglePin={togglePinSubChat}
                       onRename={handleRenameClick}
+                      onSetColor={updateSubChatColor}
                       onArchive={onCloseTab}
                       onArchiveOthers={onCloseOtherTabs}
                       isOnlyChat={openSubChats.length === 1}

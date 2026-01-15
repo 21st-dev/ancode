@@ -3,8 +3,8 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <meta http-equiv="Content-Security-Policy" content="default-src 'self' 'unsafe-inline' 'unsafe-eval'; script-src 'self' 'unsafe-inline' 'unsafe-eval' https://unpkg.com https://*.posthog.com https://*.i.posthog.com; style-src 'self' 'unsafe-inline'; connect-src 'self' ws://localhost:* http://localhost:* https://unpkg.com https://21st.dev https://*.21st.dev https://*.posthog.com https://*.i.posthog.com; img-src 'self' data: blob: https:; media-src 'self' blob:;" />
-    <title>1Code</title>
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self' 'unsafe-inline' 'unsafe-eval'; script-src 'self' 'unsafe-inline' 'unsafe-eval' https://unpkg.com; style-src 'self' 'unsafe-inline'; connect-src 'self' ws://localhost:* http://localhost:* https://unpkg.com; img-src 'self' data: blob: https:; media-src 'self' blob:;" />
+    <title>2code</title>
     <!-- Prevent theme flash: detect system/stored theme before render -->
     <script>
       (function() {
@@ -68,7 +68,12 @@
     <!-- Loading indicator - separate from root so :empty works -->
     <div class="loading-container">
       <svg class="loading-logo" viewBox="0 0 400 400" fill="none" xmlns="http://www.w3.org/2000/svg">
-        <path fill-rule="evenodd" clip-rule="evenodd" d="M358.333 0C381.345 0 400 18.6548 400 41.6667V295.833C400 298.135 398.134 300 395.833 300H270.833C268.532 300 266.667 301.865 266.667 304.167V395.833C266.667 398.134 264.801 400 262.5 400H41.6667C18.6548 400 0 381.345 0 358.333V304.72C0 301.793 1.54269 299.081 4.05273 297.575L153.76 207.747C157.159 205.708 156.02 200.679 152.376 200.065L151.628 200H4.16667C1.86548 200 6.71103e-08 198.135 0 195.833V104.167C1.07376e-06 101.865 1.86548 100 4.16667 100H162.5C164.801 100 166.667 98.1345 166.667 95.8333V4.16667C166.667 1.86548 168.532 1.00666e-07 170.833 0H358.333ZM170.833 100C168.532 100 166.667 101.865 166.667 104.167V295.833C166.667 298.135 168.532 300 170.833 300H262.5C264.801 300 266.667 298.135 266.667 295.833V104.167C266.667 101.865 264.801 100 262.5 100H170.833Z" fill="#71717a"/>
+        <!-- Stylized "2" with integrated code brackets for 2code -->
+        <path d="M70 110C70 70.2355 102.235 38 142 38H258C297.765 38 330 70.2355 330 110V150C330 169.882 313.882 186 294 186H150L294 318H330C349.882 318 366 334.118 366 354H70V318H230L110 186V150C110 130.118 126.118 114 146 114H254C273.882 114 290 97.8823 290 78H146C126.118 78 110 94.1177 110 114H70Z" fill="var(--loading-logo)"/>
+        <!-- Opening bracket < -->
+        <path d="M34 200L88 148V176L58 200L88 224V252L34 200Z" fill="var(--loading-logo)" opacity="0.7"/>
+        <!-- Closing bracket > -->
+        <path d="M366 200L312 148V176L342 200L312 224V252L366 200Z" fill="var(--loading-logo)" opacity="0.7"/>
       </svg>
     </div>
     <script>

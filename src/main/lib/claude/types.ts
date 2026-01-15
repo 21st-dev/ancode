@@ -46,6 +46,7 @@ export type UIMessageChunk =
 
 export type MessageMetadata = {
   sessionId?: string
+  sdkMessageUuid?: string // SDK's message UUID for resumeSessionAt (rollback support)
   inputTokens?: number
   outputTokens?: number
   totalTokens?: number

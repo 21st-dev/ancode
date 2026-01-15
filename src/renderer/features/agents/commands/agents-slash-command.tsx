@@ -22,16 +22,34 @@ import {
   FileText,
   ShieldCheck,
   Eye,
+  Plug,
+  Apple,
+  Brain,
+  Globe,
+  Terminal,
+  GitBranch,
+  Package,
+  Wrench,
+  Server,
+  Monitor,
+  Gamepad2,
+  FolderGit,
+  Diff,
+  GitCommit,
+  GitPullRequest,
 } from "lucide-react"
 import type { SlashCommandOption, SlashTriggerPayload } from "./types"
 import {
   filterBuiltinCommands,
-  BUILTIN_SLASH_COMMANDS,
+  filterAllCommands,
+  CATEGORY_CONFIG,
+  ALL_SLASH_COMMANDS,
 } from "./builtin-commands"
 
 // Get icon component for a slash command
 function getCommandIcon(commandName: string) {
   switch (commandName) {
+    // Builtin commands
     case "clear":
       return IconChatBubble
     case "plan":
@@ -46,6 +64,40 @@ function getCommandIcon(commandName: string) {
       return FileText
     case "security-review":
       return ShieldCheck
+    // MCP commands
+    case "mcp":
+      return Plug
+    case "sosumi":
+      return Apple
+    case "memory":
+      return Brain
+    case "browser":
+      return Globe
+    // CLI commands
+    case "bash":
+      return Terminal
+    case "git":
+      return GitBranch
+    case "npm":
+      return Package
+    case "xcode":
+      return Wrench
+    // SSH commands
+    case "tower":
+      return Server
+    case "office":
+      return Monitor
+    case "deck":
+      return Gamepad2
+    // Repo commands
+    case "status":
+      return FolderGit
+    case "diff":
+      return Diff
+    case "commit":
+      return GitCommit
+    case "pr":
+      return GitPullRequest
     default:
       return IconChatBubble
   }
@@ -61,6 +113,8 @@ interface AgentsSlashCommandProps {
   repository?: string
   isPlanMode?: boolean
   disabledCommands?: string[]
+  /** Hide legacy repository-fetched commands, show only native commands */
+  showNativeOnly?: boolean
 }
 
 // Memoized to prevent re-renders when parent re-renders
@@ -74,6 +128,7 @@ export const AgentsSlashCommand = memo(function AgentsSlashCommand({
   repository,
   isPlanMode,
   disabledCommands,
+  showNativeOnly = true, // Default to native commands only
 }: AgentsSlashCommandProps) {
   const dropdownRef = useRef<HTMLDivElement>(null)
   const [selectedIndex, setSelectedIndex] = useState(0)
@@ -88,7 +143,7 @@ export const AgentsSlashCommand = memo(function AgentsSlashCommand({
     return () => clearTimeout(timer)
   }, [searchText])
 
-  // Fetch repository commands
+  // Fetch repository commands (disabled when showNativeOnly is true)
   const { data: repoCommands = [], isLoading } =
     api.github.getSlashCommands.useQuery(
       {
@@ -96,7 +151,7 @@ export const AgentsSlashCommand = memo(function AgentsSlashCommand({
         repository: repository!,
       },
       {
-        enabled: isOpen && !!teamId && !!repository,
+        enabled: isOpen && !!teamId && !!repository && !showNativeOnly,
         staleTime: 30_000, // Cache for 30 seconds
         refetchOnWindowFocus: false,
       },
@@ -147,13 +202,13 @@ export const AgentsSlashCommand = memo(function AgentsSlashCommand({
     [onSelect, onClose, teamId, repository, utils],
   )
 
-  // Combine builtin and repository commands, filtered by search
+  // Combine all commands and repository commands, filtered by search
   const options: SlashCommandOption[] = useMemo(() => {
-    let builtinFiltered = filterBuiltinCommands(debouncedSearchText)
+    let allFiltered = filterAllCommands(debouncedSearchText)
 
     // Hide /plan when already in Plan mode, hide /agent when already in Agent mode
     if (isPlanMode !== undefined) {
-      builtinFiltered = builtinFiltered.filter((cmd) => {
+      allFiltered = allFiltered.filter((cmd) => {
         if (isPlanMode && cmd.name === "plan") return false
         if (!isPlanMode && cmd.name === "agent") return false
         return true
@@ -162,7 +217,7 @@ export const AgentsSlashCommand = memo(function AgentsSlashCommand({
 
     // Filter out disabled commands
     if (disabledCommands && disabledCommands.length > 0) {
-      builtinFiltered = builtinFiltered.filter(
+      allFiltered = allFiltered.filter(
         (cmd) => !disabledCommands.includes(cmd.name),
       )
     }
@@ -178,8 +233,8 @@ export const AgentsSlashCommand = memo(function AgentsSlashCommand({
       )
     }
 
-    // Return builtin first, then repository commands
-    return [...builtinFiltered, ...repoFiltered]
+    // Return all commands first, then repository commands from repo
+    return [...allFiltered, ...repoFiltered]
   }, [debouncedSearchText, repoCommands, isPlanMode, disabledCommands])
 
   // Track previous values for smarter selection reset
@@ -308,12 +363,21 @@ export const AgentsSlashCommand = memo(function AgentsSlashCommand({
   const dropdownWidth = 320
   const itemHeight = 28  // h-7 = 28px to match file mention
   const headerHeight = 24
-  const builtinCount = filterBuiltinCommands(debouncedSearchText).length
-  const repoCount = options.length - builtinCount
-  const headersCount = (builtinCount > 0 ? 1 : 0) + (repoCount > 0 ? 1 : 0)
+
+  // Count commands by category for height calculation
+  const categoryCounts = {
+    builtin: options.filter((o) => o.category === "builtin").length,
+    mcp: options.filter((o) => o.category === "mcp").length,
+    cli: options.filter((o) => o.category === "cli").length,
+    ssh: options.filter((o) => o.category === "ssh").length,
+    repos: options.filter((o) => o.category === "repos").length,
+    repository: options.filter((o) => o.category === "repository").length,
+  }
+
+  const headersCount = Object.values(categoryCounts).filter((c) => c > 0).length
   const requestedHeight = Math.min(
     options.length * itemHeight + headersCount * headerHeight + 8,
-    200,  // Match file mention maxHeight
+    280,  // Increased to accommodate more sections
   )
   const gap = 8
 
@@ -362,12 +426,63 @@ export const AgentsSlashCommand = memo(function AgentsSlashCommand({
   )
   const transformY = placeAbove ? "translateY(-100%)" : "translateY(0)"
 
-  // Split options into builtin and repository
-  const builtinOptions = options.filter((o) => o.category === "builtin")
-  const repoOptions = options.filter((o) => o.category === "repository")
+  // Split options into categories in display order
+  const categoryOrder: SlashCommandOption["category"][] = [
+    "builtin",
+    "mcp",
+    "cli",
+    "ssh",
+    "repos",
+    "repository",
+  ]
+
+  const optionsByCategory = categoryOrder.reduce(
+    (acc, category) => {
+      acc[category] = options.filter((o) => o.category === category)
+      return acc
+    },
+    {} as Record<SlashCommandOption["category"], SlashCommandOption[]>,
+  )
 
   // Calculate global index for each item
   let globalIndex = 0
+
+  // Helper to render a command item
+  const renderCommandItem = (option: SlashCommandOption, isFirst: boolean) => {
+    const currentIndex = globalIndex++
+    const isSelected = selectedIndex === currentIndex
+    const CommandIcon = getCommandIcon(option.name)
+    return (
+      <div
+        key={option.id}
+        data-option-index={currentIndex}
+        onMouseDown={(e) => {
+          e.preventDefault()
+          e.stopPropagation()
+          handleSelect(option)
+        }}
+        onMouseEnter={() => setSelectedIndex(currentIndex)}
+        className={cn(
+          "group inline-flex w-[calc(100%-8px)] mx-1 items-center whitespace-nowrap outline-none",
+          "h-7 px-1.5 justify-start text-xs rounded-md",
+          "transition-colors cursor-pointer select-none gap-1.5",
+          isSelected
+            ? "dark:bg-neutral-800 bg-accent text-foreground"
+            : "text-muted-foreground dark:hover:bg-neutral-800 hover:bg-accent hover:text-foreground",
+        )}
+      >
+        <CommandIcon className="h-3 w-3 text-muted-foreground flex-shrink-0" />
+        <span className="flex items-center gap-1 w-full min-w-0">
+          <span className="shrink-0 whitespace-nowrap font-medium">
+            {option.command}
+          </span>
+          <span className="text-muted-foreground flex-1 min-w-0 ml-2 overflow-hidden text-[10px] truncate">
+            {option.description}
+          </span>
+        </span>
+      </div>
+    )
+  }
 
   return (
     <div
@@ -382,100 +497,32 @@ export const AgentsSlashCommand = memo(function AgentsSlashCommand({
         transform: transformY,
       }}
     >
-      {/* Builtin commands section */}
-      {builtinOptions.length > 0 && (
-        <>
-          <div className="px-2.5 py-1.5 mx-1 text-xs font-medium text-muted-foreground">
-            Commands
-          </div>
-          {builtinOptions.map((option) => {
-            const currentIndex = globalIndex++
-            const isSelected = selectedIndex === currentIndex
-            const CommandIcon = getCommandIcon(option.name)
-            return (
-              <div
-                key={option.id}
-                data-option-index={currentIndex}
-                onMouseDown={(e) => {
-                  e.preventDefault()
-                  e.stopPropagation()
-                  handleSelect(option)
-                }}
-                onMouseEnter={() => setSelectedIndex(currentIndex)}
-                className={cn(
-                  "group inline-flex w-[calc(100%-8px)] mx-1 items-center whitespace-nowrap outline-none",
-                  "h-7 px-1.5 justify-start text-xs rounded-md",
-                  "transition-colors cursor-pointer select-none gap-1.5",
-                  isSelected
-                    ? "dark:bg-neutral-800 bg-accent text-foreground"
-                    : "text-muted-foreground dark:hover:bg-neutral-800 hover:bg-accent hover:text-foreground",
-                )}
-              >
-                <CommandIcon className="h-3 w-3 text-muted-foreground flex-shrink-0" />
-                <span className="flex items-center gap-1 w-full min-w-0">
-                  <span className="shrink-0 whitespace-nowrap font-medium">
-                    {option.command}
-                  </span>
-                  <span
-                    className="text-muted-foreground flex-1 min-w-0 ml-2 overflow-hidden text-[10px] truncate"
-                  >
-                    {option.description}
-                  </span>
-                </span>
-              </div>
-            )
-          })}
-        </>
-      )}
+      {/* Render all category sections */}
+      {categoryOrder.map((category, categoryIdx) => {
+        const categoryOptions = optionsByCategory[category]
+        if (categoryOptions.length === 0) return null
 
-      {/* Repository commands section */}
-      {repoOptions.length > 0 && (
-        <>
-          <div className="px-2.5 py-1.5 mx-1 text-xs font-medium text-muted-foreground mt-1">
-            From repository
-          </div>
-          {repoOptions.map((option) => {
-            const currentIndex = globalIndex++
-            const isSelected = selectedIndex === currentIndex
-            const CommandIcon = getCommandIcon(option.name)
-            return (
-              <div
-                key={option.id}
-                data-option-index={currentIndex}
-                onMouseDown={(e) => {
-                  e.preventDefault()
-                  e.stopPropagation()
-                  handleSelect(option)
-                }}
-                onMouseEnter={() => setSelectedIndex(currentIndex)}
-                className={cn(
-                  "group inline-flex w-[calc(100%-8px)] mx-1 items-center whitespace-nowrap outline-none",
-                  "h-7 px-1.5 justify-start text-xs rounded-md",
-                  "transition-colors cursor-pointer select-none gap-1.5",
-                  isSelected
-                    ? "dark:bg-neutral-800 bg-accent text-foreground"
-                    : "text-muted-foreground dark:hover:bg-neutral-800 hover:bg-accent hover:text-foreground",
-                )}
-              >
-                <CommandIcon className="h-3 w-3 text-muted-foreground flex-shrink-0" />
-                <span className="flex items-center gap-1 w-full min-w-0">
-                  <span className="shrink-0 whitespace-nowrap font-medium">
-                    {option.command}
-                  </span>
-                  <span
-                    className="text-muted-foreground flex-1 min-w-0 ml-2 overflow-hidden text-[10px] truncate"
-                  >
-                    {option.description}
-                  </span>
-                </span>
-              </div>
-            )
-          })}
-        </>
-      )}
+        const config = CATEGORY_CONFIG[category]
+        const isFirstSection = categoryIdx === 0 ||
+          categoryOrder.slice(0, categoryIdx).every(c => optionsByCategory[c].length === 0)
 
-      {/* Loading state for repository commands */}
-      {isLoading && (
+        return (
+          <div key={category}>
+            <div className={cn(
+              "px-2.5 py-1.5 mx-1 text-xs font-medium text-muted-foreground",
+              !isFirstSection && "mt-1"
+            )}>
+              {config.label}
+            </div>
+            {categoryOptions.map((option, idx) =>
+              renderCommandItem(option, idx === 0)
+            )}
+          </div>
+        )
+      })}
+
+      {/* Loading state for repository commands (only when not native-only mode) */}
+      {!showNativeOnly && isLoading && (
         <div className="flex items-center gap-1.5 h-7 px-1.5 mx-1 text-xs text-muted-foreground">
           <IconSpinner className="h-3.5 w-3.5" />
           <span>Loading commands...</span>

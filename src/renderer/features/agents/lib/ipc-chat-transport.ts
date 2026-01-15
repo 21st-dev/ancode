@@ -1,8 +1,6 @@
-import * as Sentry from "@sentry/electron/renderer"
 import type { ChatTransport, UIMessage } from "ai"
 import { toast } from "sonner"
 import {
-  agentsLoginModalOpenAtom,
   extendedThinkingEnabledAtom,
 } from "../../../lib/atoms"
 import { appStore } from "../../../lib/jotai-store"
@@ -10,7 +8,6 @@ import { trpcClient } from "../../../lib/trpc"
 import {
   lastSelectedModelIdAtom,
   MODEL_ID_MAP,
-  pendingAuthRetryMessageAtom,
   pendingUserQuestionsAtom,
 } from "../atoms"
 import { useAgentSubChatStore } from "../stores/sub-chat-store"
@@ -174,18 +171,16 @@ export class IPCChatTransport implements ChatTransport<UIMessage> {
                 }
               }
 
-              // Handle authentication errors - show Claude login modal
+              // Handle authentication errors - show toast prompting CLI login
               if (chunk.type === "auth-error") {
-                // Store the failed message for retry after successful auth
-                // readyToRetry=false prevents immediate retry - modal sets it to true on OAuth success
-                appStore.set(pendingAuthRetryMessageAtom, {
-                  subChatId: this.config.subChatId,
-                  prompt,
-                  ...(images.length > 0 && { images }),
-                  readyToRetry: false,
+                toast.error("Not logged in", {
+                  description: "Run 'claude login' in your terminal to authenticate",
+                  duration: 8000,
+                  action: {
+                    label: "Copy command",
+                    onClick: () => navigator.clipboard.writeText("claude login"),
+                  },
                 })
-                // Show the Claude Code login modal
-                appStore.set(agentsLoginModalOpenAtom, true)
                 // Use controller.error() instead of controller.close() so that
                 // the SDK Chat properly resets status from "streaming" to "ready"
                 // This allows user to retry sending messages after failed auth
@@ -193,25 +188,9 @@ export class IPCChatTransport implements ChatTransport<UIMessage> {
                 return
               }
 
-              // Handle errors - show toast to user FIRST before anything else
+              // Handle errors - show toast to user
               if (chunk.type === "error") {
-                // Track error in Sentry
                 const category = chunk.debugInfo?.category || "UNKNOWN"
-                Sentry.captureException(
-                  new Error(chunk.errorText || "Claude transport error"),
-                  {
-                    tags: {
-                      errorCategory: category,
-                      mode: currentMode,
-                    },
-                    extra: {
-                      debugInfo: chunk.debugInfo,
-                      cwd: this.config.cwd,
-                      chatId: this.config.chatId,
-                      subChatId: this.config.subChatId,
-                    },
-                  },
-                )
 
                 // Show toast based on error category
                 const config = ERROR_TOAST_CONFIG[category]
@@ -255,19 +234,6 @@ export class IPCChatTransport implements ChatTransport<UIMessage> {
             },
             onError: (err: Error) => {
               console.log(`[SD] R:ERROR sub=${subId} n=${chunkCount} last=${lastChunkType} err=${err.message}`)
-              // Track transport errors in Sentry
-              Sentry.captureException(err, {
-                tags: {
-                  errorCategory: "TRANSPORT_ERROR",
-                  mode: currentMode,
-                },
-                extra: {
-                  cwd: this.config.cwd,
-                  chatId: this.config.chatId,
-                  subChatId: this.config.subChatId,
-                },
-              })
-
               controller.error(err)
             },
             onComplete: () => {

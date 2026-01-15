@@ -5,12 +5,10 @@ import {
   ipcMain,
   app,
   clipboard,
-  session,
 } from "electron"
 import { join } from "path"
 import { createIPCHandler } from "trpc-electron/main"
 import { createAppRouter } from "../lib/trpc/routers"
-import { getAuthManager, handleAuthCode, getBaseUrl } from "../index"
 
 // Register IPC handlers for window operations (only once)
 let ipcHandlersRegistered = false
@@ -35,8 +33,7 @@ function registerIpcHandlers(getWindow: () => BrowserWindow | null): void {
     },
   )
 
-  // API base URL for fetch requests
-  ipcMain.handle("app:get-api-base-url", () => getBaseUrl())
+  // No external API needed - 2code runs locally with bundled Claude Code
 
   // Window controls
   ipcMain.handle("window:minimize", () => getWindow()?.minimize())
@@ -128,80 +125,16 @@ function registerIpcHandlers(getWindow: () => BrowserWindow | null): void {
   )
   ipcMain.handle("clipboard:read", () => clipboard.readText())
 
-  // Auth IPC handlers
-  const validateSender = (event: Electron.IpcMainInvokeEvent): boolean => {
-    const senderUrl = event.sender.getURL()
-    try {
-      const parsed = new URL(senderUrl)
-      if (parsed.protocol === "file:") return true
-      const hostname = parsed.hostname.toLowerCase()
-      const trusted = ["21st.dev", "localhost", "127.0.0.1"]
-      return trusted.some((h) => hostname === h || hostname.endsWith(`.${h}`))
-    } catch {
-      return false
-    }
-  }
-
-  ipcMain.handle("auth:get-user", (event) => {
-    if (!validateSender(event)) return null
-    return getAuthManager().getUser()
-  })
-
-  ipcMain.handle("auth:is-authenticated", (event) => {
-    if (!validateSender(event)) return false
-    return getAuthManager().isAuthenticated()
-  })
-
-  ipcMain.handle("auth:logout", async (event) => {
-    if (!validateSender(event)) return
-    getAuthManager().logout()
-    // Clear cookie from persist:main partition
-    const ses = session.fromPartition("persist:main")
-    try {
-      await ses.cookies.remove(getBaseUrl(), "x-desktop-token")
-      console.log("[Auth] Cookie cleared on logout")
-    } catch (err) {
-      console.error("[Auth] Failed to clear cookie:", err)
-    }
-    showLoginPage()
-  })
-
-  ipcMain.handle("auth:start-flow", (event) => {
-    if (!validateSender(event)) return
-    getAuthManager().startAuthFlow(getWindow())
-  })
-
-  ipcMain.handle("auth:submit-code", async (event, code: string) => {
-    if (!validateSender(event)) return
-    if (!code || typeof code !== "string") {
-      getWindow()?.webContents.send("auth:error", "Invalid authorization code")
-      return
-    }
-    await handleAuthCode(code)
-  })
+  // Auth stubs - 2code uses Claude Code CLI auth, not 21st.dev OAuth
+  ipcMain.handle("auth:get-user", () => null)
+  ipcMain.handle("auth:is-authenticated", () => false)
+  ipcMain.handle("auth:logout", () => {})
+  ipcMain.handle("auth:start-flow", () => {})
+  ipcMain.handle("auth:submit-code", () => {})
 }
 
 // Current window reference
 let currentWindow: BrowserWindow | null = null
-
-/**
- * Show login page
- */
-export function showLoginPage(): void {
-  if (!currentWindow) return
-  console.log("[Main] Showing login page")
-
-  // In dev mode, login.html is in src/renderer, not out/renderer
-  if (process.env.ELECTRON_RENDERER_URL) {
-    // Dev mode: load from source directory
-    const loginPath = join(app.getAppPath(), "src/renderer/login.html")
-    console.log("[Main] Loading login from:", loginPath)
-    currentWindow.loadFile(loginPath)
-  } else {
-    // Production: load from built output
-    currentWindow.loadFile(join(__dirname, "../renderer/login.html"))
-  }
-}
 
 // Singleton IPC handler (prevents duplicate handlers on macOS window recreation)
 let ipcHandler: ReturnType<typeof createIPCHandler> | null = null
@@ -227,7 +160,7 @@ export function createMainWindow(): BrowserWindow {
     minWidth: 500, // Allow narrow mobile-like mode
     minHeight: 600,
     show: false,
-    title: "1Code",
+    title: "2code",
     backgroundColor: nativeTheme.shouldUseDarkColors ? "#09090b" : "#ffffff",
     // hiddenInset shows native traffic lights inset in the window
     // Start with traffic lights off-screen (custom ones shown in normal mode)
@@ -308,35 +241,15 @@ export function createMainWindow(): BrowserWindow {
     currentWindow = null
   })
 
-  // Load the renderer - check auth first
+  // Load the renderer - no auth required, load app directly
   const devServerUrl = process.env.ELECTRON_RENDERER_URL
-  const authManager = getAuthManager()
 
-  console.log("[Main] ========== AUTH CHECK ==========")
-  console.log("[Main] AuthManager exists:", !!authManager)
-  const isAuth = authManager.isAuthenticated()
-  console.log("[Main] isAuthenticated():", isAuth)
-  const user = authManager.getUser()
-  console.log("[Main] getUser():", user ? user.email : "null")
-  console.log("[Main] ================================")
-
-  if (isAuth) {
-    console.log("[Main] ✓ User authenticated, loading app")
-    if (devServerUrl) {
-      window.loadURL(devServerUrl)
-      window.webContents.openDevTools()
-    } else {
-      window.loadFile(join(__dirname, "../renderer/index.html"))
-    }
+  console.log("[Main] Loading 2code app...")
+  if (devServerUrl) {
+    window.loadURL(devServerUrl)
+    window.webContents.openDevTools()
   } else {
-    console.log("[Main] ✗ Not authenticated, showing login page")
-    // In dev mode, login.html is in src/renderer
-    if (devServerUrl) {
-      const loginPath = join(app.getAppPath(), "src/renderer/login.html")
-      window.loadFile(loginPath)
-    } else {
-      window.loadFile(join(__dirname, "../renderer/login.html"))
-    }
+    window.loadFile(join(__dirname, "../renderer/index.html"))
   }
 
   // Ensure traffic lights are visible after page load (covers reload/Cmd+R case)

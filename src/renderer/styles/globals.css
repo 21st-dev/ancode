@@ -6,6 +6,12 @@
 
 @layer base {
   :root {
+    /* Font customization */
+    --editor-font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+    --editor-font-size: 13px;
+    --ui-font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    --ui-font-size: 13px;
+
     --background: 0 0% 100%;
     --foreground: 240 10% 3.9%;
     --card: 0 0% 100%;
@@ -79,9 +85,17 @@
   }
   body {
     @apply bg-background text-foreground;
+    font-family: var(--ui-font-family);
+    font-size: var(--ui-font-size);
     font-feature-settings:
       "rlig" 1,
       "calt" 1;
+  }
+
+  /* Apply editor/monospace font to code elements */
+  code, pre, kbd, samp, .font-mono, [class*="monospace"] {
+    font-family: var(--editor-font-family);
+    font-size: var(--editor-font-size);
   }
 }
 
@@ -187,8 +201,8 @@
 
 /* Terminal link popup */
 .xterm-link-popup {
-  font-family: var(--font-geist-mono), "Geist Mono", ui-monospace, monospace;
-  font-size: 12px;
+  font-family: var(--editor-font-family), var(--font-geist-mono), "Geist Mono", ui-monospace, monospace;
+  font-size: var(--editor-font-size);
   line-height: 1.4;
   padding: 4px 8px;
   border-radius: 6px;

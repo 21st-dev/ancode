@@ -312,6 +312,9 @@ export function AgentsSidebar({
   const { data: archivedChats } = trpc.chats.listArchived.useQuery({})
   const archivedChatsCount = archivedChats?.length ?? 0
 
+  // Fetch system info for version display
+  const { data: systemInfo } = trpc.debug.getSystemInfo.useQuery()
+
   // Get utils outside of callbacks - hooks must be called at top level
   const utils = trpc.useUtils()
 
@@ -983,7 +986,7 @@ export function AgentsSidebar({
                       </div>
                       <div className="min-w-0 flex-1 overflow-hidden">
                         <div className="text-sm font-medium text-foreground truncate">
-                          1Code
+                          2code
                         </div>
                       </div>
                       <ChevronDown
@@ -1995,10 +1998,10 @@ export function AgentsSidebar({
               <div className="flex-1" />
             </div>
 
-            {/* Premium Support Button */}
+            {/* Share Feedback Button */}
             <ButtonCustom
               onClick={() =>
-                window.open("https://discord.gg/utff7AdDaV", "_blank")
+                window.open("https://discord.gg/8ektTZGnj4", "_blank")
               }
               variant="outline"
               size="sm"
@@ -2007,8 +2010,30 @@ export function AgentsSidebar({
                 isMobileFullscreen ? "h-10" : "h-7",
               )}
             >
-              <span className="text-sm font-medium">Premium support</span>
+              <span className="text-sm font-medium">Feedback</span>
             </ButtonCustom>
+
+            {/* Version Info */}
+            {systemInfo && (
+              <Tooltip delayDuration={500}>
+                <TooltipTrigger asChild>
+                  <div className="flex items-center justify-center gap-1.5 text-[10px] text-muted-foreground/60 hover:text-muted-foreground transition-colors cursor-default select-none">
+                    <span>2code v{systemInfo.version}</span>
+                    <span>•</span>
+                    <span>Claude Code {systemInfo.claudeCodeVersion}</span>
+                  </div>
+                </TooltipTrigger>
+                <TooltipContent side="top" className="text-xs">
+                  <div className="flex flex-col gap-0.5">
+                    <span>2code: v{systemInfo.version}</span>
+                    <span>Claude Code: {systemInfo.claudeCodeVersion}</span>
+                    <span className="text-muted-foreground">
+                      {systemInfo.platform} {systemInfo.arch}
+                    </span>
+                  </div>
+                </TooltipContent>
+              </Tooltip>
+            )}
           </motion.div>
         )}
       </AnimatePresence>

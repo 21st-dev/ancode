@@ -16,7 +16,6 @@ import {
   TooltipTrigger,
 } from "../../../components/ui/tooltip"
 import { getToolStatus } from "./agent-tool-registry"
-import { AgentToolInterrupted } from "./agent-tool-interrupted"
 import { getFileIconByExtension } from "../mentions/agents-file-mention"
 import { agentsDiffSidebarOpenAtom, agentsFocusedDiffFileAtom } from "../atoms"
 import { cn } from "../../../lib/utils"
@@ -196,7 +195,7 @@ export const AgentEditTool = memo(function AgentEditTool({
   chatStatus,
 }: AgentEditToolProps) {
   const [isOutputExpanded, setIsOutputExpanded] = useState(false)
-  const { isPending, isInterrupted } = getToolStatus(part, chatStatus)
+  const { isPending } = getToolStatus(part, chatStatus)
   const codeTheme = useCodeTheme()
 
   // Atoms for opening diff sidebar and focusing on file
@@ -392,10 +391,6 @@ export const AgentEditTool = memo(function AgentEditTool({
   // Show minimal view (no background/border) until we have the full file path
   // This prevents showing a large empty component while path is being streamed
   if (!filePath) {
-    // If interrupted without file path, show interrupted state
-    if (isInterrupted) {
-      return <AgentToolInterrupted toolName={isWriteMode ? "Write" : "Edit"} />
-    }
     return (
       <div className="flex items-center gap-1.5 px-2 py-0.5">
         <span className="text-xs text-muted-foreground">

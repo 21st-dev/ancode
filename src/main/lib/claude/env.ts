@@ -223,6 +223,76 @@ export function clearClaudeEnvCache(): void {
 }
 
 /**
+ * Set up an isolated config directory that inherits user config via symlinks.
+ * This allows session isolation per subChat while preserving user's skills, hooks, commands, etc.
+ *
+ * User config files are symlinked:
+ * - settings.json (hooks, permissions)
+ * - CLAUDE.md (user instructions)
+ * - skills/ (user skills directory)
+ * - commands/ (user commands directory)
+ *
+ * Session-specific data stays isolated in the subChat directory.
+ */
+export function setupIsolatedConfigDir(isolatedConfigDir: string): void {
+  const userConfigDir = path.join(os.homedir(), ".claude")
+
+  // Create isolated config directory if needed
+  if (!fs.existsSync(isolatedConfigDir)) {
+    fs.mkdirSync(isolatedConfigDir, { recursive: true })
+  }
+
+  // Files/directories to symlink from user config
+  const configItems = [
+    "settings.json",
+    "settings.local.json",
+    "CLAUDE.md",
+    "skills",
+    "commands",
+  ]
+
+  for (const item of configItems) {
+    const sourcePath = path.join(userConfigDir, item)
+    const targetPath = path.join(isolatedConfigDir, item)
+
+    // Skip if source doesn't exist
+    if (!fs.existsSync(sourcePath)) {
+      continue
+    }
+
+    // Skip if target already exists (symlink or file)
+    if (fs.existsSync(targetPath)) {
+      // Check if it's a symlink pointing to the correct location
+      try {
+        const stats = fs.lstatSync(targetPath)
+        if (stats.isSymbolicLink()) {
+          const linkTarget = fs.readlinkSync(targetPath)
+          if (linkTarget === sourcePath) {
+            // Already correct symlink
+            continue
+          }
+          // Wrong symlink, remove it
+          fs.unlinkSync(targetPath)
+        } else {
+          // Regular file/directory, skip to avoid overwriting
+          continue
+        }
+      } catch {
+        continue
+      }
+    }
+
+    // Create symlink
+    try {
+      fs.symlinkSync(sourcePath, targetPath)
+      console.log(`[claude-env] Symlinked ${item} from user config`)
+    } catch (error) {
+      console.error(`[claude-env] Failed to symlink ${item}:`, error)
+    }
+  }
+}
+
+/**
  * Debug: Log key environment variables
  */
 export function logClaudeEnv(

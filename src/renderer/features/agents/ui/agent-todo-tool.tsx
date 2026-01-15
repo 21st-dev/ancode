@@ -175,19 +175,11 @@ export const AgentTodoTool = memo(function AgentTodoTool({
     () => currentTodosAtomFamily(subChatId || "default"),
     [subChatId],
   )
-  const [todoState, setTodoState] = useAtom(todosAtom)
-  const syncedTodos = todoState.todos
-  const creationToolCallId = todoState.creationToolCallId
+  const [syncedTodos, setSyncedTodos] = useAtom(todosAtom)
 
   // Get todos from input or output.newTodos
   const rawOldTodos = part.output?.oldTodos || []
   const newTodos = part.input?.todos || part.output?.newTodos || []
-
-  // Determine if this is the creation tool call
-  // A tool call is the "creation" if:
-  // 1. It's the first tool call (creationToolCallId is null) OR
-  // 2. It matches the stored creationToolCallId
-  const isCreationToolCall = creationToolCallId === null || creationToolCallId === part.toolCallId
 
   // Use syncedTodos as fallback for oldTodos when output hasn't arrived yet
   // This prevents flickering: without this, when a new tool call arrives with
@@ -199,14 +191,14 @@ export const AgentTodoTool = memo(function AgentTodoTool({
     if (rawOldTodos.length > 0) {
       return rawOldTodos
     }
-    // Only use syncedTodos if this is NOT the creation tool call
-    // This prevents the bug where the creation tool call would see its own todos as "old"
-    if (syncedTodos.length > 0 && !isCreationToolCall) {
+    // If we have syncedTodos and this isn't the first tool call, use syncedTodos
+    // This handles the case where output hasn't arrived yet
+    if (syncedTodos.length > 0) {
       return syncedTodos
     }
-    // Otherwise this is truly a creation (first tool call, or same tool call that set syncedTodos)
+    // Otherwise this is truly a creation (first tool call)
     return []
-  }, [rawOldTodos, syncedTodos, isCreationToolCall])
+  }, [rawOldTodos, syncedTodos])
 
   // Detect what changed - memoize to avoid recalculation
   const changes = useMemo(
@@ -222,18 +214,9 @@ export const AgentTodoTool = memo(function AgentTodoTool({
   // This keeps the creation tool in sync with all updates
   useEffect(() => {
     if (newTodos.length > 0) {
-      // Only update if:
-      // 1. This is the creation tool call (always update), OR
-      // 2. newTodos has at least as many items as syncedTodos (prevents partial streaming overwrites)
-      // During streaming, JSON parsing may return partial arrays, causing temporary drops in length
-      const shouldUpdate = isCreationToolCall || newTodos.length >= syncedTodos.length
-
-      if (shouldUpdate) {
-        const newCreationId = creationToolCallId === null ? part.toolCallId : creationToolCallId
-        setTodoState({ todos: newTodos, creationToolCallId: newCreationId })
-      }
+      setSyncedTodos(newTodos)
     }
-  }, [newTodos, setTodoState, creationToolCallId, part.toolCallId, isCreationToolCall, syncedTodos.length])
+  }, [newTodos, setSyncedTodos])
 
   // Auto-expand on creation
   useEffect(() => {
@@ -242,20 +225,12 @@ export const AgentTodoTool = memo(function AgentTodoTool({
     }
   }, [changes.type])
 
-  // Check if we're still streaming input (data not yet complete)
-  const isStreaming = part.state === "input-streaming"
-
-  // Early streaming state - show placeholder
+  // Early streaming state - show "Updating to-do list..." with shimmer
+  // Only show shimmer when actively streaming (isPending), otherwise show static text
   if (
     newTodos.length === 0 ||
-    (isStreaming && !part.input?.todos)
+    (part.state === "input-streaming" && !part.input?.todos)
   ) {
-    // For update tool calls (not creation), return null to avoid showing placeholder
-    if (!isCreationToolCall) {
-      return null
-    }
-
-    // For creation tool calls, show the placeholder
     return (
       <div className="flex items-start gap-1.5 py-0.5 rounded-md px-2">
         <div className="flex-1 min-w-0 flex items-center gap-1.5">
@@ -267,33 +242,11 @@ export const AgentTodoTool = memo(function AgentTodoTool({
                   duration={1.2}
                   className="inline-flex items-center text-xs leading-none h-4 m-0"
                 >
-                  Creating to-do list...
+                  Updating to-do list...
                 </TextShimmer>
               ) : (
-                "Creating to-do list..."
+                "Updating to-do list..."
               )}
-            </span>
-          </div>
-        </div>
-      </div>
-    )
-  }
-
-  // For UPDATE tool calls while streaming, show "Updating..." placeholder
-  // This prevents showing intermediate/incorrect states during streaming
-  if (!isCreationToolCall && isStreaming) {
-    return (
-      <div className="flex items-start gap-1.5 py-0.5 rounded-md px-2">
-        <div className="flex-1 min-w-0 flex items-center gap-1.5">
-          <div className="text-xs text-muted-foreground flex items-center gap-1.5 min-w-0">
-            <span className="font-medium whitespace-nowrap flex-shrink-0">
-              <TextShimmer
-                as="span"
-                duration={1.2}
-                className="inline-flex items-center text-xs leading-none h-4 m-0"
-              >
-                Updating todos...
-              </TextShimmer>
             </span>
           </div>
         </div>
@@ -493,15 +446,9 @@ export const AgentTodoTool = memo(function AgentTodoTool({
               <span
                 className={cn(
                   "text-xs truncate",
-                  // During streaming (isPending), use consistent muted color for all items
-                  // to avoid jarring color changes as items stream in
-                  isPending
-                    ? "text-muted-foreground"
-                    : todo.status === "completed"
-                      ? "line-through text-muted-foreground"
-                      : todo.status === "pending"
-                        ? "text-muted-foreground"
-                        : "text-foreground",
+                  todo.status === "completed" &&
+                    "line-through text-muted-foreground",
+                  todo.status === "pending" && "text-muted-foreground",
                 )}
               >
                 {todo.content}

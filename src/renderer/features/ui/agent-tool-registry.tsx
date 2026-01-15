@@ -1,24 +1,24 @@
 import {
-  SearchIcon,
-  EyeIcon,
-  IconEditFile,
-  PlanningIcon,
-  WriteFileIcon,
-  CustomTerminalIcon,
-  GlobeIcon,
-  SparklesIcon,
-} from "../../icons"
-import {
+  Database,
+  FileCode2,
   FolderSearch,
   GitBranch,
   ListTodo,
   LogOut,
-  FileCode2,
+  Server,
   Terminal,
   XCircle,
-  Server,
-  Database,
 } from "lucide-react"
+import {
+  CustomTerminalIcon,
+  EyeIcon,
+  GlobeIcon,
+  IconEditFile,
+  PlanningIcon,
+  SearchIcon,
+  SparklesIcon,
+  WriteFileIcon,
+} from "../../icons"
 
 export type ToolVariant = "simple" | "collapsible"
 
@@ -31,7 +31,7 @@ export interface ToolMeta {
 
 export function getToolStatus(part: any, chatStatus?: string) {
   const basePending =
-    part.state !== "output-available" && part.state !== "output-error"
+    part.state !== "output-available" && part.state !== "output-error" && part.state !== "result"
   const isError =
     part.state === "output-error" ||
     (part.state === "output-available" && part.output?.success === false)
@@ -311,8 +311,7 @@ export const AgentToolRegistry: Record<string, ToolMeta> = {
   "tool-ExitPlanMode": {
     icon: LogOut,
     title: (part) => {
-      const isPending =
-        part.state !== "output-available" && part.state !== "output-error"
+      const { isPending } = getToolStatus(part)
       return isPending ? "Finishing plan" : "Plan complete"
     },
     subtitle: () => "",

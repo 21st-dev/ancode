@@ -1,27 +1,27 @@
 "use client"
 
 import {
-  SearchIcon,
-  EyeIcon,
-  IconEditFile,
-  PlanningIcon,
-  WriteFileIcon,
-  CustomTerminalIcon,
-  GlobeIcon,
-  SparklesIcon,
-} from "../../../components/ui/icons"
-import {
+  Database,
+  FileCode2,
   FolderSearch,
   GitBranch,
   ListTodo,
   LogOut,
-  FileCode2,
+  Minimize2,
+  Server,
   Terminal,
   XCircle,
-  Server,
-  Database,
-  Minimize2,
 } from "lucide-react"
+import {
+  CustomTerminalIcon,
+  EyeIcon,
+  GlobeIcon,
+  IconEditFile,
+  PlanningIcon,
+  SearchIcon,
+  SparklesIcon,
+  WriteFileIcon,
+} from "../../../components/ui/icons"
 
 export type ToolVariant = "simple" | "collapsible"
 
@@ -34,17 +34,15 @@ export interface ToolMeta {
 
 export function getToolStatus(part: any, chatStatus?: string) {
   const basePending =
-    part.state !== "output-available" && part.state !== "output-error"
+    part.state !== "output-available" && part.state !== "output-error" && part.state !== "result"
   const isError =
     part.state === "output-error" ||
     (part.state === "output-available" && part.output?.success === false)
   const isSuccess = part.state === "output-available" && !isError
   // Critical: if chat stopped streaming, pending tools should show as complete
   const isPending = basePending && chatStatus === "streaming"
-  // Tool was in progress but chat stopped streaming (user interrupted)
-  const isInterrupted = basePending && chatStatus !== "streaming" && chatStatus !== undefined
 
-  return { isPending, isError, isSuccess, isInterrupted }
+  return { isPending, isError, isSuccess }
 }
 
 // Utility to calculate diff stats
@@ -331,8 +329,7 @@ export const AgentToolRegistry: Record<string, ToolMeta> = {
   "tool-ExitPlanMode": {
     icon: LogOut,
     title: (part) => {
-      const isPending =
-        part.state !== "output-available" && part.state !== "output-error"
+      const {isPending} = getToolStatus(part)
       return isPending ? "Finishing plan" : "Plan complete"
     },
     subtitle: () => "",

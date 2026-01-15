@@ -24,7 +24,9 @@ function initAutoUpdaterConfig() {
 }
 
 // CDN base URL for updates
-const CDN_BASE = "https://cdn.21st.dev/releases/desktop"
+// TODO: Set your own CDN URL here for auto-updates
+// For now, auto-updates are disabled until you configure your own hosting
+const CDN_BASE = "" // Disabled - set your own URL
 
 // Minimum interval between update checks (prevent spam on rapid focus/blur)
 const MIN_CHECK_INTERVAL = 60 * 1000 // 1 minute
@@ -51,7 +53,13 @@ export async function initAutoUpdater(getWindow: () => BrowserWindow | null) {
   // Initialize config
   initAutoUpdaterConfig()
 
-  // Configure feed URL to point to R2 CDN
+  // Skip auto-updater if no CDN URL is configured
+  if (!CDN_BASE) {
+    log.info("[AutoUpdater] No CDN URL configured - auto-updates disabled")
+    return
+  }
+
+  // Configure feed URL to point to CDN
   autoUpdater.setFeedURL({
     provider: "generic",
     url: CDN_BASE,
@@ -66,11 +74,6 @@ export async function initAutoUpdater(getWindow: () => BrowserWindow | null) {
   // Event: Update available
   autoUpdater.on("update-available", (info: UpdateInfo) => {
     log.info(`[AutoUpdater] Update available: v${info.version}`)
-    // Update menu to show "Update to vX.X.X..."
-    const setUpdateAvailable = (global as any).__setUpdateAvailable
-    if (setUpdateAvailable) {
-      setUpdateAvailable(true, info.version)
-    }
     sendToRenderer("update:available", {
       version: info.version,
       releaseDate: info.releaseDate,
@@ -103,11 +106,6 @@ export async function initAutoUpdater(getWindow: () => BrowserWindow | null) {
   // Event: Update downloaded
   autoUpdater.on("update-downloaded", (info: UpdateInfo) => {
     log.info(`[AutoUpdater] Update downloaded: v${info.version}`)
-    // Reset menu back to "Check for Updates..." since update is ready
-    const setUpdateAvailable = (global as any).__setUpdateAvailable
-    if (setUpdateAvailable) {
-      setUpdateAvailable(false)
-    }
     sendToRenderer("update:downloaded", {
       version: info.version,
       releaseDate: info.releaseDate,

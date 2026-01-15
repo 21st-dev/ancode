@@ -9,7 +9,6 @@ import {
 } from "../../../components/ui/icons"
 import { TextShimmer } from "../../../components/ui/text-shimmer"
 import { getToolStatus } from "./agent-tool-registry"
-import { AgentToolInterrupted } from "./agent-tool-interrupted"
 import { cn } from "../../../lib/utils"
 
 interface AgentWebFetchToolProps {
@@ -22,7 +21,7 @@ export const AgentWebFetchTool = memo(function AgentWebFetchTool({
   chatStatus,
 }: AgentWebFetchToolProps) {
   const [isExpanded, setIsExpanded] = useState(false)
-  const { isPending, isError, isInterrupted } = getToolStatus(part, chatStatus)
+  const { isPending, isError } = getToolStatus(part, chatStatus)
 
   const url = part.input?.url || ""
   const result = part.output?.result || ""
@@ -46,11 +45,6 @@ export const AgentWebFetchTool = memo(function AgentWebFetchTool({
   }
 
   const hasContent = result.length > 0
-
-  // Show interrupted state if fetch was interrupted without completing
-  if (isInterrupted && !result) {
-    return <AgentToolInterrupted toolName="Fetch" subtitle={hostname} />
-  }
 
   return (
     <div className="rounded-lg border border-border bg-muted/30 overflow-hidden mx-2">

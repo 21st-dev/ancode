@@ -50,9 +50,11 @@ import { Chat, useChat } from "@ai-sdk/react"
 import { DiffModeEnum } from "@git-diff-view/react"
 import { atom, useAtom, useAtomValue, useSetAtom } from "jotai"
 import {
+  Brain,
   ChevronDown,
   Columns2,
   Eye,
+  FileDiff,
   GitCommitHorizontal,
   GitMerge,
   ListTree,
@@ -66,7 +68,7 @@ import { createPortal } from "react-dom"
 import { toast } from "sonner"
 import { trackMessageSent } from "../../../lib/analytics"
 import { apiFetch } from "../../../lib/api-fetch"
-import { soundNotificationsEnabledAtom } from "../../../lib/atoms"
+import { extendedThinkingEnabledAtom, soundNotificationsEnabledAtom } from "../../../lib/atoms"
 import { appStore } from "../../../lib/jotai-store"
 import { api } from "../../../lib/mock-api"
 import { trpc, trpcClient } from "../../../lib/trpc"
@@ -246,9 +248,9 @@ const CodexIcon = (props: React.SVGProps<SVGSVGElement>) => (
 
 // Model options for Claude Code
 const claudeModels = [
-  { id: "opus", name: "Opus" },
-  { id: "sonnet", name: "Sonnet" },
-  { id: "haiku", name: "Haiku" },
+  { id: "opus", name: "Opus", version: "4.5", description: "Most capable, best for complex tasks" },
+  { id: "sonnet", name: "Sonnet", version: "4", description: "Balanced speed and capability" },
+  { id: "haiku", name: "Haiku", version: "3.5", description: "Fastest, best for quick tasks" },
 ]
 
 // Agent providers
@@ -650,6 +652,38 @@ function PlayButton({
   )
 }
 
+// Rollback button component for reverting to a previous message state
+function RollbackButton({
+  disabled = false,
+  onRollback,
+  isRollingBack = false,
+}: {
+  disabled?: boolean
+  onRollback: () => void
+  isRollingBack?: boolean
+}) {
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <button
+          onClick={onRollback}
+          disabled={disabled || isRollingBack}
+          tabIndex={-1}
+          className={cn(
+            "p-1.5 rounded-md transition-[background-color,transform] duration-150 ease-out hover:bg-accent active:scale-[0.97]",
+            isRollingBack && "opacity-50 cursor-not-allowed",
+          )}
+        >
+          <IconTextUndo className="w-3.5 h-3.5 text-muted-foreground" />
+        </button>
+      </TooltipTrigger>
+      <TooltipContent side="bottom">
+        {isRollingBack ? "Rolling back..." : "Rollback to here"}
+      </TooltipContent>
+    </Tooltip>
+  )
+}
+
 // Collapsible steps component for intermediate content before final response
 interface CollapsibleStepsProps {
   stepsCount: number
@@ -777,6 +811,9 @@ function ChatViewInner({
     localStorage.setItem("tts-playback-rate", String(rate))
   }, [])
 
+  // Rollback state
+  const [isRollingBack, setIsRollingBack] = useState(false)
+
   // Check if user is at bottom of chat (like canvas)
   const isAtBottom = useCallback(() => {
     const container = chatContainerRef.current
@@ -861,6 +898,12 @@ function ChatViewInner({
 
   // Plan mode state (read from global atom)
   const [isPlanMode, setIsPlanMode] = useAtom(isPlanModeAtom)
+
+  // Feature toggle atoms for input bar
+  const [extendedThinkingEnabled, setExtendedThinkingEnabled] = useAtom(extendedThinkingEnabledAtom)
+  const [previewSidebarOpen, setPreviewSidebarOpen] = useAtom(agentsPreviewSidebarOpenAtom)
+  const [diffSidebarOpen, setDiffSidebarOpen] = useAtom(diffSidebarOpenAtomFamily(parentChatId))
+  const [terminalSidebarOpen, setTerminalSidebarOpen] = useAtom(terminalSidebarOpenAtom)
 
   // Mutation for updating sub-chat mode in database
   const updateSubChatModeMutation = api.agents.updateSubChatMode.useMutation({
@@ -1012,42 +1055,9 @@ function ChatViewInner({
   }
   chatRef.current = chat
 
-  // Save/restore drafts when switching between sub-chats
-  const prevSubChatIdForDraftRef = useRef<string | null>(null)
-  useEffect(() => {
-    console.log("[DRAFT] useEffect triggered, subChatId:", subChatId, "prev:", prevSubChatIdForDraftRef.current)
-    console.log("[DRAFT] editorRef.current:", editorRef.current)
-    console.log("[DRAFT] store chatId:", useAgentSubChatStore.getState().chatId)
-    console.log("[DRAFT] store drafts:", useAgentSubChatStore.getState().drafts)
-
-    // Save draft from previous sub-chat before switching
-    if (prevSubChatIdForDraftRef.current && prevSubChatIdForDraftRef.current !== subChatId) {
-      const prevDraft = editorRef.current?.getValue() || ""
-      console.log("[DRAFT] Saving draft for prev subChat:", prevSubChatIdForDraftRef.current, "text:", prevDraft)
-      if (prevDraft.trim()) {
-        useAgentSubChatStore.getState().saveDraft(prevSubChatIdForDraftRef.current, prevDraft)
-        console.log("[DRAFT] Draft saved, new drafts:", useAgentSubChatStore.getState().drafts)
-      }
-    }
-
-    // Restore draft for new sub-chat
-    const savedDraft = useAgentSubChatStore.getState().getDraft(subChatId)
-    console.log("[DRAFT] Restoring draft for subChat:", subChatId, "savedDraft:", savedDraft)
-    if (savedDraft) {
-      console.log("[DRAFT] Setting editor value to:", savedDraft)
-      editorRef.current?.setValue(savedDraft)
-    } else if (prevSubChatIdForDraftRef.current && prevSubChatIdForDraftRef.current !== subChatId) {
-      // Only clear if actually switching (not on initial mount)
-      console.log("[DRAFT] Clearing editor (no draft found)")
-      editorRef.current?.clear()
-    }
-
-    prevSubChatIdForDraftRef.current = subChatId
-  }, [subChatId])
-
   // Use subChatId as stable key to prevent HMR-induced duplicate resume requests
   // resume: !!streamId to reconnect to active streams (background streaming support)
-  const { messages, sendMessage, status, stop, regenerate } = useChat({
+  const { messages, sendMessage, status, stop, regenerate, setMessages } = useChat({
     id: subChatId,
     chat,
     resume: !!streamId,
@@ -1065,6 +1075,54 @@ function ChatViewInner({
   }, [status, subChatId, messages.length])
 
   const isStreaming = status === "streaming" || status === "submitted"
+
+  // Rollback handler - truncates messages to the clicked assistant message and restores git state
+  // The SDK UUID from the last assistant message will be used for resumeSessionAt on next send
+  const handleRollback = useCallback(
+    async (assistantMsg: (typeof messages)[0]) => {
+      if (isRollingBack) {
+        toast.error("Rollback already in progress")
+        return
+      }
+      if (isStreaming) {
+        toast.error("Cannot rollback while streaming")
+        return
+      }
+
+      const sdkUuid = (assistantMsg.metadata as any)?.sdkMessageUuid
+      if (!sdkUuid) {
+        toast.error("Cannot rollback: message has no SDK UUID")
+        return
+      }
+
+      setIsRollingBack(true)
+
+      try {
+        // Single call handles both message truncation and git rollback
+        const result = await trpcClient.chats.rollbackToMessage.mutate({
+          subChatId,
+          sdkMessageUuid: sdkUuid,
+        })
+
+        if (!result.success) {
+          toast.error(`Failed to rollback: ${result.error}`)
+          setIsRollingBack(false)
+          return
+        }
+
+        // Update local state with truncated messages from server
+        setMessages(result.messages)
+
+        toast.success("Rolled back. Send a message to continue from here.")
+      } catch (error) {
+        console.error("[handleRollback] Error:", error)
+        toast.error("Failed to rollback")
+      } finally {
+        setIsRollingBack(false)
+      }
+    },
+    [isRollingBack, isStreaming, setMessages, subChatId],
+  )
 
   // Sync loading status to atom for UI indicators
   // When streaming starts, set loading. When it stops, clear loading.
@@ -1506,9 +1564,8 @@ function ChatViewInner({
     if (!hasText && !hasImages) return
 
     const text = inputValue.trim()
-    // Clear editor and draft
+    // Clear editor
     editorRef.current?.clear()
-    useAgentSubChatStore.getState().clearDraft(subChatId)
 
     // Track message sent
     trackMessageSent({
@@ -1980,6 +2037,12 @@ function ChatViewInner({
                     // Detect final text by structure: last text part after any tool parts
                     // This works locally without needing metadata.finalTextId
                     const allParts = assistantMsg.parts || []
+                    const exitPlanPart = allParts.find(
+                      (p: any) => p.type === "tool-ExitPlanMode",
+                    )
+                    const hasPlan =
+                      typeof exitPlanPart?.output?.plan === "string" &&
+                      exitPlanPart.output.plan.trim().length > 0
 
                     // Find the last tool index and last text index
                     let lastToolIndex = -1
@@ -2007,12 +2070,17 @@ function ChatViewInner({
                     // For non-last messages, show final text even while streaming (they're already complete)
                     const hasFinalText =
                       finalTextIndex !== -1 && (!isStreaming || !isLastMessage)
-                    const stepParts = hasFinalText
-                      ? (assistantMsg.parts || []).slice(0, finalTextIndex)
+                    const shouldCollapseSteps = hasFinalText || hasPlan
+                    const stepParts = shouldCollapseSteps
+                      ? hasFinalText
+                        ? (assistantMsg.parts || []).slice(0, finalTextIndex)
+                        : assistantMsg.parts || []
                       : []
                     const finalParts = hasFinalText
                       ? (assistantMsg.parts || []).slice(finalTextIndex)
-                      : assistantMsg.parts || []
+                      : hasPlan
+                        ? []
+                        : assistantMsg.parts || []
 
                     // Count visible step items (for the toggle label)
                     const visibleStepsCount = stepParts.filter((p: any) => {
@@ -2307,7 +2375,7 @@ function ChatViewInner({
                       >
                         <div className="flex flex-col gap-1.5">
                           {/* Collapsible steps section - only show when we have a final text */}
-                          {hasFinalText && visibleStepsCount > 0 && (
+                          {shouldCollapseSteps && visibleStepsCount > 0 && (
                             <CollapsibleSteps stepsCount={visibleStepsCount}>
                               {(() => {
                                 const grouped = groupExploringTools(
@@ -2365,20 +2433,12 @@ function ChatViewInner({
                           })()}
 
                           {/* Plan card at end of message - if ExitPlanMode tool has plan content */}
-                          {(() => {
-                            const exitPlanPart = allParts.find(
-                              (p: any) => p.type === "tool-ExitPlanMode",
-                            )
-                            if (exitPlanPart) {
-                              return (
-                                <AgentExitPlanModeTool
-                                  part={exitPlanPart}
-                                  chatStatus={status}
-                                />
-                              )
-                            }
-                            return null
-                          })()}
+                          {exitPlanPart ? (
+                            <AgentExitPlanModeTool
+                              part={exitPlanPart}
+                              chatStatus={status}
+                            />
+                          ) : null}
 
                           {/* Planning indicator - like Canvas */}
                           {shouldShowPlanning && (
@@ -2412,6 +2472,14 @@ function ChatViewInner({
                                 playbackRate={ttsPlaybackRate}
                                 onPlaybackRateChange={handlePlaybackRateChange}
                               />
+                              {/* Rollback button - only show if not last message and has SDK UUID */}
+                              {(assistantMsg.metadata as any)?.sdkMessageUuid && (
+                                  <RollbackButton
+                                    disabled={isStreaming}
+                                    onRollback={() => handleRollback(assistantMsg)}
+                                    isRollingBack={isRollingBack}
+                                  />
+                                )}
                             </div>
                             {/* Token usage info - right side */}
                             <AgentMessageUsage
@@ -2766,12 +2834,12 @@ function ChatViewInner({
                           <ClaudeCodeIcon className="h-3.5 w-3.5" />
                           <span>
                             {selectedModel?.name}{" "}
-                            <span className="text-muted-foreground">4.5</span>
+                            <span className="text-muted-foreground">{selectedModel?.version}</span>
                           </span>
                           <ChevronDown className="h-3 w-3 shrink-0 opacity-50" />
                         </button>
                       </DropdownMenuTrigger>
-                      <DropdownMenuContent align="start" className="w-[150px]">
+                      <DropdownMenuContent align="start" className="w-[220px]">
                         {claudeModels.map((model) => {
                           const isSelected = selectedModel?.id === model.id
                           return (
@@ -2781,15 +2849,20 @@ function ChatViewInner({
                                 setSelectedModel(model)
                                 setLastSelectedModelId(model.id)
                               }}
-                              className="gap-2 justify-between"
+                              className="gap-2 justify-between py-2"
                             >
-                              <div className="flex items-center gap-1.5">
-                                <ClaudeCodeIcon className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
-                                <span>
-                                  {model.name}{" "}
-                                  <span className="text-muted-foreground">
-                                    4.5
+                              <div className="flex flex-col gap-0.5">
+                                <div className="flex items-center gap-1.5">
+                                  <ClaudeCodeIcon className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+                                  <span>
+                                    {model.name}{" "}
+                                    <span className="text-muted-foreground">
+                                      {model.version}
+                                    </span>
                                   </span>
+                                </div>
+                                <span className="text-[10px] text-muted-foreground ml-5">
+                                  {model.description}
                                 </span>
                               </div>
                               {isSelected && (
@@ -2819,6 +2892,65 @@ function ChatViewInner({
 
                     {/* Context window indicator */}
                     <AgentContextIndicator messages={messages} />
+
+                    {/* Feature toggle buttons */}
+                    <div className="flex items-center gap-0.5 mx-1 border-l border-border/50 pl-1.5">
+                      {/* Extended Thinking toggle */}
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className={cn(
+                          "h-7 w-7 rounded-sm outline-offset-2 focus-visible:outline focus-visible:outline-2 focus-visible:outline-ring/70",
+                          extendedThinkingEnabled && "bg-primary/15 text-primary"
+                        )}
+                        onClick={() => setExtendedThinkingEnabled(!extendedThinkingEnabled)}
+                        title={extendedThinkingEnabled ? "Disable extended thinking" : "Enable extended thinking"}
+                      >
+                        <Brain className="h-4 w-4" />
+                      </Button>
+
+                      {/* Preview panel toggle */}
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className={cn(
+                          "h-7 w-7 rounded-sm outline-offset-2 focus-visible:outline focus-visible:outline-2 focus-visible:outline-ring/70",
+                          previewSidebarOpen && "bg-primary/15 text-primary"
+                        )}
+                        onClick={() => setPreviewSidebarOpen(!previewSidebarOpen)}
+                        title={previewSidebarOpen ? "Hide preview panel" : "Show preview panel"}
+                      >
+                        <Eye className="h-4 w-4" />
+                      </Button>
+
+                      {/* Diff panel toggle */}
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className={cn(
+                          "h-7 w-7 rounded-sm outline-offset-2 focus-visible:outline focus-visible:outline-2 focus-visible:outline-ring/70",
+                          diffSidebarOpen && "bg-primary/15 text-primary"
+                        )}
+                        onClick={() => setDiffSidebarOpen(!diffSidebarOpen)}
+                        title={diffSidebarOpen ? "Hide diff panel" : "Show diff panel"}
+                      >
+                        <FileDiff className="h-4 w-4" />
+                      </Button>
+
+                      {/* Terminal panel toggle */}
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className={cn(
+                          "h-7 w-7 rounded-sm outline-offset-2 focus-visible:outline focus-visible:outline-2 focus-visible:outline-ring/70",
+                          terminalSidebarOpen && "bg-primary/15 text-primary"
+                        )}
+                        onClick={() => setTerminalSidebarOpen(!terminalSidebarOpen)}
+                        title={terminalSidebarOpen ? "Hide terminal" : "Show terminal"}
+                      >
+                        <TerminalSquare className="h-4 w-4" />
+                      </Button>
+                    </div>
 
                     {/* Attachment button */}
                     <Button
