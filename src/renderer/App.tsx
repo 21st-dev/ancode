@@ -87,19 +87,6 @@ export function App() {
     }
     syncOptOutStatus()
 
-    // Identify user if already authenticated
-    const identifyUser = async () => {
-      try {
-        const user = await window.desktopApi?.getUser()
-        if (user?.id) {
-          identify(user.id, { email: user.email, name: user.name })
-        }
-      } catch (error) {
-        console.warn("[Analytics] Failed to identify user:", error)
-      }
-    }
-    identifyUser()
-
     // Cleanup on unmount
     return () => {
       shutdown()
