@@ -6,7 +6,7 @@ import { dialog, BrowserWindow } from "electron"
 import { basename } from "path"
 import { getGitRemoteInfo } from "../../git"
 import { trackProjectOpened } from "../../analytics"
-import { getLaunchDirectory } from "../../../index"
+import { getLaunchDirectory } from "../../cli"
 
 export const projectsRouter = router({
   /**
