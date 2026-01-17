@@ -13,7 +13,7 @@ import {
   logRawClaudeMessage,
   type UIMessageChunk,
 } from "../../claude"
-import { chats, claudeCodeCredentials, getDatabase, subChats } from "../../db"
+import { chats, claudeCodeCredentials, claudeCodeSettings, getDatabase, subChats } from "../../db"
 import { publicProcedure, router } from "../index"
 import { buildAgentsOption } from "./agent-utils"
 
@@ -98,6 +98,39 @@ function getClaudeCodeToken(): string | null {
   } catch (error) {
     console.error("[claude] Error getting Claude Code token:", error)
     return null
+  }
+}
+
+/**
+ * Get Claude Code custom settings (binary path, env vars)
+ */
+function getClaudeCodeSettings(): {
+  customBinaryPath: string | null
+  customEnvVars: Record<string, string>
+} {
+  try {
+    const db = getDatabase()
+    const settings = db
+      .select()
+      .from(claudeCodeSettings)
+      .where(eq(claudeCodeSettings.id, "default"))
+      .get()
+
+    if (!settings) {
+      return { customBinaryPath: null, customEnvVars: {} }
+    }
+
+    const customEnvVars = settings.customEnvVars
+      ? JSON.parse(settings.customEnvVars)
+      : {}
+
+    return {
+      customBinaryPath: settings.customBinaryPath,
+      customEnvVars,
+    }
+  } catch (error) {
+    console.error("[claude] Error getting Claude Code settings:", error)
+    return { customBinaryPath: null, customEnvVars: {} }
   }
 }
 
@@ -418,8 +451,12 @@ export const claudeRouter = router({
             }
 
             // Build final env - only add OAuth token if we have one
+            // Get user's custom settings (binary path and env vars)
+            const { customBinaryPath, customEnvVars } = getClaudeCodeSettings()
+
             const finalEnv = {
               ...claudeEnv,
+              ...customEnvVars, // User-configured env vars (e.g., for Claude settings.json)
               ...(claudeCodeToken && {
                 CLAUDE_CODE_OAUTH_TOKEN: claudeCodeToken,
               }),
@@ -427,8 +464,8 @@ export const claudeRouter = router({
               CLAUDE_CONFIG_DIR: isolatedConfigDir,
             }
 
-            // Get bundled Claude binary path
-            const claudeBinaryPath = getBundledClaudeBinaryPath()
+            // Use custom binary path if provided, otherwise use bundled binary
+            const claudeBinaryPath = customBinaryPath || getBundledClaudeBinaryPath()
 
             const resumeSessionId = input.sessionId || existingSessionId || undefined
             const queryOptions = {
