@@ -1,6 +1,7 @@
 import fs from "node:fs/promises"
 import path from "node:path"
 import os from "node:os"
+import { safeStorage } from "electron"
 import { z } from "zod"
 import { router, publicProcedure } from "../index"
 import { getDatabase, claudeCodeSettings } from "../../db"
@@ -14,6 +15,34 @@ function parseJsonSafely<T>(json: string, fallback: T): T {
     return JSON.parse(json) as T
   } catch {
     return fallback
+  }
+}
+
+/**
+ * Encrypt API key using Electron's safeStorage
+ */
+function encryptApiKey(key: string): string {
+  if (!safeStorage.isEncryptionAvailable()) {
+    console.warn("[claude-settings] Encryption not available, storing as base64")
+    return Buffer.from(key).toString("base64")
+  }
+  return safeStorage.encryptString(key).toString("base64")
+}
+
+/**
+ * Decrypt API key using Electron's safeStorage
+ */
+function decryptApiKey(encrypted: string): string | null {
+  if (!encrypted) return null
+  try {
+    if (!safeStorage.isEncryptionAvailable()) {
+      return Buffer.from(encrypted, "base64").toString("utf-8")
+    }
+    const buffer = Buffer.from(encrypted, "base64")
+    return safeStorage.decryptString(buffer)
+  } catch (error) {
+    console.error("[claude-settings] Failed to decrypt API key:", error)
+    return null
   }
 }
 
@@ -38,6 +67,8 @@ export const claudeSettingsRouter = router({
           customEnvVars: "{}",
           customConfigDir: null,
           mcpServerSettings: "{}",
+          authMode: "oauth",
+          bedrockRegion: "us-east-1",
         })
         .run()
       settings = {
@@ -46,6 +77,9 @@ export const claudeSettingsRouter = router({
         customEnvVars: "{}",
         customConfigDir: null,
         mcpServerSettings: "{}",
+        authMode: "oauth",
+        apiKey: null,
+        bedrockRegion: "us-east-1",
         updatedAt: new Date(),
       }
     }
@@ -61,6 +95,9 @@ export const claudeSettingsRouter = router({
         settings.mcpServerSettings ?? "{}",
         {}
       ),
+      authMode: (settings.authMode || "oauth") as "oauth" | "aws" | "apiKey",
+      apiKey: settings.apiKey ? "••••••••" : null, // Masked for UI
+      bedrockRegion: settings.bedrockRegion || "us-east-1",
     }
   }),
 
@@ -74,6 +111,9 @@ export const claudeSettingsRouter = router({
         customEnvVars: z.record(z.string(), z.string()).optional(),
         customConfigDir: z.string().nullable().optional(),
         mcpServerSettings: z.record(z.string(), z.object({ enabled: z.boolean() })).optional(),
+        authMode: z.enum(["oauth", "aws", "apiKey"]).optional(),
+        apiKey: z.string().optional(), // API key for apiKey mode
+        bedrockRegion: z.string().optional(), // AWS region for Bedrock
       })
     )
     .mutation(({ input }) => {
@@ -102,6 +142,15 @@ export const claudeSettingsRouter = router({
             ...(input.mcpServerSettings !== undefined && {
               mcpServerSettings: JSON.stringify(input.mcpServerSettings),
             }),
+            ...(input.authMode !== undefined && {
+              authMode: input.authMode,
+            }),
+            ...(input.apiKey !== undefined && input.authMode === "apiKey" && {
+              apiKey: encryptApiKey(input.apiKey),
+            }),
+            ...(input.bedrockRegion !== undefined && {
+              bedrockRegion: input.bedrockRegion,
+            }),
             updatedAt: new Date(),
           })
           .where(eq(claudeCodeSettings.id, "default"))
@@ -115,6 +164,11 @@ export const claudeSettingsRouter = router({
             customEnvVars: JSON.stringify(input.customEnvVars ?? {}),
             customConfigDir: input.customConfigDir ?? null,
             mcpServerSettings: JSON.stringify(input.mcpServerSettings ?? {}),
+            authMode: input.authMode ?? "oauth",
+            bedrockRegion: input.bedrockRegion ?? "us-east-1",
+            ...(input.authMode === "apiKey" && input.apiKey && {
+              apiKey: encryptApiKey(input.apiKey),
+            }),
             updatedAt: new Date(),
           })
           .run()
