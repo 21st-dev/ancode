@@ -98,6 +98,17 @@ export const claudeCodeCredentials = sqliteTable("claude_code_credentials", {
   userId: text("user_id"), // Desktop auth user ID (for reference)
 })
 
+// ============ CLAUDE CODE SETTINGS ============
+// Stores user-configurable Claude Code binary and environment settings
+export const claudeCodeSettings = sqliteTable("claude_code_settings", {
+  id: text("id").primaryKey().default("default"), // Single row, always "default"
+  customBinaryPath: text("custom_binary_path"), // Path to user-specified Claude binary (null = use bundled)
+  customEnvVars: text("custom_env_vars").notNull().default("{}"), // JSON object of custom env vars
+  updatedAt: integer("updated_at", { mode: "timestamp" }).$defaultFn(
+    () => new Date(),
+  ),
+})
+
 // ============ TYPE EXPORTS ============
 export type Project = typeof projects.$inferSelect
 export type NewProject = typeof projects.$inferInsert
@@ -107,3 +118,5 @@ export type SubChat = typeof subChats.$inferSelect
 export type NewSubChat = typeof subChats.$inferInsert
 export type ClaudeCodeCredential = typeof claudeCodeCredentials.$inferSelect
 export type NewClaudeCodeCredential = typeof claudeCodeCredentials.$inferInsert
+export type ClaudeCodeSettings = typeof claudeCodeSettings.$inferSelect
+export type NewClaudeCodeSettings = typeof claudeCodeSettings.$inferInsert
