@@ -153,6 +153,10 @@
       {
         "from": "resources/bin/VERSION",
         "to": "bin/VERSION"
+      },
+      {
+        "from": "resources/cli",
+        "to": "cli"
       }
     ],
     "asar": true,
