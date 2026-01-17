@@ -37,6 +37,14 @@ export function AgentsClaudeCodeTab() {
   const [settingsExpanded, setSettingsExpanded] = useState(false)
   const [customBinaryPath, setCustomBinaryPath] = useState("")
   const [envVarsText, setEnvVarsText] = useState("")
+  // Config dir and MCP servers state
+  const [customConfigDir, setCustomConfigDir] = useState("")
+  const [mcpServers, setMcpServers] = useState<Array<{
+    id: string
+    name: string
+    description: string
+    enabled: boolean
+  }>>([])
   const { trigger: triggerHaptic } = useHaptic()
 
   const utils = trpc.useUtils()
@@ -55,6 +63,16 @@ export function AgentsClaudeCodeTab() {
     isLoading: settingsLoading,
     refetch: refetchSettings,
   } = trpc.claudeSettings.getSettings.useQuery()
+
+  // Query MCP servers
+  const { data: mcpData, refetch: refetchMcp } = trpc.claudeSettings.listMcpServers.useQuery(
+    {},
+    {
+      onSuccess: (data) => {
+        setMcpServers(data.servers)
+      },
+    }
+  )
 
   // Update settings mutation
   const updateSettings = trpc.claudeSettings.updateSettings.useMutation({
@@ -146,6 +164,7 @@ export function AgentsClaudeCodeTab() {
   useEffect(() => {
     if (claudeSettings) {
       setCustomBinaryPath(claudeSettings.customBinaryPath || "")
+      setCustomConfigDir(claudeSettings.customConfigDir || "")
       setEnvVarsText(
         Object.entries(claudeSettings.customEnvVars)
           .map(([k, v]) => `${k}=${v}`)
@@ -443,6 +462,89 @@ export function AgentsClaudeCodeTab() {
                   </p>
                 </div>
 
+                {/* Custom Config Directory */}
+                <div className="space-y-2">
+                  <Label className="text-sm">Claude Config Directory</Label>
+                  <Input
+                    value={customConfigDir}
+                    onChange={(e) => setCustomConfigDir(e.target.value)}
+                    placeholder="Leave empty for per-chat isolation (default)"
+                    className="font-mono text-sm"
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    Controls where Claude stores skills, agents, and settings.
+                    Leave empty for isolated per-chat storage (default).
+                    Use ~/.claude to share with your terminal Claude.
+                  </p>
+                </div>
+
+                {/* MCP Servers */}
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between">
+                    <Label className="text-sm">MCP Servers</Label>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => refetchMcp()}
+                      className="h-6 px-2"
+                    >
+                      Refresh
+                    </Button>
+                  </div>
+                  {mcpServers.length === 0 ? (
+                    <p className="text-xs text-muted-foreground">
+                      No MCP servers found in ~/.claude/
+                    </p>
+                  ) : (
+                    <div className="space-y-2">
+                      {mcpServers.map((server) => (
+                        <div
+                          key={server.id}
+                          className="flex items-center justify-between p-2 bg-muted rounded-md"
+                        >
+                          <div className="flex-1 min-w-0">
+                            <p className="text-sm font-medium truncate">{server.name}</p>
+                            {server.description && (
+                              <p className="text-xs text-muted-foreground truncate">
+                                {server.description}
+                              </p>
+                            )}
+                          </div>
+                          <button
+                            onClick={() => {
+                              const updated = mcpServers.map((s) =>
+                                s.id === server.id
+                                  ? { ...s, enabled: !s.enabled }
+                                  : s
+                              )
+                              setMcpServers(updated)
+                              updateSettings.mutate({
+                                mcpServerSettings: updated.reduce(
+                                  (acc, s) => ({
+                                    ...acc,
+                                    [s.id]: { enabled: s.enabled },
+                                  }),
+                                  {},
+                                ),
+                              })
+                            }}
+                            className={`ml-2 px-2 py-1 text-xs rounded-md transition-colors ${
+                              server.enabled
+                                ? "bg-green-100 text-green-700 hover:bg-green-200 dark:bg-green-900/30 dark:text-green-400"
+                                : "bg-gray-200 text-gray-700 hover:bg-gray-300 dark:bg-gray-700 dark:text-gray-300"
+                            }`}
+                          >
+                            {server.enabled ? "Enabled" : "Disabled"}
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                  <p className="text-xs text-muted-foreground">
+                    MCP servers extend Claude's capabilities. Toggle to enable/disable for this app.
+                  </p>
+                </div>
+
                 {/* Save Button */}
                 <div className="flex justify-end">
                   <Button
@@ -450,6 +552,7 @@ export function AgentsClaudeCodeTab() {
                       updateSettings.mutate({
                         customBinaryPath: customBinaryPath || null,
                         customEnvVars: parseEnvVars(envVarsText),
+                        customConfigDir: customConfigDir || null,
                       })
                     }}
                     disabled={updateSettings.isPending}
