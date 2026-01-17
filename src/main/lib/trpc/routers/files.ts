@@ -5,6 +5,29 @@ import { watch, type FSWatcher } from "node:fs"
 import { join, relative, basename } from "node:path"
 import { observable } from "@trpc/server/observable"
 import { EventEmitter } from "node:events"
+import { exec } from "node:child_process"
+import { promisify } from "node:util"
+
+const execAsync = promisify(exec)
+
+// Git status codes
+export type GitStatusCode =
+  | "modified"      // M - modified
+  | "added"         // A - staged new file
+  | "deleted"       // D - deleted
+  | "renamed"       // R - renamed
+  | "copied"        // C - copied
+  | "untracked"     // ? - untracked
+  | "ignored"       // ! - ignored
+  | "unmerged"      // U - unmerged (conflict)
+  | "staged"        // File is staged (index has changes)
+  | null            // No changes
+
+export interface GitFileStatus {
+  path: string
+  status: GitStatusCode
+  staged: boolean  // Whether the file has staged changes
+}
 
 // Event emitter for file changes
 const fileChangeEmitter = new EventEmitter()
@@ -12,6 +35,13 @@ fileChangeEmitter.setMaxListeners(100) // Allow many subscribers
 
 // Active file watchers per project path
 const activeWatchers = new Map<string, { watcher: FSWatcher; refCount: number }>()
+
+// Git directory watchers (watch .git for status changes)
+const gitWatchers = new Map<string, { watcher: FSWatcher; refCount: number }>()
+
+// Git status cache with longer TTL (invalidated by .git watcher)
+const gitStatusCache = new Map<string, { status: Map<string, GitFileStatus>; timestamp: number }>()
+const GIT_STATUS_CACHE_TTL = 30000 // 30 seconds (longer since we watch .git)
 
 // Directories to ignore when scanning
 const IGNORED_DIRS = new Set([
@@ -79,6 +109,181 @@ const CACHE_TTL = 1000 // 1 second (short TTL since we have real-time watching)
 // Debounce timers for file change events
 const debounceTimers = new Map<string, NodeJS.Timeout>()
 const DEBOUNCE_MS = 100 // Debounce rapid changes
+
+/**
+ * Parse git status output and return a map of file paths to their status
+ */
+function parseGitStatus(output: string): Map<string, GitFileStatus> {
+  const statusMap = new Map<string, GitFileStatus>()
+
+  for (const line of output.split("\n")) {
+    if (!line || line.length < 4) continue
+
+    // Git status format: XY PATH or XY ORIG -> PATH (for renames)
+    const indexStatus = line[0]  // Status in index (staged)
+    const workingStatus = line[1] // Status in working tree
+    let filePath = line.slice(3)
+
+    // Handle renames: "R  old -> new"
+    if (filePath.includes(" -> ")) {
+      filePath = filePath.split(" -> ")[1]
+    }
+
+    // Remove quotes if present (git quotes paths with special chars)
+    if (filePath.startsWith('"') && filePath.endsWith('"')) {
+      filePath = filePath.slice(1, -1)
+    }
+
+    let status: GitStatusCode = null
+    let staged = false
+
+    // Check index status (staged changes)
+    if (indexStatus === "M") {
+      status = "modified"
+      staged = true
+    } else if (indexStatus === "A") {
+      status = "added"
+      staged = true
+    } else if (indexStatus === "D") {
+      status = "deleted"
+      staged = true
+    } else if (indexStatus === "R") {
+      status = "renamed"
+      staged = true
+    } else if (indexStatus === "C") {
+      status = "copied"
+      staged = true
+    }
+
+    // Check working tree status (unstaged changes)
+    if (workingStatus === "M") {
+      status = "modified"
+    } else if (workingStatus === "D") {
+      status = "deleted"
+    } else if (workingStatus === "?") {
+      status = "untracked"
+    } else if (workingStatus === "!") {
+      status = "ignored"
+    } else if (workingStatus === "U" || indexStatus === "U") {
+      status = "unmerged"
+    }
+
+    if (status) {
+      statusMap.set(filePath, { path: filePath, status, staged })
+    }
+  }
+
+  return statusMap
+}
+
+/**
+ * Get git status for all files in a directory (with caching)
+ */
+async function getGitStatus(projectPath: string): Promise<Map<string, GitFileStatus>> {
+  // Check cache first
+  const cached = gitStatusCache.get(projectPath)
+  const now = Date.now()
+
+  if (cached && now - cached.timestamp < GIT_STATUS_CACHE_TTL) {
+    return cached.status
+  }
+
+  try {
+    // Check if this is a git repository
+    const { stdout } = await execAsync("git status --porcelain -uall", {
+      cwd: projectPath,
+      maxBuffer: 10 * 1024 * 1024, // 10MB buffer for large repos
+    })
+    const status = parseGitStatus(stdout)
+
+    // Cache the result
+    gitStatusCache.set(projectPath, { status, timestamp: now })
+
+    return status
+  } catch (error) {
+    // Not a git repo or git not available
+    return new Map()
+  }
+}
+
+/**
+ * Start watching .git directory for status changes
+ */
+function startGitWatching(projectPath: string): void {
+  const existing = gitWatchers.get(projectPath)
+  if (existing) {
+    existing.refCount++
+    return
+  }
+
+  const gitPath = join(projectPath, ".git")
+
+  try {
+    // Check if .git exists
+    const watcher = watch(gitPath, { recursive: true }, (eventType, filename) => {
+      if (!filename) return
+
+      // Only care about files that indicate git state changes
+      // index = staging area, HEAD = current branch, refs = branches/tags
+      const isRelevant =
+        filename === "index" ||
+        filename === "HEAD" ||
+        filename.startsWith("refs/") ||
+        filename === "COMMIT_EDITMSG" ||
+        filename === "MERGE_HEAD" ||
+        filename === "REBASE_HEAD"
+
+      if (!isRelevant) return
+
+      // Debounce and invalidate cache
+      const timerKey = `git:${projectPath}`
+      const existingTimer = debounceTimers.get(timerKey)
+      if (existingTimer) {
+        clearTimeout(existingTimer)
+      }
+
+      debounceTimers.set(timerKey, setTimeout(() => {
+        debounceTimers.delete(timerKey)
+        // Invalidate git status cache
+        gitStatusCache.delete(projectPath)
+        // Emit git change event
+        fileChangeEmitter.emit(`gitChange:${projectPath}`)
+      }, DEBOUNCE_MS))
+    })
+
+    watcher.on("error", (error) => {
+      console.warn(`[files] Git watcher error for ${projectPath}:`, error)
+    })
+
+    gitWatchers.set(projectPath, { watcher, refCount: 1 })
+    console.log(`[files] Started watching .git: ${projectPath}`)
+  } catch (error) {
+    // .git doesn't exist or not accessible
+    console.warn(`[files] Could not watch .git for ${projectPath}:`, error)
+  }
+}
+
+/**
+ * Stop watching .git directory
+ */
+function stopGitWatching(projectPath: string): void {
+  const existing = gitWatchers.get(projectPath)
+  if (!existing) return
+
+  existing.refCount--
+  if (existing.refCount <= 0) {
+    existing.watcher.close()
+    gitWatchers.delete(projectPath)
+    // Clean up timer
+    const timerKey = `git:${projectPath}`
+    const timer = debounceTimers.get(timerKey)
+    if (timer) {
+      clearTimeout(timer)
+      debounceTimers.delete(timerKey)
+    }
+    console.log(`[files] Stopped watching .git: ${projectPath}`)
+  }
+}
 
 /**
  * Start watching a project directory for changes
@@ -404,6 +609,65 @@ export const filesRouter = router({
         return () => {
           fileChangeEmitter.off(`change:${projectPath}`, onChange)
           stopWatching(projectPath)
+        }
+      })
+    }),
+
+  /**
+   * Get git status for all files in a project directory
+   */
+  gitStatus: publicProcedure
+    .input(z.object({ projectPath: z.string() }))
+    .query(async ({ input }) => {
+      const { projectPath } = input
+
+      if (!projectPath) {
+        return {}
+      }
+
+      try {
+        const statusMap = await getGitStatus(projectPath)
+        // Convert Map to plain object for serialization
+        const result: Record<string, { status: GitStatusCode; staged: boolean }> = {}
+        statusMap.forEach((value, key) => {
+          result[key] = { status: value.status, staged: value.staged }
+        })
+        return result
+      } catch (error) {
+        console.error(`[files] Error getting git status:`, error)
+        return {}
+      }
+    }),
+
+  /**
+   * Subscribe to git status changes (watches .git directory)
+   * More efficient than watching all files - only updates when git state changes
+   */
+  watchGitChanges: publicProcedure
+    .input(z.object({ projectPath: z.string() }))
+    .subscription(({ input }) => {
+      const { projectPath } = input
+
+      return observable<{ type: "git-change" }>((emit) => {
+        if (!projectPath) {
+          emit.complete()
+          return () => {}
+        }
+
+        // Start watching .git directory
+        startGitWatching(projectPath)
+
+        // Listen for git change events
+        const onGitChange = () => {
+          emit.next({ type: "git-change" })
+        }
+
+        fileChangeEmitter.on(`gitChange:${projectPath}`, onGitChange)
+
+        // Cleanup when subscription ends
+        return () => {
+          fileChangeEmitter.off(`gitChange:${projectPath}`, onGitChange)
+          stopGitWatching(projectPath)
         }
       })
     }),

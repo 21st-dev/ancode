@@ -1,9 +1,46 @@
 "use client"
 
 import { ChevronRight, File, Folder, FolderOpen } from "lucide-react"
-import { memo, useCallback } from "react"
+import { memo, useCallback, useMemo } from "react"
 import { cn } from "../../../../lib/utils"
 import type { TreeNode } from "./build-file-tree"
+
+// Git status type matching the backend
+type GitStatusCode =
+  | "modified"
+  | "added"
+  | "deleted"
+  | "renamed"
+  | "copied"
+  | "untracked"
+  | "ignored"
+  | "unmerged"
+  | null
+
+export type GitStatusMap = Record<string, { status: GitStatusCode; staged: boolean }>
+
+// Status colors matching VS Code conventions
+const STATUS_COLORS: Record<string, string> = {
+  modified: "text-yellow-500 dark:text-yellow-400",      // Yellow for modified
+  added: "text-green-500 dark:text-green-400",           // Green for added/staged
+  deleted: "text-red-500 dark:text-red-400",             // Red for deleted
+  renamed: "text-green-500 dark:text-green-400",         // Green for renamed
+  copied: "text-green-500 dark:text-green-400",          // Green for copied
+  untracked: "text-green-600 dark:text-green-500",       // Darker green for untracked
+  ignored: "text-muted-foreground/50",                   // Dimmed for ignored
+  unmerged: "text-red-600 dark:text-red-500",            // Red for conflicts
+}
+
+// Status indicators (shown after filename)
+const STATUS_INDICATORS: Record<string, string> = {
+  modified: "M",
+  added: "A",
+  deleted: "D",
+  renamed: "R",
+  copied: "C",
+  untracked: "U",
+  unmerged: "!",
+}
 
 interface FileTreeNodeProps {
   node: TreeNode
@@ -11,6 +48,7 @@ interface FileTreeNodeProps {
   expandedFolders: Set<string>
   onToggleFolder: (path: string) => void
   onSelectFile?: (path: string) => void
+  gitStatus?: GitStatusMap
 }
 
 export const FileTreeNode = memo(function FileTreeNode({
@@ -19,9 +57,25 @@ export const FileTreeNode = memo(function FileTreeNode({
   expandedFolders,
   onToggleFolder,
   onSelectFile,
+  gitStatus = {},
 }: FileTreeNodeProps) {
   const isExpanded = node.type === "folder" && expandedFolders.has(node.path)
   const hasChildren = node.type === "folder" && node.children.length > 0
+
+  // Get git status for this file
+  const fileStatus = gitStatus[node.path]
+  const statusCode = fileStatus?.status
+  const isStaged = fileStatus?.staged
+
+  // For folders, check if any children have changes
+  const folderHasChanges = useMemo(() => {
+    if (node.type !== "folder") return false
+
+    // Check if any file in gitStatus starts with this folder path
+    return Object.keys(gitStatus).some(path =>
+      path.startsWith(node.path + "/")
+    )
+  }, [node.type, node.path, gitStatus])
 
   const handleClick = useCallback(() => {
     if (node.type === "folder") {
@@ -32,6 +86,10 @@ export const FileTreeNode = memo(function FileTreeNode({
   }, [node.type, node.path, onToggleFolder, onSelectFile])
 
   const paddingLeft = level * 12 + 6
+
+  // Determine text color based on status
+  const textColorClass = statusCode ? STATUS_COLORS[statusCode] : "text-foreground"
+  const statusIndicator = statusCode ? STATUS_INDICATORS[statusCode] : null
 
   return (
     <div className="min-w-0">
@@ -61,16 +119,35 @@ export const FileTreeNode = memo(function FileTreeNode({
         {/* Icon */}
         {node.type === "folder" ? (
           isExpanded ? (
-            <FolderOpen className="size-3.5 shrink-0 text-muted-foreground" />
+            <FolderOpen className={cn(
+              "size-3.5 shrink-0",
+              folderHasChanges ? "text-yellow-500 dark:text-yellow-400" : "text-muted-foreground"
+            )} />
           ) : (
-            <Folder className="size-3.5 shrink-0 text-muted-foreground" />
+            <Folder className={cn(
+              "size-3.5 shrink-0",
+              folderHasChanges ? "text-yellow-500 dark:text-yellow-400" : "text-muted-foreground"
+            )} />
           )
         ) : (
-          <File className="size-3.5 shrink-0 text-muted-foreground" />
+          <File className={cn("size-3.5 shrink-0", textColorClass)} />
         )}
 
         {/* Name */}
-        <span className="truncate text-foreground">{node.name}</span>
+        <span className={cn("truncate flex-1", textColorClass)}>
+          {node.name}
+        </span>
+
+        {/* Status indicator */}
+        {statusIndicator && (
+          <span className={cn(
+            "text-[10px] font-medium shrink-0 ml-1",
+            textColorClass,
+            isStaged && "underline" // Underline if staged
+          )}>
+            {statusIndicator}
+          </span>
+        )}
       </button>
 
       {/* Children (only for expanded folders) */}
@@ -84,6 +161,7 @@ export const FileTreeNode = memo(function FileTreeNode({
               expandedFolders={expandedFolders}
               onToggleFolder={onToggleFolder}
               onSelectFile={onSelectFile}
+              gitStatus={gitStatus}
             />
           ))}
         </div>

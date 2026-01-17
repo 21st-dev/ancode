@@ -1,9 +1,11 @@
 "use client"
 
 import { useAtom } from "jotai"
-import { ChevronDown, RefreshCw, X } from "lucide-react"
+import { ChevronsDownUp, RefreshCw } from "lucide-react"
 import { useCallback, useMemo } from "react"
 import { Button } from "../../../../components/ui/button"
+import { IconDoubleChevronRight } from "../../../../components/ui/icons"
+import { Kbd } from "../../../../components/ui/kbd"
 import {
   Tooltip,
   TooltipContent,
@@ -12,7 +14,7 @@ import {
 import { trpc } from "../../../../lib/trpc"
 import { expandedFoldersAtomFamily } from "../../atoms"
 import { buildFileTree, countFiles, countFolders } from "./build-file-tree"
-import { FileTreeNode } from "./FileTreeNode"
+import { FileTreeNode, type GitStatusMap } from "./FileTreeNode"
 
 interface FileTreeSidebarProps {
   projectPath: string | undefined
@@ -45,14 +47,38 @@ export function FileTreeSidebar({
     },
   )
 
+  // Fetch git status
+  const {
+    data: gitStatus = {},
+    refetch: refetchGitStatus,
+  } = trpc.files.gitStatus.useQuery(
+    { projectPath: projectPath || "" },
+    {
+      enabled: !!projectPath,
+      staleTime: 1000,
+    },
+  )
+
   // Subscribe to file changes for real-time sync
   trpc.files.watchChanges.useSubscription(
     { projectPath: projectPath || "" },
     {
       enabled: !!projectPath,
       onData: () => {
-        // Refetch when files change
+        // Refetch file list when files change
         refetch()
+      },
+    },
+  )
+
+  // Subscribe to git changes separately (more efficient - only watches .git directory)
+  trpc.files.watchGitChanges.useSubscription(
+    { projectPath: projectPath || "" },
+    {
+      enabled: !!projectPath,
+      onData: () => {
+        // Refetch git status when git state changes (commits, staging, etc.)
+        refetchGitStatus()
       },
     },
   )
@@ -86,63 +112,68 @@ export function FileTreeSidebar({
   // Refresh file list
   const handleRefresh = useCallback(() => {
     refetch()
-  }, [refetch])
+    refetchGitStatus()
+  }, [refetch, refetchGitStatus])
 
   return (
     <div className="flex flex-col h-full min-w-0 overflow-hidden">
       {/* Header */}
-      <div className="flex items-center justify-between px-2 h-10 bg-background flex-shrink-0 border-b border-border/50">
-        <span className="text-xs font-medium text-foreground truncate">
+      <div className="flex items-center justify-between gap-1 px-2 py-1.5 flex-shrink-0">
+        <span className="text-xs font-medium text-foreground truncate pl-0.5">
           Files
         </span>
         <div className="flex items-center gap-0.5">
           {/* Refresh button */}
-          <Tooltip>
+          <Tooltip delayDuration={500}>
             <TooltipTrigger asChild>
               <Button
                 variant="ghost"
                 size="icon"
                 onClick={handleRefresh}
                 disabled={isRefetching}
-                className="h-6 w-6 rounded-sm"
+                className="h-6 w-6 p-0 hover:bg-foreground/10 transition-[background-color,transform] duration-150 ease-out active:scale-[0.97] text-foreground flex-shrink-0 rounded-md"
               >
                 <RefreshCw
                   className={`h-3.5 w-3.5 ${isRefetching ? "animate-spin" : ""}`}
                 />
               </Button>
             </TooltipTrigger>
-            <TooltipContent>Refresh</TooltipContent>
+            <TooltipContent side="bottom">Refresh</TooltipContent>
           </Tooltip>
 
           {/* Collapse all button */}
-          <Tooltip>
+          <Tooltip delayDuration={500}>
             <TooltipTrigger asChild>
               <Button
                 variant="ghost"
                 size="icon"
                 onClick={handleCollapseAll}
                 disabled={expandedFolders.size === 0}
-                className="h-6 w-6 rounded-sm"
+                className="h-6 w-6 p-0 hover:bg-foreground/10 transition-[background-color,transform] duration-150 ease-out active:scale-[0.97] text-foreground flex-shrink-0 rounded-md disabled:opacity-50"
               >
-                <ChevronDown className="h-3.5 w-3.5" />
+                <ChevronsDownUp className="h-3.5 w-3.5" />
               </Button>
             </TooltipTrigger>
-            <TooltipContent>Collapse all</TooltipContent>
+            <TooltipContent side="bottom">Collapse all</TooltipContent>
           </Tooltip>
 
           {/* Close button */}
-          <Tooltip>
+          <Tooltip delayDuration={500}>
             <TooltipTrigger asChild>
               <Button
                 variant="ghost"
                 size="icon"
                 onClick={onClose}
-                className="h-6 w-6 rounded-sm"
+                className="h-6 w-6 p-0 hover:bg-foreground/10 transition-[background-color,transform] duration-150 ease-out active:scale-[0.97] text-foreground flex-shrink-0 rounded-md"
+                aria-label="Close file tree"
               >
-                <X className="h-3.5 w-3.5" />
+                <IconDoubleChevronRight className="h-4 w-4" />
               </Button>
             </TooltipTrigger>
-            <TooltipContent>Close</TooltipContent>
+            <TooltipContent side="bottom">
+              Close file tree
+              <Kbd>⌘B</Kbd>
+            </TooltipContent>
           </Tooltip>
         </div>
       </div>
@@ -170,6 +201,7 @@ export function FileTreeSidebar({
               expandedFolders={expandedFolders}
               onToggleFolder={handleToggleFolder}
               onSelectFile={onSelectFile}
+              gitStatus={gitStatus as GitStatusMap}
             />
           ))
         )}
