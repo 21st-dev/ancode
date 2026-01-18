@@ -65,6 +65,7 @@ import {
 import { motion } from "motion/react"
 import {
   createContext,
+  memo,
   useCallback,
   useContext,
   useEffect,
@@ -752,6 +753,186 @@ function MessageGroup({ children }: MessageGroupProps) {
   )
 }
 
+// Memoized Mode Dropdown component - extracted to prevent re-renders on hover
+// When tooltip state changes, only this component re-renders, not the entire message list
+const ModeDropdown = memo(function ModeDropdown({
+  isPlanMode,
+  setIsPlanMode,
+}: {
+  isPlanMode: boolean
+  setIsPlanMode: (value: boolean) => void
+}) {
+  const [modeDropdownOpen, setModeDropdownOpen] = useState(false)
+  const [modeTooltip, setModeTooltip] = useState<{
+    visible: boolean
+    position: { top: number; left: number }
+    mode: "agent" | "plan"
+  } | null>(null)
+  const tooltipTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const hasShownTooltipRef = useRef(false)
+
+  return (
+    <DropdownMenu
+      open={modeDropdownOpen}
+      onOpenChange={(open) => {
+        setModeDropdownOpen(open)
+        if (!open) {
+          if (tooltipTimeoutRef.current) {
+            clearTimeout(tooltipTimeoutRef.current)
+            tooltipTimeoutRef.current = null
+          }
+          setModeTooltip(null)
+          hasShownTooltipRef.current = false
+        }
+      }}
+    >
+      <DropdownMenuTrigger asChild>
+        <button className="flex items-center gap-1.5 px-2 py-1 text-sm text-muted-foreground hover:text-foreground transition-colors rounded-md hover:bg-muted/50 outline-offset-2 focus-visible:outline focus-visible:outline-2 focus-visible:outline-ring/70">
+          {isPlanMode ? (
+            <PlanIcon className="h-3.5 w-3.5" />
+          ) : (
+            <AgentIcon className="h-3.5 w-3.5" />
+          )}
+          <span>{isPlanMode ? "Plan" : "Agent"}</span>
+          <ChevronDown className="h-3 w-3 shrink-0 opacity-50" />
+        </button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent
+        align="start"
+        sideOffset={6}
+        className="!min-w-[116px] !w-[116px]"
+        onCloseAutoFocus={(e) => e.preventDefault()}
+      >
+        <DropdownMenuItem
+          onClick={() => {
+            if (tooltipTimeoutRef.current) {
+              clearTimeout(tooltipTimeoutRef.current)
+              tooltipTimeoutRef.current = null
+            }
+            setModeTooltip(null)
+            setIsPlanMode(false)
+            setModeDropdownOpen(false)
+          }}
+          className="justify-between gap-2"
+          onMouseEnter={(e) => {
+            if (tooltipTimeoutRef.current) {
+              clearTimeout(tooltipTimeoutRef.current)
+              tooltipTimeoutRef.current = null
+            }
+            const rect = e.currentTarget.getBoundingClientRect()
+            const showTooltip = () => {
+              setModeTooltip({
+                visible: true,
+                position: {
+                  top: rect.top,
+                  left: rect.right + 8,
+                },
+                mode: "agent",
+              })
+              hasShownTooltipRef.current = true
+              tooltipTimeoutRef.current = null
+            }
+            if (hasShownTooltipRef.current) {
+              showTooltip()
+            } else {
+              tooltipTimeoutRef.current = setTimeout(showTooltip, 1000)
+            }
+          }}
+          onMouseLeave={() => {
+            if (tooltipTimeoutRef.current) {
+              clearTimeout(tooltipTimeoutRef.current)
+              tooltipTimeoutRef.current = null
+            }
+            setModeTooltip(null)
+          }}
+        >
+          <div className="flex items-center gap-2">
+            <AgentIcon className="w-4 h-4 text-muted-foreground" />
+            <span>Agent</span>
+          </div>
+          {!isPlanMode && (
+            <CheckIcon className="h-3.5 w-3.5 ml-auto shrink-0" />
+          )}
+        </DropdownMenuItem>
+        <DropdownMenuItem
+          onClick={() => {
+            if (tooltipTimeoutRef.current) {
+              clearTimeout(tooltipTimeoutRef.current)
+              tooltipTimeoutRef.current = null
+            }
+            setModeTooltip(null)
+            setIsPlanMode(true)
+            setModeDropdownOpen(false)
+          }}
+          className="justify-between gap-2"
+          onMouseEnter={(e) => {
+            if (tooltipTimeoutRef.current) {
+              clearTimeout(tooltipTimeoutRef.current)
+              tooltipTimeoutRef.current = null
+            }
+            const rect = e.currentTarget.getBoundingClientRect()
+            const showTooltip = () => {
+              setModeTooltip({
+                visible: true,
+                position: {
+                  top: rect.top,
+                  left: rect.right + 8,
+                },
+                mode: "plan",
+              })
+              hasShownTooltipRef.current = true
+              tooltipTimeoutRef.current = null
+            }
+            if (hasShownTooltipRef.current) {
+              showTooltip()
+            } else {
+              tooltipTimeoutRef.current = setTimeout(showTooltip, 1000)
+            }
+          }}
+          onMouseLeave={() => {
+            if (tooltipTimeoutRef.current) {
+              clearTimeout(tooltipTimeoutRef.current)
+              tooltipTimeoutRef.current = null
+            }
+            setModeTooltip(null)
+          }}
+        >
+          <div className="flex items-center gap-2">
+            <PlanIcon className="w-4 h-4 text-muted-foreground" />
+            <span>Plan</span>
+          </div>
+          {isPlanMode && (
+            <CheckIcon className="h-3.5 w-3.5 ml-auto shrink-0" />
+          )}
+        </DropdownMenuItem>
+      </DropdownMenuContent>
+      {modeTooltip?.visible &&
+        createPortal(
+          <div
+            className="fixed z-[100000]"
+            style={{
+              top: modeTooltip.position.top + 14,
+              left: modeTooltip.position.left,
+              transform: "translateY(-50%)",
+            }}
+          >
+            <div
+              data-tooltip="true"
+              className="relative rounded-[12px] bg-popover px-2.5 py-1.5 text-xs text-popover-foreground dark max-w-[150px]"
+            >
+              <span>
+                {modeTooltip.mode === "agent"
+                  ? "Apply changes directly without a plan"
+                  : "Create a plan before making changes"}
+              </span>
+            </div>
+          </div>,
+          document.body,
+        )}
+    </DropdownMenu>
+  )
+})
+
 // Collapsible steps component for intermediate content before final response
 interface CollapsibleStepsProps {
   stepsCount: number
@@ -1116,18 +1297,10 @@ function ChatViewInner({
     return () => window.removeEventListener("keydown", handleKeyDown, true)
   }, [])
 
-  // Mode tooltip state (floating tooltip like canvas)
-  const [modeTooltip, setModeTooltip] = useState<{
-    visible: boolean
-    position: { top: number; left: number }
-    mode: "agent" | "plan"
-  } | null>(null)
+  // Plan approval state
   const [planApprovalPending, setPlanApprovalPending] = useState<
     Record<string, boolean>
   >({})
-  const tooltipTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
-  const hasShownTooltipRef = useRef(false)
-  const [modeDropdownOpen, setModeDropdownOpen] = useState(false)
 
   // Track chat changes for rename trigger reset
   const chatRef = useRef<Chat<any> | null>(null)
@@ -3033,173 +3206,8 @@ function ChatViewInner({
                 </div>
                 <PromptInputActions className="w-full">
                   <div className="flex items-center gap-0.5 flex-1 min-w-0">
-                    {/* Mode toggle (Agent/Plan) */}
-                    <DropdownMenu
-                      open={modeDropdownOpen}
-                      onOpenChange={(open) => {
-                        setModeDropdownOpen(open)
-                        if (!open) {
-                          if (tooltipTimeoutRef.current) {
-                            clearTimeout(tooltipTimeoutRef.current)
-                            tooltipTimeoutRef.current = null
-                          }
-                          setModeTooltip(null)
-                          hasShownTooltipRef.current = false
-                        }
-                      }}
-                    >
-                      <DropdownMenuTrigger asChild>
-                        <button className="flex items-center gap-1.5 px-2 py-1 text-sm text-muted-foreground hover:text-foreground transition-colors rounded-md hover:bg-muted/50 outline-offset-2 focus-visible:outline focus-visible:outline-2 focus-visible:outline-ring/70">
-                          {isPlanMode ? (
-                            <PlanIcon className="h-3.5 w-3.5" />
-                          ) : (
-                            <AgentIcon className="h-3.5 w-3.5" />
-                          )}
-                          <span>{isPlanMode ? "Plan" : "Agent"}</span>
-                          <ChevronDown className="h-3 w-3 shrink-0 opacity-50" />
-                        </button>
-                      </DropdownMenuTrigger>
-                      <DropdownMenuContent
-                        align="start"
-                        sideOffset={6}
-                        className="!min-w-[116px] !w-[116px]"
-                        onCloseAutoFocus={(e) => e.preventDefault()}
-                      >
-                        <DropdownMenuItem
-                          onClick={() => {
-                            // Clear tooltip before closing dropdown (onMouseLeave won't fire)
-                            if (tooltipTimeoutRef.current) {
-                              clearTimeout(tooltipTimeoutRef.current)
-                              tooltipTimeoutRef.current = null
-                            }
-                            setModeTooltip(null)
-                            setIsPlanMode(false)
-                            setModeDropdownOpen(false)
-                          }}
-                          className="justify-between gap-2"
-                          onMouseEnter={(e) => {
-                            if (tooltipTimeoutRef.current) {
-                              clearTimeout(tooltipTimeoutRef.current)
-                              tooltipTimeoutRef.current = null
-                            }
-                            const rect = e.currentTarget.getBoundingClientRect()
-                            const showTooltip = () => {
-                              setModeTooltip({
-                                visible: true,
-                                position: {
-                                  top: rect.top,
-                                  left: rect.right + 8,
-                                },
-                                mode: "agent",
-                              })
-                              hasShownTooltipRef.current = true
-                              tooltipTimeoutRef.current = null
-                            }
-                            if (hasShownTooltipRef.current) {
-                              showTooltip()
-                            } else {
-                              tooltipTimeoutRef.current = setTimeout(
-                                showTooltip,
-                                1000,
-                              )
-                            }
-                          }}
-                          onMouseLeave={() => {
-                            if (tooltipTimeoutRef.current) {
-                              clearTimeout(tooltipTimeoutRef.current)
-                              tooltipTimeoutRef.current = null
-                            }
-                            setModeTooltip(null)
-                          }}
-                        >
-                          <div className="flex items-center gap-2">
-                            <AgentIcon className="w-4 h-4 text-muted-foreground" />
-                            <span>Agent</span>
-                          </div>
-                          {!isPlanMode && (
-                            <CheckIcon className="h-3.5 w-3.5 ml-auto shrink-0" />
-                          )}
-                        </DropdownMenuItem>
-                        <DropdownMenuItem
-                          onClick={() => {
-                            // Clear tooltip before closing dropdown (onMouseLeave won't fire)
-                            if (tooltipTimeoutRef.current) {
-                              clearTimeout(tooltipTimeoutRef.current)
-                              tooltipTimeoutRef.current = null
-                            }
-                            setModeTooltip(null)
-                            setIsPlanMode(true)
-                            setModeDropdownOpen(false)
-                          }}
-                          className="justify-between gap-2"
-                          onMouseEnter={(e) => {
-                            if (tooltipTimeoutRef.current) {
-                              clearTimeout(tooltipTimeoutRef.current)
-                              tooltipTimeoutRef.current = null
-                            }
-                            const rect = e.currentTarget.getBoundingClientRect()
-                            const showTooltip = () => {
-                              setModeTooltip({
-                                visible: true,
-                                position: {
-                                  top: rect.top,
-                                  left: rect.right + 8,
-                                },
-                                mode: "plan",
-                              })
-                              hasShownTooltipRef.current = true
-                              tooltipTimeoutRef.current = null
-                            }
-                            if (hasShownTooltipRef.current) {
-                              showTooltip()
-                            } else {
-                              tooltipTimeoutRef.current = setTimeout(
-                                showTooltip,
-                                1000,
-                              )
-                            }
-                          }}
-                          onMouseLeave={() => {
-                            if (tooltipTimeoutRef.current) {
-                              clearTimeout(tooltipTimeoutRef.current)
-                              tooltipTimeoutRef.current = null
-                            }
-                            setModeTooltip(null)
-                          }}
-                        >
-                          <div className="flex items-center gap-2">
-                            <PlanIcon className="w-4 h-4 text-muted-foreground" />
-                            <span>Plan</span>
-                          </div>
-                          {isPlanMode && (
-                            <CheckIcon className="h-3.5 w-3.5 ml-auto shrink-0" />
-                          )}
-                        </DropdownMenuItem>
-                      </DropdownMenuContent>
-                      {modeTooltip?.visible &&
-                        createPortal(
-                          <div
-                            className="fixed z-[100000]"
-                            style={{
-                              top: modeTooltip.position.top + 14,
-                              left: modeTooltip.position.left,
-                              transform: "translateY(-50%)",
-                            }}
-                          >
-                            <div
-                              data-tooltip="true"
-                              className="relative rounded-[12px] bg-popover px-2.5 py-1.5 text-xs text-popover-foreground dark max-w-[150px]"
-                            >
-                              <span>
-                                {modeTooltip.mode === "agent"
-                                  ? "Apply changes directly without a plan"
-                                  : "Create a plan before making changes"}
-                              </span>
-                            </div>
-                          </div>,
-                          document.body,
-                        )}
-                    </DropdownMenu>
+                    {/* Mode toggle (Agent/Plan) - extracted to prevent hover re-renders */}
+                    <ModeDropdown isPlanMode={isPlanMode} setIsPlanMode={setIsPlanMode} />
 
                     {/* Model selector */}
                     <DropdownMenu
