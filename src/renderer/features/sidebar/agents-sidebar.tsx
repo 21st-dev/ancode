@@ -152,7 +152,19 @@ const ChatIcon = React.memo(function ChatIcon({
   }
 
   return (
-    <div className="relative flex-shrink-0 w-4 h-4">
+    <motion.div
+      className="relative flex-shrink-0 w-4 h-4"
+      animate={
+        isLoading
+          ? { scale: [1, 1.08, 1] }
+          : { scale: 1 }
+      }
+      transition={
+        isLoading
+          ? { repeat: Infinity, duration: 1.5, ease: "easeInOut" }
+          : { duration: 0.2 }
+      }
+    >
       {/* Checkbox slides in from left, icon slides out */}
       <div
         className={cn(
@@ -182,25 +194,28 @@ const ChatIcon = React.memo(function ChatIcon({
       </div>
       {/* Badge in bottom-right corner: loader → amber dot → blue dot - hidden during multi-select */}
       {(isLoading || hasUnseenChanges || hasPendingPlan) && !isMultiSelectMode && (
-        <div
+        <motion.div
           className={cn(
             "absolute -bottom-1 -right-1 w-3 h-3 rounded-full flex items-center justify-center",
             isSelected
               ? "bg-[#E8E8E8] dark:bg-[#1B1B1B]"
               : "bg-[#F4F4F4] group-hover:bg-[#E8E8E8] dark:bg-[#101010] dark:group-hover:bg-[#1B1B1B]",
           )}
+          initial={isLoading ? { scale: 0.8, opacity: 0 } : false}
+          animate={isLoading ? { scale: 1, opacity: 1 } : { scale: 1, opacity: 1 }}
+          transition={{ duration: 0.2 }}
         >
           {/* Priority: loader > amber dot (pending plan) > blue dot (unseen) */}
           {isLoading ? (
-            <LoadingDot isLoading={true} className="w-2.5 h-2.5 text-muted-foreground" />
+            <LoadingDot isLoading={true} className="w-2.5 h-2.5 text-primary" />
           ) : hasPendingPlan ? (
             <div className="w-1.5 h-1.5 rounded-full bg-amber-500" />
           ) : (
             <LoadingDot isLoading={false} className="w-2.5 h-2.5 text-muted-foreground" />
           )}
-        </div>
+        </motion.div>
       )}
-    </div>
+    </motion.div>
   )
 })
 
