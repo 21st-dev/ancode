@@ -18,6 +18,8 @@ export interface TerminalProps {
   tabId?: string
   initialCommands?: string[]
   initialCwd?: string
+  /** Terminal instance metadata (for Claude Code session sync) */
+  terminalInstance?: TerminalInstance
 }
 
 export interface TerminalStreamEvent {
@@ -40,4 +42,10 @@ export interface TerminalInstance {
   name: string
   /** Creation timestamp */
   createdAt: number
+  /** True if this is a Claude Code CLI terminal (for session sync) */
+  isClaudeCode?: boolean
+  /** SubChat ID for syncing CLI messages back to database */
+  subChatId?: string
+  /** Session ID for CLI resume */
+  sessionId?: string
 }

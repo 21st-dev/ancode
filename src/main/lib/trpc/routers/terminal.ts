@@ -6,6 +6,7 @@ import { observable } from "@trpc/server/observable"
 import { terminalManager } from "../../terminal/manager"
 import type { TerminalEvent } from "../../terminal/types"
 import { TRPCError } from "@trpc/server"
+import { app } from "electron"
 
 export const terminalRouter = router({
 	/**
@@ -196,5 +197,56 @@ export const terminalRouter = router({
 					terminalManager.off(`exit:${paneId}`, onExit)
 				}
 			})
+		}),
+
+	/**
+	 * Create a terminal session that runs Claude Code CLI with resume
+	 */
+	createClaudeCodeSession: publicProcedure
+		.input(
+			z.object({
+				paneId: z.string(),
+				subChatId: z.string(),
+				sessionId: z.string(),
+				cwd: z.string(),
+				workspaceId: z.string(),
+			}),
+		)
+		.mutation(async ({ input }) => {
+			// Get the isolated config directory for this subChat
+			const configDir = path.join(
+				app.getPath("userData"),
+				"claude-sessions",
+				input.subChatId,
+			)
+
+			// Create the command to run Claude Code CLI with session resume
+			const command = `claude --resume ${input.sessionId}`
+
+			// Set environment variables
+			const env = {
+				...process.env,
+				CLAUDE_CONFIG_DIR: configDir,
+			}
+
+			// Create the terminal session
+			const session = await terminalManager.createSession({
+				paneId: input.paneId,
+				workspaceId: input.workspaceId,
+				cwd: input.cwd,
+				cols: 80,
+				rows: 24,
+				env,
+				initialCommand: command,
+			})
+
+			console.log(
+				`[TERMINAL] Created Claude Code session: paneId=${input.paneId}, sessionId=${input.sessionId}`,
+			)
+
+			return {
+				paneId: input.paneId,
+				sessionId: input.sessionId,
+			}
 		}),
 })

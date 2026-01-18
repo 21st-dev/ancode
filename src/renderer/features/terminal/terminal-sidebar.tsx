@@ -14,7 +14,7 @@ import {
   IconDoubleChevronRight,
   CustomTerminalIcon,
 } from "@/components/ui/icons"
-import { AlignJustify } from "lucide-react"
+import { AlignJustify, Code } from "lucide-react"
 import { Kbd } from "@/components/ui/kbd"
 import { Terminal } from "./terminal"
 import { TerminalTabs } from "./terminal-tabs"
@@ -45,6 +45,10 @@ interface TerminalSidebarProps {
   isMobileFullscreen?: boolean
   /** Callback when closing in mobile mode */
   onClose?: () => void
+  /** SubChat ID for Claude Code session sync */
+  subChatId?: string
+  /** Session ID for CLI resume */
+  sessionId?: string
 }
 
 /**
@@ -85,6 +89,8 @@ export function TerminalSidebar({
   initialCommands,
   isMobileFullscreen = false,
   onClose,
+  subChatId,
+  sessionId,
 }: TerminalSidebarProps) {
   const [isOpen, setIsOpen] = useAtom(terminalSidebarOpenAtom)
   const [allTerminals, setAllTerminals] = useAtom(terminalsAtom)
@@ -128,6 +134,10 @@ export function TerminalSidebar({
   // tRPC mutation for killing terminal sessions
   const killMutation = trpc.terminal.kill.useMutation()
 
+  // tRPC mutation for creating Claude Code sessions
+  const createClaudeCodeMutation =
+    trpc.terminal.createClaudeCodeSession.useMutation()
+
   // Refs to avoid callback recreation
   const chatIdRef = useRef(chatId)
   chatIdRef.current = chatId
@@ -163,6 +173,61 @@ export function TerminalSidebar({
       [currentChatId]: id,
     }))
   }, [setAllTerminals, setAllActiveIds])
+
+  // Open in Claude Code - stable callback
+  const openInClaudeCode = useCallback(() => {
+    if (!subChatId || !sessionId) {
+      console.warn(
+        "[TERMINAL] Cannot open Claude Code: missing subChatId or sessionId",
+      )
+      return
+    }
+
+    const currentChatId = chatIdRef.current
+    const currentTerminals = terminalsRef.current
+
+    const id = generateTerminalId()
+    const paneId = generatePaneId(currentChatId, id)
+
+    const newTerminal: TerminalInstance = {
+      id,
+      paneId,
+      name: "Claude Code",
+      createdAt: Date.now(),
+      isClaudeCode: true,
+      subChatId,
+      sessionId,
+    }
+
+    // Add the terminal to state
+    setAllTerminals((prev) => ({
+      ...prev,
+      [currentChatId]: [...(prev[currentChatId] || []), newTerminal],
+    }))
+
+    // Set as active
+    setAllActiveIds((prev) => ({
+      ...prev,
+      [currentChatId]: id,
+    }))
+
+    // Create the Claude Code session via tRPC
+    createClaudeCodeMutation.mutate({
+      paneId,
+      subChatId,
+      sessionId,
+      cwd,
+      workspaceId,
+    })
+  }, [
+    subChatId,
+    sessionId,
+    cwd,
+    workspaceId,
+    setAllTerminals,
+    setAllActiveIds,
+    createClaudeCodeMutation,
+  ])
 
   // Select a terminal - stable callback
   const selectTerminal = useCallback(
@@ -416,6 +481,7 @@ export function TerminalSidebar({
                 tabId={tabId}
                 initialCommands={initialCommands}
                 initialCwd={cwd}
+                terminalInstance={activeTerminal}
               />
             </motion.div>
           ) : (
@@ -467,8 +533,27 @@ export function TerminalSidebar({
             />
           )}
 
-          {/* Close button */}
+          {/* Buttons */}
           <div className="flex items-center gap-1 flex-shrink-0">
+            {/* Open in Claude Code button - only show if we have session info */}
+            {subChatId && sessionId && (
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    onClick={openInClaudeCode}
+                    className="h-6 w-6 p-0 hover:bg-foreground/10 transition-[background-color,transform] duration-150 ease-out active:scale-[0.97] text-foreground flex-shrink-0 rounded-md"
+                    aria-label="Open in Claude Code"
+                  >
+                    <Code className="h-4 w-4" />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent side="bottom">Open in Claude Code</TooltipContent>
+              </Tooltip>
+            )}
+
+            {/* Close button */}
             <Tooltip>
               <TooltipTrigger asChild>
                 <Button
@@ -509,6 +594,7 @@ export function TerminalSidebar({
                 tabId={tabId}
                 initialCommands={initialCommands}
                 initialCwd={cwd}
+                terminalInstance={activeTerminal}
               />
             </motion.div>
           ) : (

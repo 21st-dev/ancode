@@ -32,6 +32,7 @@ export function Terminal({
   tabId,
   initialCommands,
   initialCwd,
+  terminalInstance,
 }: TerminalProps) {
   const containerRef = useRef<HTMLDivElement>(null)
   const xtermRef = useRef<XTerm | null>(null)
@@ -68,6 +69,7 @@ export function Terminal({
   const resizeMutation = trpc.terminal.resize.useMutation()
   const detachMutation = trpc.terminal.detach.useMutation()
   const clearScrollbackMutation = trpc.terminal.clearScrollback.useMutation()
+  const syncCliSessionMutation = trpc.claude.syncCliSession.useMutation()
 
   // Refs for mutations to avoid effect re-runs
   const createOrAttachRef = useRef(createOrAttachMutation.mutate)
@@ -102,20 +104,64 @@ export function Terminal({
   updateCwdRef.current = updateCwdFromData
 
   // Handle stream data
-  const handleStreamData = useCallback((event: TerminalStreamEvent) => {
-    if (!xtermRef.current) return
+  const handleStreamData = useCallback(
+    (event: TerminalStreamEvent) => {
+      if (!xtermRef.current) return
 
-    if (event.type === "data" && event.data) {
-      xtermRef.current.write(event.data)
-      updateCwdRef.current(event.data)
-    } else if (event.type === "exit") {
-      isExitedRef.current = true
-      xtermRef.current.writeln(
-        `\r\n\r\n[Process exited with code ${event.exitCode}]`,
-      )
-      xtermRef.current.writeln("[Press any key to restart]")
-    }
-  }, [])
+      if (event.type === "data" && event.data) {
+        xtermRef.current.write(event.data)
+        updateCwdRef.current(event.data)
+      } else if (event.type === "exit") {
+        isExitedRef.current = true
+        xtermRef.current.writeln(
+          `\r\n\r\n[Process exited with code ${event.exitCode}]`,
+        )
+
+        // If this was a Claude Code terminal, sync the session back to GUI
+        if (
+          terminalInstance?.isClaudeCode &&
+          terminalInstance.subChatId &&
+          terminalInstance.sessionId
+        ) {
+          console.log(
+            `[TERMINAL] Claude Code session exited, syncing messages...`,
+          )
+          xtermRef.current.writeln("[Syncing messages...]")
+
+          syncCliSessionMutation.mutate(
+            {
+              subChatId: terminalInstance.subChatId,
+              sessionId: terminalInstance.sessionId,
+              cwd: terminalCwdRef.current || cwd,
+            },
+            {
+              onSuccess: (result) => {
+                console.log(
+                  `[TERMINAL] Sync complete: ${result.newMessages} new messages`,
+                )
+                if (xtermRef.current) {
+                  xtermRef.current.writeln(
+                    `[Synced ${result.newMessages} new messages to chat]`,
+                  )
+                }
+              },
+              onError: (err) => {
+                console.error(`[TERMINAL] Sync failed:`, err)
+                if (xtermRef.current) {
+                  xtermRef.current.writeln(
+                    `\x1b[31m[Failed to sync messages: ${err.message}]\x1b[0m`,
+                  )
+                }
+              },
+            },
+          )
+        }
+
+        xtermRef.current.writeln("[Press any key to restart]")
+      }
+    },
+    [terminalInstance, syncCliSessionMutation, cwd],
+  )
 
   // Subscribe to terminal output
   trpc.terminal.stream.useSubscription(paneId, {

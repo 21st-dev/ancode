@@ -1105,4 +1105,92 @@ export const claudeRouter = router({
       pendingToolApprovals.delete(input.toolUseId)
       return { ok: true }
     }),
+
+  /**
+   * Sync CLI session messages back to GUI database
+   * Called when a Claude Code terminal exits
+   */
+  syncCliSession: publicProcedure
+    .input(
+      z.object({
+        subChatId: z.string(),
+        sessionId: z.string(),
+        cwd: z.string(),
+      }),
+    )
+    .mutation(async ({ input }) => {
+      const db = getDatabase()
+
+      // 1. Get config directory for this subChat
+      const configDir = path.join(
+        app.getPath("userData"),
+        "claude-sessions",
+        input.subChatId,
+      )
+
+      // 2. Find the session file
+      const { findSessionFile, parseSessionFile, convertCliToGuiMessages } =
+        await import("../claude/cli-sync")
+
+      const sessionFilePath = await findSessionFile(
+        configDir,
+        input.cwd,
+        input.sessionId,
+      )
+
+      if (!sessionFilePath) {
+        console.warn(
+          `[CLI-SYNC] Session file not found for subChat ${input.subChatId}`,
+        )
+        return { synced: false, messageCount: 0, reason: "file_not_found" }
+      }
+
+      // 3. Parse the JSONL file
+      const cliMessages = await parseSessionFile(sessionFilePath)
+      if (cliMessages.length === 0) {
+        console.warn(`[CLI-SYNC] No messages in session file`)
+        return { synced: false, messageCount: 0, reason: "no_messages" }
+      }
+
+      // 4. Get existing messages from database
+      const existing = db
+        .select()
+        .from(subChats)
+        .where(eq(subChats.id, input.subChatId))
+        .get()
+
+      if (!existing) {
+        console.error(`[CLI-SYNC] SubChat not found: ${input.subChatId}`)
+        return { synced: false, messageCount: 0, reason: "subchat_not_found" }
+      }
+
+      const existingMessages = JSON.parse(existing.messages || "[]")
+
+      // 5. Convert CLI messages to GUI format and merge
+      const convertedMessages = convertCliToGuiMessages(
+        cliMessages,
+        existingMessages,
+      )
+
+      const newMessageCount = convertedMessages.length - existingMessages.length
+
+      // 6. Update database
+      db.update(subChats)
+        .set({
+          messages: JSON.stringify(convertedMessages),
+          updatedAt: new Date(),
+        })
+        .where(eq(subChats.id, input.subChatId))
+        .run()
+
+      console.log(
+        `[CLI-SYNC] Synced ${newMessageCount} new messages for subChat ${input.subChatId}`,
+      )
+
+      return {
+        synced: true,
+        messageCount: convertedMessages.length,
+        newMessages: newMessageCount,
+      }
+    }),
 })

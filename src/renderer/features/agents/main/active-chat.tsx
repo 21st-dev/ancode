@@ -5504,13 +5504,31 @@ export function ChatView({
         )}
 
         {/* Terminal Sidebar - shows when worktree exists (desktop only) */}
-        {worktreePath && (
-          <TerminalSidebar
-            chatId={chatId}
-            cwd={worktreePath}
-            workspaceId={chatId}
-          />
-        )}
+        {worktreePath && (() => {
+          // Extract sessionId from the last assistant message for CLI session resume
+          const lastAssistantMessage = activeChat?.messages
+            ?.slice()
+            .reverse()
+            .find((m) => m.role === "assistant")
+          const sessionId = (lastAssistantMessage as any)?.metadata?.sessionId
+
+          console.log("[CLAUDE-CODE-BUTTON] Debug:", {
+            activeSubChatId,
+            sessionId,
+            hasMessages: !!activeChat?.messages?.length,
+            lastAssistantMessage: !!lastAssistantMessage,
+          })
+
+          return (
+            <TerminalSidebar
+              chatId={chatId}
+              cwd={worktreePath}
+              workspaceId={chatId}
+              subChatId={activeSubChatId}
+              sessionId={sessionId}
+            />
+          )
+        })()}
       </div>
     </div>
   )
