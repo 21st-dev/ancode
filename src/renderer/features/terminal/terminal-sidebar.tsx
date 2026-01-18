@@ -14,7 +14,7 @@ import {
   IconDoubleChevronRight,
   CustomTerminalIcon,
 } from "@/components/ui/icons"
-import { AlignJustify, Code } from "lucide-react"
+import { AlignJustify } from "lucide-react"
 import { Kbd } from "@/components/ui/kbd"
 import { Terminal } from "./terminal"
 import { TerminalTabs } from "./terminal-tabs"
@@ -46,10 +46,6 @@ interface TerminalSidebarProps {
   isMobileFullscreen?: boolean
   /** Callback when closing in mobile mode */
   onClose?: () => void
-  /** SubChat ID for Claude Code session sync */
-  subChatId?: string
-  /** Session ID for CLI resume */
-  sessionId?: string
 }
 
 /**
@@ -90,8 +86,6 @@ export function TerminalSidebar({
   initialCommands,
   isMobileFullscreen = false,
   onClose,
-  subChatId,
-  sessionId,
 }: TerminalSidebarProps) {
   const [isOpen, setIsOpen] = useAtom(terminalSidebarOpenAtom)
   const [allTerminals, setAllTerminals] = useAtom(terminalsAtom)
@@ -176,18 +170,9 @@ export function TerminalSidebar({
     }))
   }, [setAllTerminals, setAllActiveIds])
 
-  // Open in Claude Code - stable callback
-  // Can be called with explicit params (from atom signal) or use props (from button)
-  const openInClaudeCode = useCallback((params?: { subChatId: string; sessionId: string }) => {
-    const targetSubChatId = params?.subChatId ?? subChatId
-    const targetSessionId = params?.sessionId ?? sessionId
-
-    if (!targetSubChatId || !targetSessionId) {
-      console.warn(
-        "[TERMINAL] Cannot open Claude Code: missing subChatId or sessionId",
-      )
-      return
-    }
+  // Open in Claude Code - stable callback (called via atom signal from chat input)
+  const openInClaudeCode = useCallback((params: { subChatId: string; sessionId: string }) => {
+    const { subChatId, sessionId } = params
 
     const currentChatId = chatIdRef.current
     const currentTerminals = terminalsRef.current
@@ -195,39 +180,51 @@ export function TerminalSidebar({
     const id = generateTerminalId()
     const paneId = generatePaneId(currentChatId, id)
 
+    console.log('[CLAUDE-CODE] Creating terminal instance', { id, paneId, subChatId, sessionId, cwd, workspaceId })
+
     const newTerminal: TerminalInstance = {
       id,
       paneId,
       name: "Claude Code",
       createdAt: Date.now(),
       isClaudeCode: true,
-      subChatId: targetSubChatId,
-      sessionId: targetSessionId,
+      subChatId,
+      sessionId,
     }
 
-    // Add the terminal to state
-    setAllTerminals((prev) => ({
-      ...prev,
-      [currentChatId]: [...(prev[currentChatId] || []), newTerminal],
-    }))
+    // Create the Claude Code session via tRPC FIRST
+    // Then add terminal to state after backend session is ready
+    console.log('[CLAUDE-CODE] Calling createClaudeCodeSession mutation')
+    createClaudeCodeMutation.mutate(
+      {
+        paneId,
+        subChatId,
+        sessionId,
+        cwd,
+        workspaceId,
+      },
+      {
+        onSuccess: (data) => {
+          console.log('[CLAUDE-CODE] Session created successfully, adding terminal to state', data)
+          // NOW add the terminal to state - this will mount Terminal component
+          // which will attach to the already-created session with claude command running
+          setAllTerminals((prev) => ({
+            ...prev,
+            [currentChatId]: [...(prev[currentChatId] || []), newTerminal],
+          }))
 
-    // Set as active
-    setAllActiveIds((prev) => ({
-      ...prev,
-      [currentChatId]: id,
-    }))
-
-    // Create the Claude Code session via tRPC
-    createClaudeCodeMutation.mutate({
-      paneId,
-      subChatId: targetSubChatId,
-      sessionId: targetSessionId,
-      cwd,
-      workspaceId,
-    })
+          // Set as active
+          setAllActiveIds((prev) => ({
+            ...prev,
+            [currentChatId]: id,
+          }))
+        },
+        onError: (error) => {
+          console.error('[CLAUDE-CODE] Failed to create session', error)
+        },
+      }
+    )
   }, [
-    subChatId,
-    sessionId,
     cwd,
     workspaceId,
     setAllTerminals,
@@ -386,11 +383,12 @@ export function TerminalSidebar({
   }, [isOpen])
 
   // Auto-create first terminal when sidebar opens and no terminals exist
+  // Skip auto-creation if we have a pending Claude Code signal (to avoid race condition)
   useEffect(() => {
-    if (isOpen && terminals.length === 0) {
+    if (isOpen && terminals.length === 0 && !openClaudeCodeSignal) {
       createTerminal()
     }
-  }, [isOpen, terminals.length, createTerminal])
+  }, [isOpen, terminals.length, createTerminal, openClaudeCodeSignal])
 
   // Keyboard shortcut: Cmd+J to toggle terminal sidebar
   useEffect(() => {
@@ -414,7 +412,14 @@ export function TerminalSidebar({
 
   // Watch for "Open in Claude Code" signal from chat input area
   useEffect(() => {
+    console.log('[CLAUDE-CODE] TerminalSidebar atom check', {
+      hasSignal: !!openClaudeCodeSignal,
+      signalChatId: openClaudeCodeSignal?.chatId,
+      currentChatId: chatId,
+      matches: openClaudeCodeSignal?.chatId === chatId
+    })
     if (openClaudeCodeSignal && openClaudeCodeSignal.chatId === chatId) {
+      console.log('[CLAUDE-CODE] Signal matched, creating Claude Code session', openClaudeCodeSignal)
       // Clear the signal first to prevent re-triggering
       setOpenClaudeCodeSignal(null)
       // Open Claude Code with the provided params
@@ -554,24 +559,6 @@ export function TerminalSidebar({
 
           {/* Buttons */}
           <div className="flex items-center gap-1 flex-shrink-0">
-            {/* Open in Claude Code button - only show if we have session info */}
-            {subChatId && sessionId && (
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    onClick={openInClaudeCode}
-                    className="h-6 w-6 p-0 hover:bg-foreground/10 transition-[background-color,transform] duration-150 ease-out active:scale-[0.97] text-foreground flex-shrink-0 rounded-md"
-                    aria-label="Open in Claude Code"
-                  >
-                    <Code className="h-4 w-4" />
-                  </Button>
-                </TooltipTrigger>
-                <TooltipContent side="bottom">Open in Claude Code</TooltipContent>
-              </Tooltip>
-            )}
-
             {/* Close button */}
             <Tooltip>
               <TooltipTrigger asChild>

@@ -820,6 +820,7 @@ function ChatViewInner({
   projectPath,
   isArchived = false,
   onRestoreWorkspace,
+  dbSessionId,
 }: {
   chat: Chat<any>
   subChatId: string
@@ -839,6 +840,7 @@ function ChatViewInner({
   projectPath?: string
   isArchived?: boolean
   onRestoreWorkspace?: () => void
+  dbSessionId?: string
 }) {
   // UNCONTROLLED: just track if editor has content for send button
   const [hasContent, setHasContent] = useState(false)
@@ -1265,10 +1267,12 @@ function ChatViewInner({
   const isStreaming = status === "streaming" || status === "submitted"
 
   // Extract sessionId from last assistant message for CLI handoff
+  // Fallback to database sessionId for older chats that don't have it in message metadata
   const sessionId = useMemo(() => {
     const lastAssistantMessage = [...messages].reverse().find((m) => m.role === "assistant")
-    return (lastAssistantMessage as any)?.metadata?.sessionId as string | undefined
-  }, [messages])
+    const sid = (lastAssistantMessage as any)?.metadata?.sessionId as string | undefined
+    return sid || dbSessionId
+  }, [messages, dbSessionId])
 
   // Track compacting status from SDK
   const compactingSubChats = useAtomValue(compactingSubChatsAtom)
@@ -1285,11 +1289,17 @@ function ChatViewInner({
 
   // Handler to open chat in Claude Code CLI
   const handleOpenInClaudeCode = useCallback(() => {
-    if (!sessionId) return
+    console.log('[CLAUDE-CODE] Button clicked', { sessionId, subChatId, parentChatId })
+    if (!sessionId) {
+      console.warn('[CLAUDE-CODE] No sessionId available')
+      return
+    }
     // Signal to terminal sidebar to create Claude Code session
     setOpenClaudeCode({ subChatId, sessionId, chatId: parentChatId })
+    console.log('[CLAUDE-CODE] Set openClaudeCode atom signal')
     // Open the terminal sidebar
     setTerminalSidebarOpen(true)
+    console.log('[CLAUDE-CODE] Opened terminal sidebar')
   }, [sessionId, subChatId, parentChatId, setOpenClaudeCode, setTerminalSidebarOpen])
 
   // Keep refs updated for scroll save cleanup to use
@@ -3430,14 +3440,13 @@ function ChatViewInner({
                         <TooltipTrigger asChild>
                           <button
                             onClick={handleOpenInClaudeCode}
-                            className="flex items-center gap-1.5 px-2 py-1 text-sm text-muted-foreground hover:text-foreground transition-colors rounded-md hover:bg-muted/50 outline-offset-2 focus-visible:outline focus-visible:outline-2 focus-visible:outline-ring/70"
+                            className="flex items-center justify-center w-7 h-7 text-muted-foreground hover:text-foreground transition-colors rounded-md hover:bg-muted/50 outline-offset-2 focus-visible:outline focus-visible:outline-2 focus-visible:outline-ring/70"
                           >
                             <Code className="h-3.5 w-3.5" />
-                            <span>CLI</span>
                           </button>
                         </TooltipTrigger>
                         <TooltipContent sideOffset={8}>
-                          Continue this chat in Claude Code terminal
+                          Continue in Claude Code CLI
                         </TooltipContent>
                       </Tooltip>
                     )}
@@ -3770,6 +3779,7 @@ export function ChatView({
     updated_at?: Date | string | null
     messages?: any
     stream_id?: string | null
+    sessionId?: string | null
   }>
 
   // Get PR status when PR exists (for checking if it's open/merged/closed)
@@ -5070,6 +5080,7 @@ export function ChatView({
               projectPath={worktreePath || undefined}
               isArchived={isArchived}
               onRestoreWorkspace={handleRestoreWorkspace}
+              dbSessionId={agentSubChats.find(sc => sc.id === activeSubChatId)?.sessionId || undefined}
             />
           ) : (
             <>

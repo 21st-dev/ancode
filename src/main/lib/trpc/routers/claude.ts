@@ -1130,7 +1130,7 @@ export const claudeRouter = router({
 
       // 2. Find the session file
       const { findSessionFile, parseSessionFile, convertCliToGuiMessages } =
-        await import("../claude/cli-sync")
+        await import("../../claude/cli-sync")
 
       const sessionFilePath = await findSessionFile(
         configDir,

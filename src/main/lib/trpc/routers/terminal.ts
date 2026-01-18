@@ -213,6 +213,9 @@ export const terminalRouter = router({
 			}),
 		)
 		.mutation(async ({ input }) => {
+			const fs = await import("fs/promises")
+			const os = await import("os")
+
 			// Get the isolated config directory for this subChat
 			const configDir = path.join(
 				app.getPath("userData"),
@@ -220,24 +223,44 @@ export const terminalRouter = router({
 				input.subChatId,
 			)
 
-			// Create the command to run Claude Code CLI with session resume
-			const command = `claude --resume ${input.sessionId}`
+			// Ensure config directory exists
+			await fs.mkdir(configDir, { recursive: true })
 
-			// Set environment variables
-			const env = {
-				...process.env,
-				CLAUDE_CONFIG_DIR: configDir,
+			// Symlink config.json from ~/.claude/ so CLI auth works
+			const homeClaudeDir = path.join(os.homedir(), ".claude")
+			const configSource = path.join(homeClaudeDir, "config.json")
+			const configTarget = path.join(configDir, "config.json")
+
+			try {
+				const configSourceExists = await fs
+					.stat(configSource)
+					.then(() => true)
+					.catch(() => false)
+				const configTargetExists = await fs
+					.lstat(configTarget)
+					.then(() => true)
+					.catch(() => false)
+
+				if (configSourceExists && !configTargetExists) {
+					await fs.symlink(configSource, configTarget, "file")
+					console.log(`[TERMINAL] Symlinked config: ${configTarget} -> ${configSource}`)
+				}
+			} catch (symlinkErr) {
+				console.warn("[TERMINAL] Failed to symlink config.json:", symlinkErr)
 			}
 
-			// Create the terminal session
-			const session = await terminalManager.createSession({
+			// Create command with environment variable set inline
+			// This sets CLAUDE_CONFIG_DIR and runs claude --resume in one command
+			const command = `CLAUDE_CONFIG_DIR="${configDir}" claude --resume ${input.sessionId}`
+
+			// Create the terminal session with the command as initialCommands
+			const result = await terminalManager.createOrAttach({
 				paneId: input.paneId,
 				workspaceId: input.workspaceId,
 				cwd: input.cwd,
 				cols: 80,
 				rows: 24,
-				env,
-				initialCommand: command,
+				initialCommands: [command],
 			})
 
 			console.log(
@@ -247,6 +270,7 @@ export const terminalRouter = router({
 			return {
 				paneId: input.paneId,
 				sessionId: input.sessionId,
+				isNew: result.isNew,
 			}
 		}),
 })
