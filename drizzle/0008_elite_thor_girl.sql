@@ -1,0 +1,1 @@
+ALTER TABLE `claude_code_settings` ADD `anthropic_base_url` text;

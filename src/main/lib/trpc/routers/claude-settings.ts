@@ -98,6 +98,7 @@ export const claudeSettingsRouter = router({
       authMode: (settings.authMode || "oauth") as "oauth" | "aws" | "apiKey",
       apiKey: settings.apiKey ? "••••••••" : null, // Masked for UI
       bedrockRegion: settings.bedrockRegion || "us-east-1",
+      anthropicBaseUrl: settings.anthropicBaseUrl || null,
     }
   }),
 
@@ -114,6 +115,7 @@ export const claudeSettingsRouter = router({
         authMode: z.enum(["oauth", "aws", "apiKey"]).optional(),
         apiKey: z.string().optional(), // API key for apiKey mode
         bedrockRegion: z.string().optional(), // AWS region for Bedrock
+        anthropicBaseUrl: z.string().nullable().optional(), // Custom Anthropic API base URL
       })
     )
     .mutation(({ input }) => {
@@ -151,6 +153,9 @@ export const claudeSettingsRouter = router({
             ...(input.bedrockRegion !== undefined && {
               bedrockRegion: input.bedrockRegion,
             }),
+            ...(input.anthropicBaseUrl !== undefined && {
+              anthropicBaseUrl: input.anthropicBaseUrl,
+            }),
             updatedAt: new Date(),
           })
           .where(eq(claudeCodeSettings.id, "default"))
@@ -166,6 +171,7 @@ export const claudeSettingsRouter = router({
             mcpServerSettings: JSON.stringify(input.mcpServerSettings ?? {}),
             authMode: input.authMode ?? "oauth",
             bedrockRegion: input.bedrockRegion ?? "us-east-1",
+            anthropicBaseUrl: input.anthropicBaseUrl ?? null,
             ...(input.authMode === "apiKey" && input.apiKey && {
               apiKey: encryptApiKey(input.apiKey),
             }),

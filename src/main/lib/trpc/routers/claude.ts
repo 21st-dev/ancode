@@ -112,6 +112,7 @@ function getClaudeCodeSettings(): {
   authMode: "oauth" | "aws" | "apiKey"
   apiKey: string | null
   bedrockRegion: string | null
+  anthropicBaseUrl: string | null
 } {
   try {
     const db = getDatabase()
@@ -130,6 +131,7 @@ function getClaudeCodeSettings(): {
         authMode: "oauth",
         apiKey: null,
         bedrockRegion: "us-east-1",
+        anthropicBaseUrl: null,
       }
     }
 
@@ -164,6 +166,7 @@ function getClaudeCodeSettings(): {
       authMode: (settings.authMode || "oauth") as "oauth" | "aws" | "apiKey",
       apiKey,
       bedrockRegion: settings.bedrockRegion || "us-east-1",
+      anthropicBaseUrl: settings.anthropicBaseUrl || null,
     }
   } catch (error) {
     console.error("[claude] Error getting Claude Code settings:", error)
@@ -175,6 +178,7 @@ function getClaudeCodeSettings(): {
       authMode: "oauth",
       apiKey: null,
       bedrockRegion: "us-east-1",
+      anthropicBaseUrl: null,
     }
   }
 }
@@ -470,7 +474,7 @@ export const claudeRouter = router({
             // Use custom config dir if provided, otherwise use per-subchat isolated
             // The Claude binary stores sessions in ~/.claude/ based on cwd, which causes
             // cross-chat contamination when multiple chats use the same project folder
-            const { customBinaryPath, customEnvVars, customConfigDir, authMode, apiKey, bedrockRegion } = getClaudeCodeSettings()
+            const { customBinaryPath, customEnvVars, customConfigDir, authMode, apiKey, bedrockRegion, anthropicBaseUrl } = getClaudeCodeSettings()
             const claudeConfigDir = customConfigDir || path.join(
               app.getPath("userData"),
               "claude-sessions",
@@ -531,6 +535,11 @@ export const claudeRouter = router({
             } else if (authMode === "apiKey" && apiKey) {
               // API key mode: use API key directly
               finalEnv.ANTHROPIC_API_KEY = apiKey
+              // Set custom base URL if provided
+              if (anthropicBaseUrl) {
+                finalEnv.ANTHROPIC_BASE_URL = anthropicBaseUrl
+                console.log(`[claude] Using custom API base URL: ${anthropicBaseUrl}`)
+              }
               console.log("[claude] Using API key authentication mode")
             } else if (authMode === "aws") {
               // AWS mode: ensure AWS SDK can find credentials

@@ -12,10 +12,12 @@ import { AnimatePresence, motion } from "motion/react"
 import { useEffect, useState } from "react"
 import { createPortal } from "react-dom"
 import {
+  ClaudeCodeIcon,
   EyeOpenFilledIcon,
   ProfileIconFilled,
 } from "../../../components/ui/icons"
 import { AgentsAppearanceTab } from "./settings-tabs/agents-appearance-tab"
+import { AgentsClaudeCodeTab } from "./settings-tabs/agents-claude-code-tab"
 import { AgentsProfileTab } from "./settings-tabs/agents-profile-tab"
 import { AgentsDebugTab } from "./settings-tabs/agents-debug-tab"
 import { Bug } from "lucide-react"
@@ -34,6 +36,12 @@ const ALL_TABS = [
     label: "Account",
     icon: ProfileIconFilled,
     description: "Manage your account settings",
+  },
+  {
+    id: "claude-code" as SettingsTab,
+    label: "Claude Code",
+    icon: ClaudeCodeIcon,
+    description: "Claude Code integration settings",
   },
   {
     id: "appearance" as SettingsTab,
@@ -118,6 +126,8 @@ export function AgentsSettingsDialog({
     switch (activeTab) {
       case "profile":
         return <AgentsProfileTab />
+      case "claude-code":
+        return <AgentsClaudeCodeTab />
       case "appearance":
         return <AgentsAppearanceTab />
       case "debug":

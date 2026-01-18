@@ -109,6 +109,7 @@ export const claudeCodeSettings = sqliteTable("claude_code_settings", {
   authMode: text("auth_mode").notNull().default("oauth"), // "oauth" | "aws" | "apiKey"
   apiKey: text("api_key"), // API key for apiKey mode (encrypted)
   bedrockRegion: text("bedrock_region").notNull().default("us-east-1"), // AWS region for Bedrock
+  anthropicBaseUrl: text("anthropic_base_url"), // Custom Anthropic API base URL (for API key mode)
   updatedAt: integer("updated_at", { mode: "timestamp" }).$defaultFn(
     () => new Date(),
   ),

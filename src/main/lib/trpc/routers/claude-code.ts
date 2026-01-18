@@ -2,7 +2,7 @@ import { z } from "zod"
 import { shell, safeStorage } from "electron"
 import { router, publicProcedure } from "../index"
 import { getApiUrl } from "../../config"
-import { getDatabase, claudeCodeCredentials } from "../../db"
+import { getDatabase, claudeCodeCredentials, claudeCodeSettings } from "../../db"
 import { eq } from "drizzle-orm"
 
 /**
@@ -34,6 +34,7 @@ function decryptToken(encrypted: string): string {
 export const claudeCodeRouter = router({
   /**
    * Check if user has Claude Code connected (local check)
+   * Checks for OAuth token, API key, or AWS Bedrock mode
    */
   getIntegration: publicProcedure.query(() => {
     const db = getDatabase()
@@ -43,9 +44,29 @@ export const claudeCodeRouter = router({
       .where(eq(claudeCodeCredentials.id, "default"))
       .get()
 
+    const settings = db
+      .select()
+      .from(claudeCodeSettings)
+      .where(eq(claudeCodeSettings.id, "default"))
+      .get()
+
+    const authMode = settings?.authMode || "oauth"
+    let isConnected = !!cred?.oauthToken
+
+    // For API Key mode, check if API key is set
+    if (authMode === "apiKey" && settings?.apiKey) {
+      isConnected = true
+    }
+
+    // For AWS Bedrock mode, consider connected if mode is set
+    if (authMode === "aws") {
+      isConnected = true
+    }
+
     return {
-      isConnected: !!cred?.oauthToken,
+      isConnected,
       connectedAt: cred?.connectedAt?.toISOString() ?? null,
+      authMode: authMode as "oauth" | "aws" | "apiKey",
     }
   }),
 

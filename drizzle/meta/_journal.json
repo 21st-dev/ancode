@@ -50,6 +50,20 @@
       "when": 1768683649534,
       "tag": "0006_rainy_the_watchers",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "6",
+      "when": 1768685165152,
+      "tag": "0007_fixed_speed",
+      "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "6",
+      "when": 1768686511944,
+      "tag": "0008_elite_thor_girl",
+      "breakpoints": true
     }
   ]
 }

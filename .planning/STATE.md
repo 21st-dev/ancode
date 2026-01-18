@@ -2,7 +2,7 @@
 
 **Last Updated:** 2025-01-17
 **Current Phase:** 03-claude-settings
-**Current Plan:** 03-claude-settings-03 (COMPLETE)
+**Current Plan:** 03-claude-settings-03-FIX (COMPLETE)
 
 ## Completed Work
 
@@ -46,6 +46,14 @@
   - Migration generated: `drizzle/0007_fixed_speed.sql`
   - SUMMARY.md created at `.planning/phases/03-claude-settings/03-claude-settings-03-SUMMARY.md`
 
+- Plan 03-FIX: **03-claude-settings-03-FIX** - Complete
+  - Fixed 2 UAT issues from plan 03-03
+  - 2 files modified, 1 file deleted:
+    - `src/renderer/features/agents/components/settings-tabs/agents-claude-code-tab.tsx` - Fixed API key status display to check claudeSettings.apiKey instead of local state
+    - `src/renderer/components/dialogs/agents-settings-dialog.tsx` - Updated import to canonical location
+    - `src/renderer/components/dialogs/settings-tabs/agents-claude-code-tab.tsx` - DELETED (duplicate)
+  - SUMMARY.md created at `.planning/phases/03-claude-settings/03-claude-settings-03-FIX-SUMMARY.md`
+
 ## Codebase Status
 
 ### Authentication
@@ -76,11 +84,14 @@
   - AWS Bedrock (uses AWS credentials from env vars or ~/.aws/credentials)
   - API Key (direct Anthropic API key with encrypted storage)
 - Settings persist in SQLite database (`claude_code_settings` table)
+- **FIXED:** API key status now correctly displays as "Configured" when saved from onboarding
+- **FIXED:** Single source of truth for settings tabs (duplicates removed)
 
 ## Next Steps
 
 ### Phase 03: Claude Settings
-- Plans 01, 02, and 03 are complete
+- Plans 01, 02, 03, and 03-FIX are complete
+- All UAT issues from plan 03-03 have been resolved
 - Additional plans may be added for further Claude Code configuration options
 
 ### Phase Directory
