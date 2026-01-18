@@ -19,6 +19,11 @@ interface FileTreeSidebarProps {
   projectPath: string | undefined
   projectId: string
   onClose: () => void
+  /** Called when a data file (CSV, JSON, SQLite, Parquet) is clicked */
+  onSelectDataFile?: (path: string) => void
+  /** Called when a source file (non-data file) is clicked */
+  onSelectSourceFile?: (path: string) => void
+  /** @deprecated Use onSelectDataFile and onSelectSourceFile instead */
   onSelectFile?: (path: string) => void
 }
 
@@ -26,6 +31,8 @@ export function FileTreeSidebar({
   projectPath,
   projectId,
   onClose,
+  onSelectDataFile,
+  onSelectSourceFile,
   onSelectFile,
 }: FileTreeSidebarProps) {
   const [expandedFolders, setExpandedFolders] = useAtom(
@@ -151,6 +158,8 @@ export function FileTreeSidebar({
               level={0}
               expandedFolders={expandedFolders}
               onToggleFolder={handleToggleFolder}
+              onSelectDataFile={onSelectDataFile}
+              onSelectSourceFile={onSelectSourceFile}
               onSelectFile={onSelectFile}
               gitStatus={gitStatus as GitStatusMap}
             />

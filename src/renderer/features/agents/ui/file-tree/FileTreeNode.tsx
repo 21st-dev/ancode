@@ -1,12 +1,12 @@
 "use client"
 
-import { ChevronRight, File, Folder, FolderOpen, FileSpreadsheet, FileJson, Database } from "lucide-react"
+import { ChevronRight, File, Folder, FolderOpen, FileSpreadsheet, FileJson, Database, FileBox } from "lucide-react"
 import { memo, useCallback, useMemo } from "react"
 import { cn } from "../../../../lib/utils"
 import type { TreeNode } from "./build-file-tree"
 
 // Data file extensions for special icons
-const DATA_FILE_EXTENSIONS: Record<string, "csv" | "json" | "sqlite"> = {
+const DATA_FILE_EXTENSIONS: Record<string, "csv" | "json" | "sqlite" | "parquet"> = {
   ".csv": "csv",
   ".tsv": "csv",
   ".json": "json",
@@ -14,9 +14,11 @@ const DATA_FILE_EXTENSIONS: Record<string, "csv" | "json" | "sqlite"> = {
   ".db": "sqlite",
   ".sqlite": "sqlite",
   ".sqlite3": "sqlite",
+  ".parquet": "parquet",
+  ".pq": "parquet",
 }
 
-function getDataFileType(filename: string): "csv" | "json" | "sqlite" | null {
+function getDataFileType(filename: string): "csv" | "json" | "sqlite" | "parquet" | null {
   const ext = filename.includes(".") ? `.${filename.split(".").pop()?.toLowerCase()}` : ""
   return DATA_FILE_EXTENSIONS[ext] || null
 }
@@ -67,6 +69,11 @@ interface FileTreeNodeProps {
   level: number
   expandedFolders: Set<string>
   onToggleFolder: (path: string) => void
+  /** Called when a data file (CSV, JSON, SQLite, Parquet) is clicked */
+  onSelectDataFile?: (path: string) => void
+  /** Called when a source file (non-data file) is clicked */
+  onSelectSourceFile?: (path: string) => void
+  /** @deprecated Use onSelectDataFile and onSelectSourceFile instead */
   onSelectFile?: (path: string) => void
   gitStatus?: GitStatusMap
 }
@@ -76,6 +83,8 @@ export const FileTreeNode = memo(function FileTreeNode({
   level,
   expandedFolders,
   onToggleFolder,
+  onSelectDataFile,
+  onSelectSourceFile,
   onSelectFile,
   gitStatus = {},
 }: FileTreeNodeProps) {
@@ -101,9 +110,18 @@ export const FileTreeNode = memo(function FileTreeNode({
     if (node.type === "folder") {
       onToggleFolder(node.path)
     } else {
+      // Determine if this is a data file or source file
+      if (isDataFile(node.name)) {
+        // Data files: CSV, JSON, SQLite, Parquet
+        onSelectDataFile?.(node.path)
+      } else {
+        // Source files: everything else
+        onSelectSourceFile?.(node.path)
+      }
+      // Also call legacy onSelectFile for backwards compatibility
       onSelectFile?.(node.path)
     }
-  }, [node.type, node.path, onToggleFolder, onSelectFile])
+  }, [node.type, node.path, node.name, onToggleFolder, onSelectDataFile, onSelectSourceFile, onSelectFile])
 
   const paddingLeft = level * 12 + 6
 
@@ -162,6 +180,9 @@ export const FileTreeNode = memo(function FileTreeNode({
             if (dataType === "sqlite") {
               return <Database className="size-3.5 shrink-0 text-blue-500" />
             }
+            if (dataType === "parquet") {
+              return <FileBox className="size-3.5 shrink-0 text-purple-500" />
+            }
             return <File className={cn("size-3.5 shrink-0", textColorClass)} />
           })()
         )}
@@ -193,6 +214,8 @@ export const FileTreeNode = memo(function FileTreeNode({
               level={level + 1}
               expandedFolders={expandedFolders}
               onToggleFolder={onToggleFolder}
+              onSelectDataFile={onSelectDataFile}
+              onSelectSourceFile={onSelectSourceFile}
               onSelectFile={onSelectFile}
               gitStatus={gitStatus}
             />

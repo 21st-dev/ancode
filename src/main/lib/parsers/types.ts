@@ -12,7 +12,7 @@ export interface ParsedData {
   truncated: boolean
 }
 
-export type DataFileType = "csv" | "json" | "sqlite" | "unknown"
+export type DataFileType = "csv" | "json" | "sqlite" | "parquet" | "unknown"
 
 export interface DataFileInfo {
   path: string

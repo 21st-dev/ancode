@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState, useEffect } from "react"
+import { useCallback, useMemo, useState, useEffect, useRef } from "react"
 import {
   DataEditor,
   GridColumn,
@@ -18,14 +18,23 @@ import {
   Database,
   FileSpreadsheet,
   FileJson,
+  FileBox,
   Search,
   Pin,
   Hash,
   ArrowUpAZ,
   ArrowDownAZ,
   EyeOff,
+  ChevronLeft,
+  ChevronRight,
+  ChevronsLeft,
+  ChevronsRight,
+  Copy,
+  Expand,
+  CornerDownRight,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
+import { Input } from "@/components/ui/input"
 import {
   Select,
   SelectContent,
@@ -46,6 +55,12 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog"
 import { cn } from "@/lib/utils"
 import { trpc } from "@/lib/trpc"
 import { selectedSqliteTableAtomFamily } from "../../agents/atoms"
@@ -58,6 +73,10 @@ interface DataViewerSidebarProps {
   onClose: () => void
 }
 
+// Page size options
+const PAGE_SIZE_OPTIONS = [100, 500, 1000, 5000] as const
+type PageSize = (typeof PAGE_SIZE_OPTIONS)[number]
+
 /**
  * Get the file extension
  */
@@ -69,7 +88,7 @@ function getFileExtension(filePath: string): string {
 /**
  * Get file type from extension
  */
-function getFileType(filePath: string): "csv" | "json" | "sqlite" | "unknown" {
+function getFileType(filePath: string): "csv" | "json" | "sqlite" | "parquet" | "unknown" {
   const ext = getFileExtension(filePath)
   switch (ext) {
     case ".csv":
@@ -82,6 +101,9 @@ function getFileType(filePath: string): "csv" | "json" | "sqlite" | "unknown" {
     case ".sqlite":
     case ".sqlite3":
       return "sqlite"
+    case ".parquet":
+    case ".pq":
+      return "parquet"
     default:
       return "unknown"
   }
@@ -100,6 +122,8 @@ function FileIcon({ filePath }: { filePath: string }) {
       return <FileJson className="h-4 w-4 text-yellow-500" />
     case "sqlite":
       return <Database className="h-4 w-4 text-blue-500" />
+    case "parquet":
+      return <FileBox className="h-4 w-4 text-purple-500" />
     default:
       return <FileSpreadsheet className="h-4 w-4" />
   }
@@ -123,6 +147,37 @@ function formatCellValue(value: unknown): string {
   return String(value)
 }
 
+/**
+ * Format JSON with syntax highlighting for display
+ */
+function formatJsonForDisplay(value: unknown): string {
+  try {
+    if (typeof value === "string") {
+      // Try to parse as JSON
+      const parsed = JSON.parse(value)
+      return JSON.stringify(parsed, null, 2)
+    }
+    return JSON.stringify(value, null, 2)
+  } catch {
+    return String(value)
+  }
+}
+
+/**
+ * Check if value is JSON-like (object or array or parseable string)
+ */
+function isJsonLike(value: unknown): boolean {
+  if (typeof value === "object" && value !== null) return true
+  if (typeof value === "string") {
+    const trimmed = value.trim()
+    return (
+      (trimmed.startsWith("{") && trimmed.endsWith("}")) ||
+      (trimmed.startsWith("[") && trimmed.endsWith("]"))
+    )
+  }
+  return false
+}
+
 export function DataViewerSidebar({
   chatId,
   filePath,
@@ -133,6 +188,13 @@ export function DataViewerSidebar({
   const fileName = getFileName(filePath)
   const { resolvedTheme } = useTheme()
   const isDark = resolvedTheme === "dark"
+  const gridRef = useRef<any>(null)
+
+  // ============ Pagination State ============
+  const [pageSize, setPageSize] = useState<PageSize>(1000)
+  const [currentPage, setCurrentPage] = useState(0)
+  const [jumpToRowInput, setJumpToRowInput] = useState("")
+  const [showJumpDialog, setShowJumpDialog] = useState(false)
 
   // ============ Column State ============
   const [columnWidths, setColumnWidths] = useState<Record<string, number>>({})
@@ -154,7 +216,25 @@ export function DataViewerSidebar({
 
   // ============ Header Menu State ============
   const [menuColumn, setMenuColumn] = useState<number | null>(null)
-  const [menuPosition, setMenuPosition] = useState<{ x: number; y: number } | null>(null)
+  const [menuPosition, setMenuPosition] = useState<{
+    x: number
+    y: number
+  } | null>(null)
+
+  // ============ Cell Context Menu State ============
+  const [cellMenuPosition, setCellMenuPosition] = useState<{
+    x: number
+    y: number
+    cell: Item
+  } | null>(null)
+
+  // ============ Cell Details Dialog State ============
+  const [cellDetailsOpen, setCellDetailsOpen] = useState(false)
+  const [cellDetailsContent, setCellDetailsContent] = useState<{
+    columnName: string
+    value: unknown
+    rowIndex: number
+  } | null>(null)
 
   // ============ Sort State ============
   const [sortColumn, setSortColumn] = useState<string | null>(null)
@@ -233,17 +313,27 @@ export function DataViewerSidebar({
 
   // Auto-select first table if none selected
   useEffect(() => {
-    if (fileType === "sqlite" && tables && tables.length > 0 && !selectedTable) {
+    if (
+      fileType === "sqlite" &&
+      tables &&
+      tables.length > 0 &&
+      !selectedTable
+    ) {
       setSelectedTable(tables[0])
     }
   }, [fileType, tables, selectedTable, setSelectedTable])
 
-  // Fetch data
+  // Reset page when file/table changes
+  useEffect(() => {
+    setCurrentPage(0)
+  }, [absolutePath, selectedTable])
+
+  // Fetch data with pagination
   const { data, isLoading, error } = trpc.files.previewDataFile.useQuery(
     {
       filePath: absolutePath,
-      limit: 1000,
-      offset: 0,
+      limit: pageSize,
+      offset: currentPage * pageSize,
       tableName: fileType === "sqlite" ? selectedTable || undefined : undefined,
     },
     {
@@ -252,6 +342,12 @@ export function DataViewerSidebar({
         (fileType !== "sqlite" || (!!selectedTable && selectedTable !== "")),
     }
   )
+
+  // Calculate pagination info
+  const totalRows = data?.totalRows ?? 0
+  const totalPages = Math.ceil(totalRows / pageSize)
+  const startRow = currentPage * pageSize + 1
+  const endRow = Math.min((currentPage + 1) * pageSize, totalRows)
 
   // Initialize column order when data changes
   useEffect(() => {
@@ -389,6 +485,45 @@ export function DataViewerSidebar({
     [orderedColumns]
   )
 
+  // Cell click handler for showing details
+  const onCellActivated = useCallback(
+    (cell: Item) => {
+      const [col, row] = cell
+      const column = orderedColumns[col]
+      if (!column) return
+
+      const colName = column.id as string
+      const rowData = sortedRows[row]
+      const value = rowData?.[colName]
+
+      // Show details dialog for long text or JSON
+      const stringValue = formatCellValue(value)
+      if (stringValue.length > 50 || isJsonLike(value)) {
+        setCellDetailsContent({
+          columnName: colName,
+          value,
+          rowIndex: currentPage * pageSize + row + 1,
+        })
+        setCellDetailsOpen(true)
+      }
+    },
+    [orderedColumns, sortedRows, currentPage, pageSize]
+  )
+
+  // Cell context menu handler
+  const onCellContextMenu = useCallback(
+    (cell: Item, event: any) => {
+      event.preventDefault?.()
+      const bounds = event.bounds || { x: event.clientX, y: event.clientY }
+      setCellMenuPosition({
+        x: bounds.x ?? event.clientX ?? 0,
+        y: bounds.y ?? event.clientY ?? 0,
+        cell,
+      })
+    },
+    []
+  )
+
   const handleSort = useCallback(
     (direction: "asc" | "desc") => {
       if (menuColumn !== null && orderedColumns[menuColumn]) {
@@ -422,6 +557,65 @@ export function DataViewerSidebar({
   const handleShowAllColumns = useCallback(() => {
     setHiddenColumns(new Set())
   }, [])
+
+  // Copy cell value to clipboard
+  const handleCopyCellValue = useCallback(() => {
+    if (!cellMenuPosition) return
+    const [col, row] = cellMenuPosition.cell
+    const column = orderedColumns[col]
+    if (!column) return
+
+    const colName = column.id as string
+    const rowData = sortedRows[row]
+    const value = rowData?.[colName]
+    const stringValue = formatCellValue(value)
+
+    navigator.clipboard.writeText(stringValue)
+    setCellMenuPosition(null)
+  }, [cellMenuPosition, orderedColumns, sortedRows])
+
+  // Show cell details from context menu
+  const handleShowCellDetails = useCallback(() => {
+    if (!cellMenuPosition) return
+    const [col, row] = cellMenuPosition.cell
+    const column = orderedColumns[col]
+    if (!column) return
+
+    const colName = column.id as string
+    const rowData = sortedRows[row]
+    const value = rowData?.[colName]
+
+    setCellDetailsContent({
+      columnName: colName,
+      value,
+      rowIndex: currentPage * pageSize + row + 1,
+    })
+    setCellDetailsOpen(true)
+    setCellMenuPosition(null)
+  }, [cellMenuPosition, orderedColumns, sortedRows, currentPage, pageSize])
+
+  // Jump to row handler
+  const handleJumpToRow = useCallback(() => {
+    const rowNum = parseInt(jumpToRowInput, 10)
+    if (isNaN(rowNum) || rowNum < 1 || rowNum > totalRows) return
+
+    // Calculate which page contains this row
+    const targetPage = Math.floor((rowNum - 1) / pageSize)
+    setCurrentPage(targetPage)
+
+    // Calculate row index within the page
+    const rowIndexInPage = (rowNum - 1) % pageSize
+
+    // Scroll to the row after data loads
+    setTimeout(() => {
+      if (gridRef.current) {
+        gridRef.current.scrollTo?.(0, rowIndexInPage)
+      }
+    }, 100)
+
+    setShowJumpDialog(false)
+    setJumpToRowInput("")
+  }, [jumpToRowInput, totalRows, pageSize])
 
   // Get cell content with proper cell types
   const getCellContent = useCallback(
@@ -497,7 +691,11 @@ export function DataViewerSidebar({
       const result: GridCell[][] = []
       for (let row = selection.y; row < selection.y + selection.height; row++) {
         const rowCells: GridCell[] = []
-        for (let col = selection.x; col < selection.x + selection.width; col++) {
+        for (
+          let col = selection.x;
+          col < selection.x + selection.width;
+          col++
+        ) {
           rowCells.push(getCellContent([col, row]))
         }
         result.push(rowCells)
@@ -515,7 +713,9 @@ export function DataViewerSidebar({
         <div className="flex-1 flex items-center justify-center p-4">
           <div className="text-center text-destructive">
             <p className="font-medium">Failed to load file</p>
-            <p className="text-sm text-muted-foreground mt-1">{error.message}</p>
+            <p className="text-sm text-muted-foreground mt-1">
+              {error.message}
+            </p>
           </div>
         </div>
       </div>
@@ -539,6 +739,7 @@ export function DataViewerSidebar({
         sortColumn={sortColumn}
         sortDirection={sortDirection}
         onClearSort={() => setSortColumn(null)}
+        onJumpToRow={() => setShowJumpDialog(true)}
       />
 
       {/* Table selector for SQLite */}
@@ -562,13 +763,14 @@ export function DataViewerSidebar({
 
       {/* Grid */}
       <div className="flex-1 min-h-0 overflow-hidden relative">
-        {isLoading ? (
+        {isLoading && !data ? (
           <div className="flex items-center justify-center h-full">
             <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
           </div>
         ) : data && sortedRows.length > 0 ? (
           <>
             <DataEditor
+              ref={gridRef}
               getCellContent={getCellContent}
               getCellsForSelection={getCellsForSelection}
               columns={orderedColumns}
@@ -591,7 +793,7 @@ export function DataViewerSidebar({
               // Row markers
               rowMarkers={showRowMarkers ? "both" : "none"}
               rowMarkerWidth={60}
-              rowMarkerStartIndex={1}
+              rowMarkerStartIndex={currentPage * pageSize + 1}
               // Selection
               gridSelection={selection}
               onGridSelectionChange={onSelectionChange}
@@ -608,6 +810,9 @@ export function DataViewerSidebar({
               onSearchClose={onSearchClose}
               // Header menu
               onHeaderMenuClick={onHeaderMenuClick}
+              // Cell interactions
+              onCellActivated={onCellActivated}
+              onCellContextMenu={onCellContextMenu}
               // Keyboard
               keybindings={{
                 selectAll: true,
@@ -621,6 +826,13 @@ export function DataViewerSidebar({
               // Theme
               theme={gridTheme}
             />
+
+            {/* Loading overlay for page changes */}
+            {isLoading && (
+              <div className="absolute inset-0 bg-background/50 flex items-center justify-center">
+                <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+              </div>
+            )}
 
             {/* Header Menu Dropdown */}
             {menuColumn !== null && menuPosition && (
@@ -660,6 +872,33 @@ export function DataViewerSidebar({
                 </DropdownMenu>
               </div>
             )}
+
+            {/* Cell Context Menu */}
+            {cellMenuPosition && (
+              <div
+                className="fixed z-50"
+                style={{ left: cellMenuPosition.x, top: cellMenuPosition.y }}
+              >
+                <DropdownMenu
+                  open={true}
+                  onOpenChange={() => setCellMenuPosition(null)}
+                >
+                  <DropdownMenuTrigger asChild>
+                    <div />
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="start">
+                    <DropdownMenuItem onClick={handleCopyCellValue}>
+                      <Copy className="h-4 w-4 mr-2" />
+                      Copy Value
+                    </DropdownMenuItem>
+                    <DropdownMenuItem onClick={handleShowCellDetails}>
+                      <Expand className="h-4 w-4 mr-2" />
+                      View Details
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              </div>
+            )}
           </>
         ) : (
           <div className="flex items-center justify-center h-full text-muted-foreground">
@@ -668,20 +907,191 @@ export function DataViewerSidebar({
         )}
       </div>
 
-      {/* Footer with row count */}
+      {/* Pagination Footer */}
       {data && (
-        <div className="px-3 py-2 border-t text-xs text-muted-foreground flex items-center justify-between">
-          <span>
-            {data.truncated
-              ? `Showing ${sortedRows.length.toLocaleString()} of ${data.totalRows.toLocaleString()} rows`
-              : `${sortedRows.length.toLocaleString()} rows`}
-          </span>
-          <span>
-            {orderedColumns.length}
-            {hiddenColumns.size > 0 && ` (${hiddenColumns.size} hidden)`} columns
-          </span>
+        <div className="px-3 py-2 border-t text-xs flex items-center justify-between gap-2">
+          <div className="flex items-center gap-2 text-muted-foreground">
+            <span>
+              {totalRows > 0
+                ? `${startRow.toLocaleString()}-${endRow.toLocaleString()} of ${totalRows.toLocaleString()}`
+                : "0 rows"}
+            </span>
+            <span>|</span>
+            <span>
+              {orderedColumns.length}
+              {hiddenColumns.size > 0 && ` (${hiddenColumns.size} hidden)`} cols
+            </span>
+          </div>
+
+          {/* Pagination controls */}
+          {totalPages > 1 && (
+            <div className="flex items-center gap-1">
+              <TooltipProvider delayDuration={300}>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-6 w-6"
+                      disabled={currentPage === 0}
+                      onClick={() => setCurrentPage(0)}
+                    >
+                      <ChevronsLeft className="h-3 w-3" />
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent>First page</TooltipContent>
+                </Tooltip>
+
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-6 w-6"
+                      disabled={currentPage === 0}
+                      onClick={() => setCurrentPage((p) => Math.max(0, p - 1))}
+                    >
+                      <ChevronLeft className="h-3 w-3" />
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent>Previous page</TooltipContent>
+                </Tooltip>
+              </TooltipProvider>
+
+              <span className="px-2 text-muted-foreground">
+                {currentPage + 1} / {totalPages}
+              </span>
+
+              <TooltipProvider delayDuration={300}>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-6 w-6"
+                      disabled={currentPage >= totalPages - 1}
+                      onClick={() =>
+                        setCurrentPage((p) => Math.min(totalPages - 1, p + 1))
+                      }
+                    >
+                      <ChevronRight className="h-3 w-3" />
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent>Next page</TooltipContent>
+                </Tooltip>
+
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-6 w-6"
+                      disabled={currentPage >= totalPages - 1}
+                      onClick={() => setCurrentPage(totalPages - 1)}
+                    >
+                      <ChevronsRight className="h-3 w-3" />
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent>Last page</TooltipContent>
+                </Tooltip>
+              </TooltipProvider>
+
+              {/* Page size selector */}
+              <Select
+                value={String(pageSize)}
+                onValueChange={(v) => {
+                  setPageSize(Number(v) as PageSize)
+                  setCurrentPage(0)
+                }}
+              >
+                <SelectTrigger className="h-6 w-[70px] text-xs ml-2">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {PAGE_SIZE_OPTIONS.map((size) => (
+                    <SelectItem key={size} value={String(size)}>
+                      {size}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          )}
         </div>
       )}
+
+      {/* Jump to Row Dialog */}
+      <Dialog open={showJumpDialog} onOpenChange={setShowJumpDialog}>
+        <DialogContent className="sm:max-w-[300px]">
+          <DialogHeader>
+            <DialogTitle>Jump to Row</DialogTitle>
+          </DialogHeader>
+          <div className="flex gap-2">
+            <Input
+              type="number"
+              min={1}
+              max={totalRows}
+              placeholder={`1 - ${totalRows.toLocaleString()}`}
+              value={jumpToRowInput}
+              onChange={(e) => setJumpToRowInput(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") {
+                  handleJumpToRow()
+                }
+              }}
+              autoFocus
+            />
+            <Button onClick={handleJumpToRow} disabled={!jumpToRowInput}>
+              Go
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Cell Details Dialog */}
+      <Dialog open={cellDetailsOpen} onOpenChange={setCellDetailsOpen}>
+        <DialogContent className="sm:max-w-[600px] max-h-[80vh]">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <span className="font-mono text-sm">
+                {cellDetailsContent?.columnName}
+              </span>
+              <span className="text-muted-foreground text-xs font-normal">
+                Row {cellDetailsContent?.rowIndex}
+              </span>
+            </DialogTitle>
+          </DialogHeader>
+          <div className="mt-2">
+            {cellDetailsContent && (
+              <div className="relative">
+                <pre
+                  className={cn(
+                    "p-3 rounded-md text-sm font-mono whitespace-pre-wrap break-all max-h-[60vh] overflow-auto",
+                    isDark ? "bg-zinc-900" : "bg-zinc-100"
+                  )}
+                >
+                  {isJsonLike(cellDetailsContent.value)
+                    ? formatJsonForDisplay(cellDetailsContent.value)
+                    : formatCellValue(cellDetailsContent.value)}
+                </pre>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="absolute top-2 right-2 h-7 w-7"
+                  onClick={() => {
+                    const text = isJsonLike(cellDetailsContent.value)
+                      ? formatJsonForDisplay(cellDetailsContent.value)
+                      : formatCellValue(cellDetailsContent.value)
+                    navigator.clipboard.writeText(text)
+                  }}
+                >
+                  <Copy className="h-3.5 w-3.5" />
+                </Button>
+              </div>
+            )}
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }
@@ -732,6 +1142,7 @@ interface ToolbarProps {
   sortColumn: string | null
   sortDirection: "asc" | "desc"
   onClearSort: () => void
+  onJumpToRow: () => void
 }
 
 function Toolbar({
@@ -744,6 +1155,7 @@ function Toolbar({
   onShowAllColumns,
   sortColumn,
   onClearSort,
+  onJumpToRow,
 }: ToolbarProps) {
   return (
     <div className="flex items-center gap-1 px-2 py-1 border-b bg-muted/30">
@@ -790,6 +1202,20 @@ function Toolbar({
             </Button>
           </TooltipTrigger>
           <TooltipContent side="bottom">Toggle row numbers</TooltipContent>
+        </Tooltip>
+
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-7 w-7"
+              onClick={onJumpToRow}
+            >
+              <CornerDownRight className="h-4 w-4" />
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent side="bottom">Jump to row</TooltipContent>
         </Tooltip>
 
         {hiddenColumnCount > 0 && (

@@ -87,6 +87,7 @@ import { getShortcutKey, isDesktopApp } from "../../../lib/utils/platform"
 import { terminalSidebarOpenAtom } from "../../terminal/atoms"
 import { TerminalSidebar } from "../../terminal/terminal-sidebar"
 import { DataViewerSidebar } from "../../data/components/data-viewer-sidebar"
+import { FileViewerSidebar } from "../../file-viewer"
 import {
   agentsDiffSidebarWidthAtom,
   agentsFileTreeSidebarOpenAtom,
@@ -98,6 +99,9 @@ import {
   dataViewerSidebarOpenAtomFamily,
   dataViewerSidebarWidthAtom,
   viewedDataFileAtomFamily,
+  fileViewerSidebarOpenAtomFamily,
+  fileViewerSidebarWidthAtom,
+  viewedSourceFileAtomFamily,
   agentsSubChatUnseenChangesAtom,
   agentsUnseenChangesAtom,
   clearLoading,
@@ -3613,6 +3617,17 @@ export function ChatView({
   )
   const [isDataViewerSidebarOpen, setIsDataViewerSidebarOpen] = useAtom(dataViewerSidebarAtom)
   const [viewedDataFile, setViewedDataFile] = useAtom(viewedDataFileAtom)
+  // Per-chat file viewer sidebar state (for source code files)
+  const fileViewerSidebarAtom = useMemo(
+    () => fileViewerSidebarOpenAtomFamily(chatId),
+    [chatId],
+  )
+  const viewedSourceFileAtom = useMemo(
+    () => viewedSourceFileAtomFamily(chatId),
+    [chatId],
+  )
+  const [isFileViewerSidebarOpen, setIsFileViewerSidebarOpen] = useAtom(fileViewerSidebarAtom)
+  const [viewedSourceFile, setViewedSourceFile] = useAtom(viewedSourceFileAtom)
   const [diffStats, setDiffStats] = useState({
     fileCount: 0,
     additions: 0,
@@ -4915,15 +4930,21 @@ export function ChatView({
               projectPath={worktreePath || originalProjectPath}
               projectId={chatId}
               onClose={() => setIsFileTreeSidebarOpen(false)}
-              onSelectFile={(filePath) => {
-                // Check if it's a data file (CSV, JSON, SQLite)
-                const ext = filePath.includes(".") ? `.${filePath.split(".").pop()?.toLowerCase()}` : ""
-                const dataExtensions = [".csv", ".tsv", ".json", ".jsonl", ".db", ".sqlite", ".sqlite3"]
-                if (dataExtensions.includes(ext)) {
-                  // Open in data viewer sidebar
-                  setViewedDataFile(filePath)
-                  setIsDataViewerSidebarOpen(true)
-                }
+              onSelectDataFile={(filePath) => {
+                // Data files: open in Data Viewer, close File Viewer
+                setViewedDataFile(filePath)
+                setIsDataViewerSidebarOpen(true)
+                // Close file viewer (mutual exclusion - one sidebar at a time)
+                setIsFileViewerSidebarOpen(false)
+                setViewedSourceFile(null)
+              }}
+              onSelectSourceFile={(filePath) => {
+                // Source files: open in File Viewer, close Data Viewer
+                setViewedSourceFile(filePath)
+                setIsFileViewerSidebarOpen(true)
+                // Close data viewer (mutual exclusion - one sidebar at a time)
+                setIsDataViewerSidebarOpen(false)
+                setViewedDataFile(null)
               }}
             />
           </ResizableSidebar>
@@ -5620,6 +5641,36 @@ export function ChatView({
               onClose={() => {
                 setIsDataViewerSidebarOpen(false)
                 setViewedDataFile(null)
+              }}
+            />
+          </ResizableSidebar>
+        )}
+
+        {/* File Viewer Sidebar - for viewing source code files with Monaco Editor */}
+        {isFileViewerSidebarOpen && viewedSourceFile && (worktreePath || originalProjectPath) && (
+          <ResizableSidebar
+            isOpen={isFileViewerSidebarOpen}
+            onClose={() => {
+              setIsFileViewerSidebarOpen(false)
+              setViewedSourceFile(null)
+            }}
+            widthAtom={fileViewerSidebarWidthAtom}
+            minWidth={350}
+            side="right"
+            animationDuration={0}
+            initialWidth={0}
+            exitWidth={0}
+            showResizeTooltip={true}
+            className="bg-background border-l"
+            style={{ borderLeftWidth: "0.5px", overflow: "hidden" }}
+          >
+            <FileViewerSidebar
+              chatId={chatId}
+              filePath={viewedSourceFile}
+              projectPath={(worktreePath || originalProjectPath) as string}
+              onClose={() => {
+                setIsFileViewerSidebarOpen(false)
+                setViewedSourceFile(null)
               }}
             />
           </ResizableSidebar>

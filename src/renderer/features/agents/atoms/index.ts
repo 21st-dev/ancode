@@ -607,3 +607,61 @@ export const selectedSqliteTableAtomFamily = atomFamily((filePath: string) =>
     },
   ),
 )
+
+// ============================================================================
+// File Viewer Sidebar (Monaco Editor)
+// ============================================================================
+
+// File viewer sidebar width (global, shared across all chats)
+export const fileViewerSidebarWidthAtom = atomWithStorage<number>(
+  "agents-file-viewer-sidebar-width",
+  500,
+  undefined,
+  { getOnInit: true },
+)
+
+// File viewer sidebar open state per chat
+const fileViewerSidebarOpenStorageAtom = atomWithStorage<Record<string, boolean>>(
+  "agents:fileViewerSidebarOpen",
+  {},
+  undefined,
+  { getOnInit: true },
+)
+
+// atomFamily to get/set file viewer sidebar open state per chatId
+export const fileViewerSidebarOpenAtomFamily = atomFamily((chatId: string) =>
+  atom(
+    (get) => get(fileViewerSidebarOpenStorageAtom)[chatId] ?? false,
+    (get, set, isOpen: boolean) => {
+      const current = get(fileViewerSidebarOpenStorageAtom)
+      set(fileViewerSidebarOpenStorageAtom, { ...current, [chatId]: isOpen })
+    },
+  ),
+)
+
+// Currently viewed source file path per chat
+const viewedSourceFileStorageAtom = atomWithStorage<Record<string, string | null>>(
+  "agents:viewedSourceFile",
+  {},
+  undefined,
+  { getOnInit: true },
+)
+
+// atomFamily to get/set viewed source file path per chatId
+export const viewedSourceFileAtomFamily = atomFamily((chatId: string) =>
+  atom(
+    (get) => get(viewedSourceFileStorageAtom)[chatId] ?? null,
+    (get, set, filePath: string | null) => {
+      const current = get(viewedSourceFileStorageAtom)
+      set(viewedSourceFileStorageAtom, { ...current, [chatId]: filePath })
+    },
+  ),
+)
+
+// Word wrap preference for file viewer (persisted globally)
+export const fileViewerWordWrapAtom = atomWithStorage<boolean>(
+  "agents:fileViewerWordWrap",
+  false,
+  undefined,
+  { getOnInit: true },
+)

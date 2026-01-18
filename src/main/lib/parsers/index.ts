@@ -8,6 +8,7 @@ import {
   previewSqliteTable,
   querySqlite as querySqliteDb,
 } from "./sqlite-parser"
+import { parseParquetFile } from "./parquet-parser"
 
 // Re-export types
 export * from "./types"
@@ -23,6 +24,8 @@ const DATA_EXTENSIONS: Record<string, DataFileType> = {
   ".db": "sqlite",
   ".sqlite": "sqlite",
   ".sqlite3": "sqlite",
+  ".parquet": "parquet",
+  ".pq": "parquet",
 }
 
 /**
@@ -95,6 +98,9 @@ export async function parseDataFile(
 
     case "json":
       return parseJsonFile(filePath, { limit, offset })
+
+    case "parquet":
+      return parseParquetFile(filePath, { limit, offset })
 
     case "sqlite": {
       // For SQLite, we need a table name
