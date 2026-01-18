@@ -5,18 +5,10 @@ on:
     tags:
       - 'v*'
   workflow_dispatch:
-    inputs:
-      version:
-        description: 'Version tag (e.g., v0.0.22)'
-        required: false
-        type: string
 
 jobs:
   build-macos:
     runs-on: macos-latest
-    strategy:
-      matrix:
-        arch: [arm64, x64]
 
     steps:
       - name: Checkout code
@@ -35,33 +27,28 @@ jobs:
       - name: Install dependencies
         run: bun install
 
-      - name: Download Claude binaries
-        run: bun run claude:download:all
+      - name: Download Claude binary
+        run: bun run claude:download
 
       - name: Build application
         run: bun run build
 
-      - name: Package for macOS (${{ matrix.arch }})
-        run: |
-          if [ "${{ matrix.arch }}" = "arm64" ]; then
-            npx electron-builder --mac --arm64 --config.mac.identity=null
-          else
-            npx electron-builder --mac --x64 --config.mac.identity=null
-          fi
+      - name: Package for macOS
+        run: npx electron-builder --mac --arm64 --config.mac.identity=null
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: false
 
       - name: Upload DMG artifact
         uses: actions/upload-artifact@v4
         with:
-          name: 1Code-macOS-${{ matrix.arch }}-dmg
+          name: 1Code-macOS-arm64-dmg
           path: release/*.dmg
           if-no-files-found: error
 
       - name: Upload ZIP artifact
         uses: actions/upload-artifact@v4
         with:
-          name: 1Code-macOS-${{ matrix.arch }}-zip
+          name: 1Code-macOS-arm64-zip
           path: release/*.zip
           if-no-files-found: error
 
