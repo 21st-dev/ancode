@@ -404,3 +404,84 @@ export const sessionInfoAtom = atomWithStorage<SessionInfo | null>(
   undefined,
   { getOnInit: true },
 )
+
+// ============================================
+// NOTIFICATION SYSTEM ATOMS
+// ============================================
+
+// Notification mode preference
+// "always" - notify regardless of window focus
+// "unfocused" - only notify when app is not focused (default)
+// "never" - disable all notifications
+export type NotificationMode = "always" | "unfocused" | "never"
+
+export const notificationModeAtom = atomWithStorage<NotificationMode>(
+  "preferences:notification-mode",
+  "unfocused",
+  undefined,
+  { getOnInit: true },
+)
+
+// Toast notifications for tool events
+// When enabled, shows toast when tools start/complete
+export const toastNotificationsEnabledAtom = atomWithStorage<boolean>(
+  "preferences:toast-notifications-enabled",
+  true,
+  undefined,
+  { getOnInit: true },
+)
+
+// Activity feed panel
+// When enabled, shows the activity feed sidebar panel
+export const activityFeedEnabledAtom = atomWithStorage<boolean>(
+  "preferences:activity-feed-enabled",
+  true,
+  undefined,
+  { getOnInit: true },
+)
+
+// Activity feed state (in-memory, not persisted)
+export interface ToolActivity {
+  id: string
+  subChatId: string
+  chatName: string
+  toolName: string
+  summary: string // "package.json", "npm install", "*.tsx"
+  state: "running" | "complete" | "error"
+  timestamp: number
+}
+
+export const toolActivityAtom = atom<ToolActivity[]>([])
+export const MAX_ACTIVITY_ITEMS = 50
+
+// Helper to add activity
+export const addToolActivityAtom = atom(
+  null,
+  (get, set, activity: Omit<ToolActivity, "id" | "timestamp">) => {
+    const prev = get(toolActivityAtom)
+    const newActivity: ToolActivity = {
+      ...activity,
+      id: `${Date.now()}-${Math.random().toString(36).slice(2)}`,
+      timestamp: Date.now(),
+    }
+    set(toolActivityAtom, [newActivity, ...prev].slice(0, MAX_ACTIVITY_ITEMS))
+    return newActivity.id
+  },
+)
+
+// Helper to update activity state
+export const updateToolActivityAtom = atom(
+  null,
+  (get, set, { id, state }: { id: string; state: ToolActivity["state"] }) => {
+    const prev = get(toolActivityAtom)
+    set(
+      toolActivityAtom,
+      prev.map((a) => (a.id === id ? { ...a, state } : a)),
+    )
+  },
+)
+
+// Helper to clear activities
+export const clearToolActivityAtom = atom(null, (_get, set) => {
+  set(toolActivityAtom, [])
+})
