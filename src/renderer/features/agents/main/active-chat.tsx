@@ -177,6 +177,7 @@ import { MobileChatHeader } from "../ui/mobile-chat-header"
 import { PrStatusBar } from "../ui/pr-status-bar"
 import { SubChatSelector } from "../ui/sub-chat-selector"
 import { SubChatStatusCard } from "../ui/sub-chat-status-card"
+import { MessagePartRenderer } from "../ui/message-part-renderer"
 import { autoRenameAgentChat } from "../utils/auto-rename"
 import { handlePasteEvent } from "../utils/paste-text"
 import { generateCommitToPrMessage, generatePrMessage, generateReviewMessage } from "../utils/pr-message"
@@ -232,6 +233,13 @@ function groupExploringTools(parts: any[], nestedToolIds: Set<string>): any[] {
   }
   return result
 }
+
+// Motion animation constants - extracted to module level to prevent object recreation
+const FADE_IN_ANIMATION = {
+  initial: { opacity: 0 },
+  animate: { opacity: 1 },
+  transition: { duration: 0.1, ease: "easeOut" },
+} as const
 
 // Get the ID of the first sub-chat by creation date
 function getFirstSubChatId(
@@ -2385,6 +2393,76 @@ function ChatViewInner({
     return groups
   }, [messages])
 
+  // Pre-compute nested tools data for all assistant messages (perf optimization)
+  // This avoids recomputing inside the map callback on every render
+  const messageNestedData = useMemo(() => {
+    const result = new Map<
+      string,
+      {
+        nestedToolsMap: Map<string, any[]>
+        nestedToolIds: Set<string>
+        taskPartIds: Set<string>
+        orphanTaskGroups: Map<string, { parts: any[]; firstToolCallId: string }>
+        orphanToolCallIds: Set<string>
+        orphanFirstToolCallIds: Set<string>
+      }
+    >()
+
+    for (const group of messageGroups) {
+      for (const assistantMsg of group.assistantMsgs) {
+        const nestedToolsMap = new Map<string, any[]>()
+        const nestedToolIds = new Set<string>()
+        const taskPartIds = new Set(
+          (assistantMsg.parts || [])
+            .filter((p: any) => p.type === "tool-Task" && p.toolCallId)
+            .map((p: any) => p.toolCallId),
+        )
+        const orphanTaskGroups = new Map<
+          string,
+          { parts: any[]; firstToolCallId: string }
+        >()
+        const orphanToolCallIds = new Set<string>()
+        const orphanFirstToolCallIds = new Set<string>()
+
+        for (const part of assistantMsg.parts || []) {
+          if (part.toolCallId?.includes(":")) {
+            const parentId = part.toolCallId.split(":")[0]
+            if (taskPartIds.has(parentId)) {
+              if (!nestedToolsMap.has(parentId)) {
+                nestedToolsMap.set(parentId, [])
+              }
+              nestedToolsMap.get(parentId)!.push(part)
+              nestedToolIds.add(part.toolCallId)
+            } else {
+              let grp = orphanTaskGroups.get(parentId)
+              if (!grp) {
+                grp = {
+                  parts: [],
+                  firstToolCallId: part.toolCallId,
+                }
+                orphanTaskGroups.set(parentId, grp)
+                orphanFirstToolCallIds.add(part.toolCallId)
+              }
+              grp.parts.push(part)
+              orphanToolCallIds.add(part.toolCallId)
+            }
+          }
+        }
+
+        result.set(assistantMsg.id, {
+          nestedToolsMap,
+          nestedToolIds,
+          taskPartIds,
+          orphanTaskGroups,
+          orphanToolCallIds,
+          orphanFirstToolCallIds,
+        })
+      }
+    }
+
+    return result
+  }, [messageGroups])
+
   return (
     <>
       {/* Chat title - flex above scroll area (desktop only) */}
@@ -2449,9 +2527,7 @@ function ChatViewInner({
                   {imageParts.length > 0 && (
                     <motion.div
                       className="mb-2 pointer-events-auto"
-                      initial={{ opacity: 0 }}
-                      animate={{ opacity: 1 }}
-                      transition={{ duration: 0.1, ease: "easeOut" }}
+                      {...FADE_IN_ANIMATION}
                     >
                       <AgentUserMessageBubble
                         messageId={msg.id}
@@ -2536,47 +2612,22 @@ function ChatViewInner({
                       (p: any) => p.type === "text" && p.text?.trim(),
                     )
 
-                    // Build map of nested tools per parent Task
-                    const nestedToolsMap = new Map<string, any[]>()
-                    const nestedToolIds = new Set<string>()
-                    const taskPartIds = new Set(
-                      (assistantMsg.parts || [])
-                        .filter(
-                          (p: any) => p.type === "tool-Task" && p.toolCallId,
-                        )
-                        .map((p: any) => p.toolCallId),
-                    )
-                    const orphanTaskGroups = new Map<
-                      string,
-                      { parts: any[]; firstToolCallId: string }
-                    >()
-                    const orphanToolCallIds = new Set<string>()
-                    const orphanFirstToolCallIds = new Set<string>()
-
-                    for (const part of assistantMsg.parts || []) {
-                      if (part.toolCallId?.includes(":")) {
-                        const parentId = part.toolCallId.split(":")[0]
-                        if (taskPartIds.has(parentId)) {
-                          if (!nestedToolsMap.has(parentId)) {
-                            nestedToolsMap.set(parentId, [])
-                          }
-                          nestedToolsMap.get(parentId)!.push(part)
-                          nestedToolIds.add(part.toolCallId)
-                        } else {
-                          let group = orphanTaskGroups.get(parentId)
-                          if (!group) {
-                            group = {
-                              parts: [],
-                              firstToolCallId: part.toolCallId,
-                            }
-                            orphanTaskGroups.set(parentId, group)
-                            orphanFirstToolCallIds.add(part.toolCallId)
-                          }
-                          group.parts.push(part)
-                          orphanToolCallIds.add(part.toolCallId)
-                        }
-                      }
+                    // Get pre-computed nested tools data (computed in useMemo above)
+                    const nestedData = messageNestedData.get(assistantMsg.id) || {
+                      nestedToolsMap: new Map<string, any[]>(),
+                      nestedToolIds: new Set<string>(),
+                      taskPartIds: new Set<string>(),
+                      orphanTaskGroups: new Map<string, { parts: any[]; firstToolCallId: string }>(),
+                      orphanToolCallIds: new Set<string>(),
+                      orphanFirstToolCallIds: new Set<string>(),
                     }
+                    const {
+                      nestedToolsMap,
+                      nestedToolIds,
+                      orphanTaskGroups,
+                      orphanToolCallIds,
+                      orphanFirstToolCallIds,
+                    } = nestedData
 
                     // Get metadata for usage display
                     const msgMetadata =
@@ -2650,284 +2701,12 @@ function ChatViewInner({
                       return true
                     }).length
 
-                    // Helper function to render a single part
-                    const renderPart = (
-                      part: any,
-                      idx: number,
-                      isFinal = false,
-                    ) => {
-                      // Skip step-start parts
-                      if (part.type === "step-start") {
-                        return null
-                      }
-
-                      // Skip TaskOutput - internal tool with meta info not useful for UI
-                      if (part.type === "tool-TaskOutput") {
-                        return null
-                      }
-
-                      if (
-                        part.toolCallId &&
-                        orphanToolCallIds.has(part.toolCallId)
-                      ) {
-                        if (!orphanFirstToolCallIds.has(part.toolCallId)) {
-                          return null
-                        }
-                        const parentId = part.toolCallId.split(":")[0]
-                        const group = orphanTaskGroups.get(parentId)
-                        if (group) {
-                          return (
-                            <AgentTaskTool
-                              key={idx}
-                              part={{
-                                type: "tool-Task",
-                                toolCallId: parentId,
-                                input: {
-                                  subagent_type: "unknown-agent",
-                                  description: "Incomplete task",
-                                },
-                              }}
-                              nestedTools={group.parts}
-                              chatStatus={status}
-                            />
-                          )
-                        }
-                      }
-
-                      // Skip nested tools - they're rendered within their parent Task
-                      if (
-                        part.toolCallId &&
-                        nestedToolIds.has(part.toolCallId)
-                      ) {
-                        return null
-                      }
-
-                      // Exploring group - grouped Read/Grep/Glob tools
-                      // NOTE: isGroupStreaming is calculated in the map() call below
-                      // because we need to know if this is the last element
-                      if (part.type === "exploring-group") {
-                        return null // Handled separately in map with isLast info
-                      }
-
-                      // Text parts - with px-2 like Canvas
-                      if (part.type === "text") {
-                        if (!part.text?.trim()) return null
-                        // Check if this is the final text by comparing index (parts don't have IDs)
-                        const isFinalText = isFinal && idx === finalTextIndex
-
-                        return (
-                          <div
-                            key={idx}
-                            className={cn(
-                              "text-foreground px-2",
-                              // Only show Summary styling if there are steps to collapse
-                              isFinalText &&
-                              visibleStepsCount > 0 &&
-                              "pt-3 border-t border-border/50",
-                            )}
-                          >
-                            {/* Only show Summary label if there are steps to collapse */}
-                            {isFinalText && visibleStepsCount > 0 && (
-                              <div className="text-[12px] uppercase tracking-wider text-muted-foreground/60 font-medium mb-1">
-                                Response
-                              </div>
-                            )}
-                            <ChatMarkdownRenderer
-                              content={part.text}
-                              size="sm"
-                            />
-                          </div>
-                        )
-                      }
-
-                      // Special handling for tool-Task - render with nested tools
-                      if (part.type === "tool-Task") {
-                        const nestedTools =
-                          nestedToolsMap.get(part.toolCallId) || []
-                        return (
-                          <AgentTaskTool
-                            key={idx}
-                            part={part}
-                            nestedTools={nestedTools}
-                            chatStatus={status}
-                          />
-                        )
-                      }
-
-                      // Special handling for tool-Bash - render with full command and output
-                      if (part.type === "tool-Bash") {
-                        return (
-                          <AgentBashTool
-                            key={idx}
-                            part={part}
-                            chatStatus={status}
-                          />
-                        )
-                      }
-
-                      // Special handling for tool-Thinking - Extended Thinking
-                      if (part.type === "tool-Thinking") {
-                        return (
-                          <AgentThinkingTool
-                            key={idx}
-                            part={part}
-                            chatStatus={status}
-                          />
-                        )
-                      }
-
-                      // Special handling for tool-Edit - render with file icon and diff stats
-                      if (part.type === "tool-Edit") {
-                        return (
-                          <AgentEditTool
-                            key={idx}
-                            part={part}
-                            chatStatus={status}
-                          />
-                        )
-                      }
-
-                      // Special handling for tool-Write - render with file preview (reuses AgentEditTool)
-                      if (part.type === "tool-Write") {
-                        return (
-                          <AgentEditTool
-                            key={idx}
-                            part={part}
-                            chatStatus={status}
-                          />
-                        )
-                      }
-
-                      // Special handling for tool-WebSearch - collapsible results list
-                      if (part.type === "tool-WebSearch") {
-                        return (
-                          <AgentWebSearchCollapsible
-                            key={idx}
-                            part={part}
-                            chatStatus={status}
-                          />
-                        )
-                      }
-
-                      // Special handling for tool-WebFetch - expandable content preview
-                      if (part.type === "tool-WebFetch") {
-                        return (
-                          <AgentWebFetchTool
-                            key={idx}
-                            part={part}
-                            chatStatus={status}
-                          />
-                        )
-                      }
-
-                      // Special handling for tool-PlanWrite - plan with steps
-                      if (part.type === "tool-PlanWrite") {
-                        return (
-                          <AgentPlanTool
-                            key={idx}
-                            part={part}
-                            chatStatus={status}
-                          />
-                        )
-                      }
-
-                      // Special handling for tool-ExitPlanMode - show simple indicator inline
-                      // Full plan card is rendered at end of message
-                      if (part.type === "tool-ExitPlanMode") {
-                        const { isPending, isError } = getToolStatus(
-                          part,
-                          status,
-                        )
-                        return (
-                          <AgentToolCall
-                            key={idx}
-                            icon={AgentToolRegistry["tool-ExitPlanMode"].icon}
-                            title={AgentToolRegistry["tool-ExitPlanMode"].title(
-                              part,
-                            )}
-                            isPending={isPending}
-                            isError={isError}
-                          />
-                        )
-                      }
-
-                      // Special handling for tool-TodoWrite - todo list with progress
-                      // All todos render inline - sticky behavior is handled by IntersectionObserver
-                      if (part.type === "tool-TodoWrite") {
-                        return (
-                          <AgentTodoTool
-                            key={idx}
-                            part={part}
-                            chatStatus={status}
-                            subChatId={subChatId}
-                          />
-                        )
-                      }
-
-                      // Special handling for tool-AskUserQuestion
-                      if (part.type === "tool-AskUserQuestion") {
-                        const { isPending, isError } = getToolStatus(
-                          part,
-                          status,
-                        )
-                        return (
-                          <AgentAskUserQuestionTool
-                            key={idx}
-                            input={part.input}
-                            result={part.result}
-                            errorText={
-                              (part as any).errorText || (part as any).error
-                            }
-                            state={isPending ? "call" : "result"}
-                            isError={isError}
-                            isStreaming={isStreaming && isLastMessage}
-                            toolCallId={part.toolCallId}
-                          />
-                        )
-                      }
-
-                      // Tool parts - check registry
-                      if (part.type in AgentToolRegistry) {
-                        const meta = AgentToolRegistry[part.type]
-                        const { isPending, isError } = getToolStatus(
-                          part,
-                          status,
-                        )
-                        return (
-                          <AgentToolCall
-                            key={idx}
-                            icon={meta.icon}
-                            title={meta.title(part)}
-                            subtitle={meta.subtitle?.(part)}
-                            isPending={isPending}
-                            isError={isError}
-                          />
-                        )
-                      }
-
-                      // Fallback for unknown tool types
-                      if (part.type?.startsWith("tool-")) {
-                        return (
-                          <div
-                            key={idx}
-                            className="text-xs text-muted-foreground py-0.5 px-2"
-                          >
-                            {part.type.replace("tool-", "")}
-                          </div>
-                        )
-                      }
-
-                      return null
-                    }
-
                     return (
                       <motion.div
                         key={assistantMsg.id}
                         data-assistant-message-id={assistantMsg.id}
                         className="group/message w-full mb-4"
-                        initial={{ opacity: 0 }}
-                        animate={{ opacity: 1 }}
-                        transition={{ duration: 0.1, ease: "easeOut" }}
+                        {...FADE_IN_ANIMATION}
                       >
                         <div className="flex flex-col gap-1.5">
                           {/* Collapsible steps section - show when we have final text OR a plan */}
@@ -2953,7 +2732,25 @@ function ChatViewInner({
                                       />
                                     )
                                   }
-                                  return renderPart(part, idx, false)
+                                  return (
+                                    <MessagePartRenderer
+                                      key={idx}
+                                      part={part}
+                                      idx={idx}
+                                      isFinal={false}
+                                      nestedToolsMap={nestedToolsMap}
+                                      nestedToolIds={nestedToolIds}
+                                      orphanToolCallIds={orphanToolCallIds}
+                                      orphanFirstToolCallIds={orphanFirstToolCallIds}
+                                      orphanTaskGroups={orphanTaskGroups}
+                                      status={status}
+                                      finalTextIndex={finalTextIndex}
+                                      visibleStepsCount={visibleStepsCount}
+                                      isStreaming={isStreaming}
+                                      isLastMessage={isLastMessage}
+                                      subChatId={subChatId}
+                                    />
+                                  )
                                 })
                               })()}
                             </CollapsibleSteps>
@@ -2980,10 +2777,24 @@ function ChatViewInner({
                                   />
                                 )
                               }
-                              return renderPart(
-                                part,
-                                hasFinalText ? finalTextIndex + idx : idx,
-                                hasFinalText,
+                              return (
+                                <MessagePartRenderer
+                                  key={hasFinalText ? finalTextIndex + idx : idx}
+                                  part={part}
+                                  idx={hasFinalText ? finalTextIndex + idx : idx}
+                                  isFinal={hasFinalText}
+                                  nestedToolsMap={nestedToolsMap}
+                                  nestedToolIds={nestedToolIds}
+                                  orphanToolCallIds={orphanToolCallIds}
+                                  orphanFirstToolCallIds={orphanFirstToolCallIds}
+                                  orphanTaskGroups={orphanTaskGroups}
+                                  status={status}
+                                  finalTextIndex={finalTextIndex}
+                                  visibleStepsCount={visibleStepsCount}
+                                  isStreaming={isStreaming}
+                                  isLastMessage={isLastMessage}
+                                  subChatId={subChatId}
+                                />
                               )
                             })
                           })()}

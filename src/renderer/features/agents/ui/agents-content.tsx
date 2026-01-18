@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useMemo, useRef, useState } from "react"
+import { memo, useDeferredValue, useEffect, useMemo, useRef, useState } from "react"
 import { useAtom, useAtomValue, useSetAtom } from "jotai"
 // import { useSearchParams, useRouter } from "next/navigation" // Desktop doesn't use next/navigation
 // Desktop: mock Next.js navigation hooks
@@ -55,9 +55,11 @@ import { isDesktopApp } from "../../../lib/utils/platform"
 // Desktop mock
 const useIsAdmin = () => false
 
-// Main Component
-export function AgentsContent() {
+// Main Component - memoized to prevent unnecessary re-renders
+export const AgentsContent = memo(function AgentsContent() {
   const [selectedChatId, setSelectedChatId] = useAtom(selectedAgentChatIdAtom)
+  // Defer the chat ID for heavy rendering (ChatView) to keep UI responsive
+  const deferredChatId = useDeferredValue(selectedChatId)
   const [selectedTeamId] = useAtom(selectedTeamIdAtom)
   const [sidebarOpen, setSidebarOpen] = useAtom(agentsSidebarOpenAtom)
   const [previewSidebarOpen, setPreviewSidebarOpen] = useAtom(
@@ -819,8 +821,8 @@ export function AgentsContent() {
           >
             {selectedChatId ? (
               <ChatView
-                key={selectedChatId}
-                chatId={selectedChatId}
+                key={deferredChatId}
+                chatId={deferredChatId!}
                 isSidebarOpen={false}
                 onToggleSidebar={() => { }}
                 selectedTeamName={selectedTeam?.name}
@@ -903,8 +905,8 @@ export function AgentsContent() {
           {selectedChatId ? (
             <div className="h-full flex flex-col relative overflow-hidden">
               <ChatView
-                key={selectedChatId}
-                chatId={selectedChatId}
+                key={deferredChatId}
+                chatId={deferredChatId!}
                 isSidebarOpen={sidebarOpen}
                 onToggleSidebar={() => setSidebarOpen((prev) => !prev)}
                 selectedTeamName={selectedTeam?.name}
@@ -954,4 +956,4 @@ export function AgentsContent() {
         )}
     </>
   )
-}
+})

@@ -54,6 +54,21 @@ const codeBlockTextSize = {
   lg: "text-sm",  // 14px - matches p text
 }
 
+// Module-level cache for Shiki highlighted code (persists across renders)
+// Key: themeId:language:codeHash, Value: highlighted HTML
+const highlightCache = new Map<string, string>()
+
+// Simple hash function for cache key (fast, not cryptographic)
+function hashCode(str: string): string {
+  let hash = 0
+  for (let i = 0; i < str.length; i++) {
+    const char = str.charCodeAt(i)
+    hash = ((hash << 5) - hash) + char
+    hash = hash & hash // Convert to 32-bit integer
+  }
+  return hash.toString(36)
+}
+
 // Code block with copy button using Shiki
 function CodeBlock({
   language,
@@ -81,6 +96,14 @@ function CodeBlock({
   useEffect(() => {
     if (!shouldHighlight) return
 
+    // Check cache first (perf optimization - avoids re-highlighting same code)
+    const cacheKey = `${themeId}:${language}:${hashCode(children)}`
+    const cached = highlightCache.get(cacheKey)
+    if (cached) {
+      setHighlightedHtml(cached)
+      return
+    }
+
     let cancelled = false
 
     const highlight = async () => {
@@ -88,6 +111,8 @@ function CodeBlock({
         const html = await highlightCode(children, language, themeId)
         if (!cancelled) {
           setHighlightedHtml(html)
+          // Cache the result
+          highlightCache.set(cacheKey, html)
         }
       } catch (error) {
         console.error("Failed to highlight code:", error)

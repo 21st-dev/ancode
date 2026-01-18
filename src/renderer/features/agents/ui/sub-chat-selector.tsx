@@ -1,6 +1,6 @@
 "use client"
 
-import { useCallback, useMemo, useEffect, useRef, useState } from "react"
+import { memo, useCallback, useMemo, useEffect, useRef, useState } from "react"
 import { useAtom, useAtomValue, useSetAtom } from "jotai"
 import {
   loadingSubChatsAtom,
@@ -302,7 +302,8 @@ interface SubChatSelectorProps {
   diffStats?: DiffStats
 }
 
-export function SubChatSelector({
+// Memoized to prevent re-renders when parent updates
+export const SubChatSelector = memo(function SubChatSelector({
   onCreateNew,
   isMobile = false,
   onBackToChats,
@@ -1062,4 +1063,4 @@ export function SubChatSelector({
 
     </div>
   )
-}
+})

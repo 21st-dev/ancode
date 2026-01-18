@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState, useMemo } from "react"
+import { useCallback, useEffect, useLayoutEffect, useState, useMemo } from "react"
 import { useAtom, useAtomValue, useSetAtom } from "jotai"
 import { isDesktopApp } from "../../lib/utils/platform"
 import { useIsMobile } from "../../lib/hooks/use-mobile"
@@ -193,7 +193,9 @@ export function AgentsLayout() {
   }, [setSelectedProject, setSelectedChatId, setAnthropicOnboardingCompleted])
 
   // Initialize sub-chats when chat is selected
-  useEffect(() => {
+  // Using useLayoutEffect to sync Zustand store synchronously before paint,
+  // reducing the double-render delay when switching chats
+  useLayoutEffect(() => {
     if (selectedChatId) {
       setChatId(selectedChatId)
     } else {
