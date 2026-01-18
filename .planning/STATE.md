@@ -10,28 +10,28 @@ See: .planning/PROJECT.md (updated 2025-01-18)
 ## Current Position
 
 Phase: 1 of 3 (Discovery Layer)
-Plan: 01 of 3 (Workflows Router)
-Status: Plan 01-01 complete
-Last activity: 2026-01-18 — Workflows router implemented
+Plan: 02 of 3 (Dependency Extraction)
+Status: Plan 01-02 complete
+Last activity: 2026-01-18 — Dependency graph extraction implemented
 
-Progress: ██░░░░░░░░░ 33%
+Progress: ██████░░░░ 67%
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 1
-- Average duration: 15 min
-- Total execution time: 0.25 hours
+- Total plans completed: 2
+- Average duration: 11.5 min
+- Total execution time: 0.38 hours
 
 **By Phase:**
 
-| Phase | Plans | Total | Avg/Plan |
-|-------|-------|-------|----------|
-| 01-discovery-layer | 1 | 3 | 15min |
+| Phase | Plans | Complete | Avg/Plan |
+|-------|-------|----------|----------|
+| 01-discovery-layer | 3 | 2 | 11.5min |
 
 **Recent Trend:**
-- Last 5 plans: 15min
-- Trend: — (insufficient data)
+- Last 2 plans: 15min, 8min
+- Trend: ↓ (improving)
 
 ## Accumulated Context
 
@@ -44,6 +44,9 @@ Recent decisions affecting current work:
 2. **Path validation pattern** (2026-01-18): Each scanner validates filenames don't contain "..", "/", or "\\" to prevent path traversal
 3. **Graceful degradation** (2026-01-18): If directory doesn't exist, return empty array rather than error
 4. **Config directory resolution** (2026-01-18): Read customConfigDir from claudeCodeSettings table, fallback to ~/.claude/
+5. **Hardcoded BUILTIN_TOOLS list** (2026-01-18): Maintaining 65 known Claude Code tools in constant; more reliable than dynamic detection
+6. **File body scanning with regex** (2026-01-18): Agent/command invocations detected via patterns like "Use the {agent} agent" and "/{command}"
+7. **Dependency categorization by type** (2026-01-18): Dependencies separated into tools, skills, MCP servers, agents, commands for UI visualization
 
 ### Deferred Issues
 
@@ -56,10 +59,10 @@ None yet.
 ## Session Continuity
 
 Last session: 2026-01-18
-Stopped at: Plan 01-01 complete, workflows router functional
+Stopped at: Plan 01-02 complete, dependency graph extraction implemented
 Resume file: None
 
 ## Next Plan
 
-Plan 01-02: UI components for browsing discovered workflows
+Plan 01-03: Source file content preview for workflow items
 Status: Not started
