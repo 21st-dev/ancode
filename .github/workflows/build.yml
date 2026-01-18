@@ -2,6 +2,8 @@ name: Build
 
 on:
   push:
+    branches:
+      - main
     tags:
       - 'v*'
   workflow_dispatch:
@@ -55,7 +57,6 @@ jobs:
   release:
     needs: build-macos
     runs-on: ubuntu-latest
-    if: startsWith(github.ref, 'refs/tags/v')
     permissions:
       contents: write
 
@@ -65,11 +66,23 @@ jobs:
         with:
           path: artifacts
 
+      - name: Get release info
+        id: release_info
+        run: |
+          if [[ "${{ github.ref }}" == refs/tags/v* ]]; then
+            echo "tag=${{ github.ref_name }}" >> $GITHUB_OUTPUT
+            echo "prerelease=false" >> $GITHUB_OUTPUT
+          else
+            echo "tag=build-${{ github.run_number }}" >> $GITHUB_OUTPUT
+            echo "prerelease=true" >> $GITHUB_OUTPUT
+          fi
+
       - name: Create Release
         uses: softprops/action-gh-release@v2
         with:
+          tag_name: ${{ steps.release_info.outputs.tag }}
           files: |
             artifacts/**/*.dmg
             artifacts/**/*.zip
-          draft: true
+          prerelease: ${{ steps.release_info.outputs.prerelease }}
           generate_release_notes: true
