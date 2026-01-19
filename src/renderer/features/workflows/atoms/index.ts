@@ -35,9 +35,30 @@ const workflowsTreeExpandedNodesStorageAtom = atomWithStorage<string[]>(
 /**
  * Read-write atom for expanded nodes set
  * Converts between array (storage) and Set (usage)
+ * Handles corrupted localStorage data gracefully
  */
 export const workflowsTreeExpandedNodesAtom = atom<Set<string>>(
-  (get) => new Set(get(workflowsTreeExpandedNodesStorageAtom)),
+  (get) => {
+    const stored = get(workflowsTreeExpandedNodesStorageAtom)
+    // Handle various storage formats: array, Set, object, or invalid data
+    if (Array.isArray(stored)) {
+      return new Set(stored)
+    }
+    if (stored instanceof Set) {
+      return stored
+    }
+    // Fallback: if it's an object or invalid, treat as keys array
+    if (typeof stored === 'object' && stored !== null) {
+      try {
+        return new Set(Object.keys(stored))
+      } catch {
+        // Last resort: return default expanded set
+        return new Set(['agents', 'commands', 'skills'])
+      }
+    }
+    // Default for null/undefined/invalid
+    return new Set(['agents', 'commands', 'skills'])
+  },
   (get, set, newSet: Set<string>) => {
     set(workflowsTreeExpandedNodesStorageAtom, Array.from(newSet))
   },
