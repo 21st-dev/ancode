@@ -13,6 +13,7 @@ None
 - [x] **Phase 1: Discovery Layer** — SDK/file parsing to find agents, commands, skills
 - [x] **Phase 2: Tree Visualization** — Sidebar entries + nested dependency tree UI
 - [x] **Phase 3: Content Preview** — Full source code/file content on node click
+- [ ] **Phase 4: Flox Dev Environment** — Update dev env management to use Flox similar to ../avatar
 
 ## Phase Details
 
@@ -46,6 +47,27 @@ Plans:
 Plans:
 - [x] 03-01: Content preview pane with syntax highlighting (includes file type detection)
 
+### Phase 4: Flox Dev Environment
+**Goal**: Establish reproducible development environment using Flox to manage system-level dependencies (bun, electron, typescript-language-server) while keeping JavaScript packages in package.json
+**Depends on**: Phase 3
+**Research**: Complete (Flox tooling, avatar reference patterns, manifest structure)
+**Plans**: 1 plan
+
+Plans:
+- [ ] 04-01-PLAN.md — Initialize Flox environment, create manifest.toml, update documentation
+
+**Details:**
+- Initialize Flox environment with manifest.toml declaring bun, electron, typescript-language-server
+- Configure ELECTRON_SKIP_BINARY_DOWNLOAD to prevent duplicate electron binary
+- Update CLAUDE.md and README.md with Flox workflow instructions
+- Verify existing dev commands work within activated environment
+- Follow avatar reference pattern for system vs application dependency separation
+
+**Key deliverables:**
+- `.flox/env/manifest.toml` with system tool declarations
+- `.flox/env/manifest.lock` for reproducible builds
+- Updated documentation explaining Flox activation workflow
+
 ## Progress
 
 | Phase | Plans Complete | Status | Completed |
@@ -53,3 +75,4 @@ Plans:
 | 1. Discovery Layer | 2/2 | Complete | 2025-01-18 |
 | 2. Tree Visualization | 2/2 | Complete | 2025-01-18 |
 | 3. Content Preview | 1/1 | Complete | 2026-01-18 |
+| 4. Flox Dev Environment | 0/1 | Planned | - |
