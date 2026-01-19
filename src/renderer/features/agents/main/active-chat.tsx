@@ -1011,7 +1011,7 @@ function ChatViewInner({
   isArchived = false,
   onRestoreWorkspace,
   dbSessionId,
-  chatModelId,
+  subChatModelId,
   onModelChange,
 }: {
   chat: Chat<any>
@@ -1033,7 +1033,7 @@ function ChatViewInner({
   isArchived?: boolean
   onRestoreWorkspace?: () => void
   dbSessionId?: string
-  chatModelId?: string | null
+  subChatModelId?: string | null
   onModelChange?: (modelId: "opus" | "sonnet" | "haiku") => void
 }) {
   // UNCONTROLLED: just track if editor has content for send button
@@ -1244,32 +1244,29 @@ function ChatViewInner({
     // Dependencies: updateSubChatModeMutation.mutate is stable, useAgentSubChatStore is external
   }, [isPlanMode, subChatId, updateSubChatModeMutation.mutate])
 
-  // Model selection state - uses per-chat model from DB, falls back to global default
+  // Model selection state - uses per-sub-chat model from DB, falls back to global default
   const [lastSelectedModelId, setLastSelectedModelId] = useAtom(
     lastSelectedModelIdAtom,
   )
   const [selectedAgent, setSelectedAgent] = useState(() => agents[0])
-  // Initialize from chat's saved model or fall back to global default
-  const [selectedModel, setSelectedModel] = useState(
-    () =>
-      claudeModels.find((m) => m.id === (chatModelId || lastSelectedModelId)) || claudeModels[1],
-  )
+  // Initialize from sub-chat's saved model ONLY - don't fallback to global here
+  // Sync effect below will handle updating if subChatModelId arrives later
+  const [selectedModel, setSelectedModel] = useState(() => {
+    if (!subChatModelId) return claudeModels[1] // Temporary fallback until sync effect runs
+    const model = claudeModels.find((m) => m.id === subChatModelId)
+    return model || claudeModels[1]
+  })
 
-  // Sync selectedModel and lastSelectedModelIdAtom when chatModelId changes (e.g., switching chats)
-  // This ensures the transport reads the correct per-chat model
+  // Sync selectedModel UI state when subChatModelId changes
+  // Per-sub-chat model takes priority, fall back to global if no per-sub-chat model set
+  // This also happens on first render if subChatModelId arrives after component mounts
   useEffect(() => {
-    const modelId = chatModelId || lastSelectedModelId
+    const modelId = subChatModelId || lastSelectedModelId
     const model = claudeModels.find((m) => m.id === modelId)
-    if (model) {
-      if (model.id !== selectedModel?.id) {
-        setSelectedModel(model)
-      }
-      // Update global atom so transport reads the correct model for this chat
-      if (chatModelId && chatModelId !== lastSelectedModelId) {
-        setLastSelectedModelId(chatModelId)
-      }
+    if (model && model.id !== selectedModel?.id) {
+      setSelectedModel(model)
     }
-  }, [chatModelId, lastSelectedModelId, selectedModel?.id, setLastSelectedModelId])
+  }, [subChatModelId, lastSelectedModelId, selectedModel?.id])
   const [isModelDropdownOpen, setIsModelDropdownOpen] = useState(false)
   const [shouldOpenClaudeSubmenu, setShouldOpenClaudeSubmenu] = useState(false)
 
@@ -3253,8 +3250,8 @@ function ChatViewInner({
                               key={model.id}
                               onClick={() => {
                                 setSelectedModel(model)
-                                setLastSelectedModelId(model.id)
-                                // Update per-chat model in database
+                                // Update per-chat model in database (NOT the global atom)
+                                // The global atom is only a fallback for chats without saved model
                                 onModelChange?.(model.id as "opus" | "sonnet" | "haiku")
                               }}
                               className="gap-2 justify-between"
@@ -3632,6 +3629,7 @@ export function ChatView({
     { enabled: !!chatId },
   )
 
+
   // Tool notifications (toast + activity feed) - listens for tool events via window events
   useToolNotifications(
     activeSubChatId || "",
@@ -3642,6 +3640,7 @@ export function ChatView({
     id: string
     name?: string | null
     mode?: "plan" | "agent" | null
+    modelId?: "opus" | "sonnet" | "haiku" | null
     created_at?: Date | string | null
     updated_at?: Date | string | null
     messages?: any
@@ -3703,8 +3702,8 @@ export function ChatView({
     restoreWorkspaceMutation.mutate({ id: chatId })
   }, [chatId, restoreWorkspaceMutation])
 
-  // Update chat model mutation
-  const updateModelMutation = trpc.chats.updateModel.useMutation({
+  // Update sub-chat model mutation
+  const updateSubChatModelMutation = trpc.chats.updateSubChatModel.useMutation({
     onSuccess: () => {
       // Invalidate to refresh chat data with new model
       utils.agents.getAgentChat.invalidate({ chatId })
@@ -3718,11 +3717,17 @@ export function ChatView({
 
   const handleModelChange = useCallback(
     (modelId: "opus" | "sonnet" | "haiku") => {
-      updateModelMutation.mutate({ id: chatId, modelId })
+      if (!activeSubChatId) return
+
+      // Optimistically update local store so transport recreation uses the new model
+      useAgentSubChatStore.getState().updateSubChatModel(activeSubChatId, modelId)
+
+      updateSubChatModelMutation.mutate({ id: activeSubChatId, modelId })
       // Invalidate cached chat so transport gets recreated with new model
       agentChatStore.delete(activeSubChatId)
+      forceUpdate({})
     },
-    [chatId, activeSubChatId, updateModelMutation],
+    [chatId, activeSubChatId, updateSubChatModelMutation, forceUpdate],
   )
 
   // Check if this workspace is archived
@@ -4088,6 +4093,9 @@ export function ChatView({
       return {
         id: sc.id,
         name: sc.name || "New Chat",
+        modelId:
+          (sc.modelId as "opus" | "sonnet" | "haiku" | undefined) ||
+          existingLocal?.modelId,
         // Prefer DB timestamp, fall back to local timestamp, then current time
         created_at:
           createdAt ?? existingLocal?.created_at ?? new Date().toISOString(),
@@ -4108,10 +4116,14 @@ export function ChatView({
     const currentOpenIds = freshState.openSubChatIds
     currentOpenIds.forEach((id) => {
       if (!dbSubChatIds.has(id)) {
+        const existingLocal = existingSubChatsMap.get(id)
         allSubChats.push({
           id,
           name: "New Chat",
           created_at: new Date().toISOString(),
+          modelId:
+            existingLocal?.modelId ||
+            ((agentChat as any)?.modelId as "opus" | "sonnet" | "haiku" | undefined),
         })
       }
     })
@@ -4162,8 +4174,11 @@ export function ChatView({
       // Note: Extended thinking setting is read dynamically inside the transport
       // projectPath: original project path for MCP config lookup (worktreePath is the cwd)
       const projectPath = (agentChat as any)?.project?.path as string | undefined
-      // Get per-chat model from agentChat data
-      const chatModel = (agentChat as any)?.modelId as string | undefined
+      // Get per-sub-chat model (fall back to chat-level model if needed)
+      const subChatModel =
+        subChatMeta?.modelId ||
+        ((subChat as any)?.modelId as "opus" | "sonnet" | "haiku" | undefined) ||
+        ((agentChat as any)?.modelId as "opus" | "sonnet" | "haiku" | undefined)
       const transport = worktreePath
         ? new IPCChatTransport({
           chatId,
@@ -4171,7 +4186,7 @@ export function ChatView({
           cwd: worktreePath,
           projectPath,
           mode: subChatMode,
-          model: chatModel, // Pass per-chat model to transport
+          model: subChatModel, // Pass per-sub-chat model to transport
         })
         : null // Web transport not supported in desktop app
 
@@ -4276,12 +4291,16 @@ export function ChatView({
   const handleCreateNewSubChat = useCallback(async () => {
     const store = useAgentSubChatStore.getState()
     const subChatMode = isPlanMode ? "plan" : "agent"
+    const activeModelId =
+      store.allSubChats.find((sc) => sc.id === store.activeSubChatId)?.modelId ||
+      ((agentChat as any)?.modelId as "opus" | "sonnet" | "haiku" | undefined)
 
     // Create sub-chat in DB first to get the real ID
     const newSubChat = await trpcClient.chats.createSubChat.mutate({
       chatId,
       name: "New Chat",
       mode: subChatMode,
+      modelId: activeModelId,
     })
     const newId = newSubChat.id
 
@@ -4294,6 +4313,9 @@ export function ChatView({
       name: "New Chat",
       created_at: new Date().toISOString(),
       mode: subChatMode,
+      modelId:
+        (newSubChat as any)?.modelId ||
+        activeModelId,
     })
 
     // Add to open tabs and set as active
@@ -4306,15 +4328,16 @@ export function ChatView({
       // Note: Extended thinking setting is read dynamically inside the transport
       // projectPath: original project path for MCP config lookup (worktreePath is the cwd)
       const projectPath = (agentChat as any)?.project?.path as string | undefined
-      // Get per-chat model from agentChat data
-      const chatModel = (agentChat as any)?.modelId as string | undefined
+      const newSubChatModel =
+        (newSubChat as any)?.modelId ||
+        activeModelId
       const transport = new IPCChatTransport({
         chatId,
         subChatId: newId,
         cwd: worktreePath,
         projectPath,
         mode: subChatMode,
-        model: chatModel, // Pass per-chat model to transport
+        model: newSubChatModel, // Pass per-sub-chat model to transport
       })
 
       const newChat = new Chat<any>({
@@ -4970,7 +4993,10 @@ export function ChatView({
               onCreateNewSubChat={handleCreateNewSubChat}
               teamId={selectedTeamId || undefined}
               repository={repository}
-              streamId={agentChatStore.getStreamId(activeSubChatId)}
+              streamId={
+                agentSubChats.find(sc => sc.id === activeSubChatId)?.stream_id ??
+                agentChatStore.getStreamId(activeSubChatId)
+              }
               isMobile={isMobileFullscreen}
               isSubChatsSidebarOpen={subChatsSidebarMode === "sidebar"}
               sandboxId={sandboxId || undefined}
@@ -4978,7 +5004,9 @@ export function ChatView({
               isArchived={isArchived}
               onRestoreWorkspace={handleRestoreWorkspace}
               dbSessionId={agentSubChats.find(sc => sc.id === activeSubChatId)?.sessionId || undefined}
-              chatModelId={(agentChat as any)?.modelId as string | null | undefined}
+              subChatModelId={
+                (agentSubChats.find(sc => sc.id === activeSubChatId)?.modelId as string | null | undefined)
+              }
               onModelChange={handleModelChange}
             />
           ) : (

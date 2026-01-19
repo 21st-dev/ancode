@@ -554,12 +554,15 @@ export function AgentsSubChatsSidebar({
     if (!parentChatId) return
 
     const store = useAgentSubChatStore.getState()
+    const activeModelId =
+      store.allSubChats.find((sc) => sc.id === store.activeSubChatId)?.modelId
 
     // Create sub-chat in DB first to get the real ID
     const newSubChat = await trpcClient.chats.createSubChat.mutate({
       chatId: parentChatId,
       name: "New Chat",
       mode: "agent",
+      modelId: activeModelId,
     })
     const newId = newSubChat.id
 
@@ -572,6 +575,9 @@ export function AgentsSubChatsSidebar({
       name: "New Chat",
       created_at: new Date().toISOString(),
       mode: "agent",
+      modelId:
+        (newSubChat as any)?.modelId ||
+        activeModelId,
     })
 
     // Add to open tabs and set as active

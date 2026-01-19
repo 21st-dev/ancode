@@ -6,6 +6,7 @@ export interface SubChatMeta {
   created_at?: string
   updated_at?: string
   mode?: "plan" | "agent"
+  modelId?: "opus" | "sonnet" | "haiku"
 }
 
 interface AgentSubChatStore {
@@ -29,6 +30,7 @@ interface AgentSubChatStore {
   addToAllSubChats: (subChat: SubChatMeta) => void
   updateSubChatName: (subChatId: string, name: string) => void
   updateSubChatMode: (subChatId: string, mode: "plan" | "agent") => void
+  updateSubChatModel: (subChatId: string, modelId: "opus" | "sonnet" | "haiku") => void
   updateSubChatTimestamp: (subChatId: string) => void
   reorderOpenSubChats: (oldIndex: number, newIndex: number) => void
   reset: () => void
@@ -171,6 +173,17 @@ export const useAgentSubChatStore = create<AgentSubChatStore>((set, get) => ({
       allSubChats: allSubChats.map((sc) =>
         sc.id === subChatId
           ? { ...sc, mode }
+          : sc,
+      ),
+    })
+  },
+
+  updateSubChatModel: (subChatId, modelId) => {
+    const { allSubChats } = get()
+    set({
+      allSubChats: allSubChats.map((sc) =>
+        sc.id === subChatId
+          ? { ...sc, modelId }
           : sc,
       ),
     })

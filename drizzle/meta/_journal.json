@@ -57,6 +57,13 @@
       "when": 1768854649255,
       "tag": "0007_greedy_sentry",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "6",
+      "when": 1768857902914,
+      "tag": "0008_splendid_mongoose",
+      "breakpoints": true
     }
   ]
 }

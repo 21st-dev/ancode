@@ -119,7 +119,7 @@ export const chatsRouter = router({
         baseBranch: z.string().optional(), // Branch to base the worktree off
         useWorktree: z.boolean().default(true), // If false, work directly in project dir
         mode: z.enum(["plan", "agent"]).default("agent"),
-        modelId: z.enum(["opus", "sonnet", "haiku"]).optional(), // Per-chat model preference
+        modelId: z.enum(["opus", "sonnet", "haiku"]).optional(), // Default model for first sub-chat
       }),
     )
     .mutation(async ({ input }) => {
@@ -174,6 +174,7 @@ export const chatsRouter = router({
         .values({
           chatId: chat.id,
           mode: input.mode,
+          modelId: input.modelId,
           messages: initialMessages,
         })
         .returning()
@@ -409,6 +410,7 @@ export const chatsRouter = router({
         chatId: z.string(),
         name: z.string().optional(),
         mode: z.enum(["plan", "agent"]).default("agent"),
+        modelId: z.enum(["opus", "sonnet", "haiku"]).optional(),
       }),
     )
     .mutation(({ input }) => {
@@ -419,6 +421,7 @@ export const chatsRouter = router({
           chatId: input.chatId,
           name: input.name,
           mode: input.mode,
+          modelId: input.modelId,
           messages: "[]",
         })
         .returning()
@@ -468,6 +471,30 @@ export const chatsRouter = router({
         .where(eq(subChats.id, input.id))
         .returning()
         .get()
+    }),
+
+  /**
+   * Update sub-chat model preference
+   */
+  updateSubChatModel: publicProcedure
+    .input(z.object({ id: z.string(), modelId: z.enum(["opus", "sonnet", "haiku"]) }))
+    .mutation(({ input }) => {
+      const db = getDatabase()
+      const updatedSubChat = db
+        .update(subChats)
+        .set({ modelId: input.modelId, updatedAt: new Date() })
+        .where(eq(subChats.id, input.id))
+        .returning()
+        .get()
+
+      if (updatedSubChat) {
+        db.update(chats)
+          .set({ updatedAt: new Date() })
+          .where(eq(chats.id, updatedSubChat.chatId))
+          .run()
+      }
+
+      return updatedSubChat
     }),
 
   /**

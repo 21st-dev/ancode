@@ -93,7 +93,7 @@ export const api = {
                 created_at: sc.createdAt,
                 updated_at: sc.updatedAt,
                 messages: parsedMessages,
-                stream_id: null,
+                stream_id: sc.streamId ?? null,
               }
             }),
           }

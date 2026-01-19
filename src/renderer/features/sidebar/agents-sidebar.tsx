@@ -740,6 +740,13 @@ export function AgentsSidebar({
     }
   }, [searchQuery, agentChats, pinnedChatIds])
 
+  // Derive worktree path from selected chat (for Git panel)
+  const selectedChatWorktreePath = useMemo(() => {
+    if (!selectedChatId || !agentChats) return null
+    const chat = agentChats.find((c) => c.id === selectedChatId)
+    return chat?.worktreePath || null
+  }, [selectedChatId, agentChats])
+
   // Handle bulk archive of selected chats
   const handleBulkArchive = useCallback(() => {
     const chatIdsToArchive = Array.from(selectedChatIds)
