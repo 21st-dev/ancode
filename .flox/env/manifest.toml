@@ -1,0 +1,113 @@
+## Flox Environment Manifest -----------------------------------------
+##
+##   _Everything_ you need to know about the _manifest_ is here:
+##
+##   https://flox.dev/docs/reference/command-reference/manifest.toml/
+##
+## -------------------------------------------------------------------
+# Flox manifest version managed by Flox CLI
+version = 1
+
+
+## Include ----------------------------------------------------------
+## ... environments to create a composed environment
+## ------------------------------------------------------------------
+[include]
+environments = [
+  { dir = "./devyard" },
+]
+
+
+## Install Packages --------------------------------------------------
+##  $ flox install gum  <- puts a package in [install] section below
+##  $ flox search gum   <- search for a package
+##  $ flox show gum     <- show all versions of a package
+## -------------------------------------------------------------------
+[install]
+bun.pkg-path = "bun"
+bun.version = "~1.2"
+bun.pkg-group = "bun-group"
+electron.pkg-path = "electron"
+electron.version = "~33.0"
+electron.pkg-group = "electron-group"
+
+
+## Environment Variables ---------------------------------------------
+##  ... available for use in the activated environment
+##      as well as [hook], [profile] scripts and [services] below.
+## -------------------------------------------------------------------
+[vars]
+# Indicate Flox environment is active
+FLOX_ENVIRONMENT = "1"
+
+
+## Activation Hook ---------------------------------------------------
+##  ... run by _bash_ shell when you run 'flox activate'.
+## -------------------------------------------------------------------
+[hook]
+# on-activate = '''
+#   # -> Set variables, create files and directories
+#   # -> Perform initialization steps, e.g. create a python venv
+#   # -> Useful environment variables:
+#   #      - FLOX_ENV_PROJECT=/home/user/example
+#   #      - FLOX_ENV=/home/user/example/.flox/run
+#   #      - FLOX_ENV_CACHE=/home/user/example/.flox/cache
+# '''
+
+
+## Profile script ----------------------------------------------------
+## ... sourced by _your shell_ when you run 'flox activate'.
+## -------------------------------------------------------------------
+[profile]
+common = '''
+  # Skip electron binary download from npm (prevents duplication)
+  export ELECTRON_SKIP_BINARY_DOWNLOAD=1
+
+  # Helpful activation message
+  echo "✓ 1Code development environment activated"
+  echo "  Bun: $(bun --version)"
+  echo "  Electron: $(electron --version)"
+  echo "  TypeScript LSP: $(which typescript-language-server) (via devyard)"
+'''
+## Shell-specific customizations such as setting aliases go here:
+# bash = ...
+# zsh  = ...
+# fish = ...
+
+
+## Services ---------------------------------------------------------
+##  $ flox services start             <- Starts all services
+##  $ flox services status            <- Status of running services
+##  $ flox activate --start-services  <- Activates & starts all
+## ------------------------------------------------------------------
+[services]
+# myservice.command = "python3 -m http.server"
+
+
+## Build and publish your own packages ------------------------------
+##  $ flox build
+##  $ flox publish
+## ------------------------------------------------------------------
+[build]
+# [build.myproject]
+# description = "The coolest project ever"
+# version = "0.0.1"
+# command = """
+#   mkdir -p $out/bin
+#   cargo build --release
+#   cp target/release/myproject $out/bin/myproject
+# """
+
+
+## Other Environment Options -----------------------------------------
+[options]
+# Systems that environment is compatible with
+# Commented out to inherit from devyard environment automatically
+# systems = [
+#   "aarch64-darwin",
+#   "aarch64-linux",
+#   "x86_64-darwin",
+#   "x86_64-linux",
+# ]
+# Uncomment to disable CUDA detection.
+# cuda-detection = false
