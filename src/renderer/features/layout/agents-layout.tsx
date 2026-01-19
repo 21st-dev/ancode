@@ -14,6 +14,10 @@ import {
   anthropicOnboardingCompletedAtom,
 } from "../../lib/atoms"
 import { selectedAgentChatIdAtom, selectedProjectAtom } from "../agents/atoms"
+import {
+  workflowsPreviewOpenAtom,
+  workflowsPreviewWidthAtom,
+} from "../workflows/atoms"
 import { trpc } from "../../lib/trpc"
 import { useAgentsHotkeys } from "../agents/lib/agents-hotkeys-manager"
 import { AgentsSettingsDialog } from "../../components/dialogs/agents-settings-dialog"
@@ -22,6 +26,7 @@ import { TooltipProvider } from "../../components/ui/tooltip"
 import { ResizableSidebar } from "../../components/ui/resizable-sidebar"
 import { AgentsSidebar } from "../sidebar/agents-sidebar"
 import { AgentsContent } from "../agents/ui/agents-content"
+import { WorkflowPreview } from "../workflows/ui/workflow-preview"
 import { UpdateBanner } from "../../components/update-banner"
 import { useUpdateChecker } from "../../lib/hooks/use-update-checker"
 import { useAgentSubChatStore } from "../../lib/stores/sub-chat-store"
@@ -34,6 +39,11 @@ const SIDEBAR_MIN_WIDTH = 160
 const SIDEBAR_MAX_WIDTH = 300
 const SIDEBAR_ANIMATION_DURATION = 0
 const SIDEBAR_CLOSE_HOTKEY = "⌘\\"
+
+const PREVIEW_MIN_WIDTH = 300
+const PREVIEW_MAX_WIDTH = 800
+const PREVIEW_ANIMATION_DURATION = 0
+const PREVIEW_CLOSE_HOTKEY = "⌘⇧\\"
 
 // ============================================================================
 // Component
@@ -83,6 +93,8 @@ export function AgentsLayout() {
 
   const [sidebarOpen, setSidebarOpen] = useAtom(agentsSidebarOpenAtom)
   const [sidebarWidth, setSidebarWidth] = useAtom(agentsSidebarWidthAtom)
+  const [previewOpen, setPreviewOpen] = useAtom(workflowsPreviewOpenAtom)
+  const [previewWidth, setPreviewWidth] = useAtom(workflowsPreviewWidthAtom)
   const [settingsOpen, setSettingsOpen] = useAtom(agentsSettingsDialogOpenAtom)
   const setSettingsActiveTab = useSetAtom(agentsSettingsDialogActiveTabAtom)
   const [shortcutsOpen, setShortcutsOpen] = useAtom(
@@ -180,6 +192,10 @@ export function AgentsLayout() {
     setSidebarOpen(false)
   }, [setSidebarOpen])
 
+  const handleClosePreview = useCallback(() => {
+    setPreviewOpen(false)
+  }, [setPreviewOpen])
+
   return (
     <TooltipProvider delayDuration={300}>
       <AgentsSettingsDialog
@@ -214,6 +230,25 @@ export function AgentsLayout() {
         <div className="flex-1 overflow-hidden flex flex-col min-w-0">
           <AgentsContent />
         </div>
+
+        {/* Right Preview Sidebar (Workflow Inspector) */}
+        <ResizableSidebar
+          isOpen={!isMobile && previewOpen}
+          onClose={handleClosePreview}
+          widthAtom={workflowsPreviewWidthAtom}
+          minWidth={PREVIEW_MIN_WIDTH}
+          maxWidth={PREVIEW_MAX_WIDTH}
+          side="right"
+          closeHotkey={PREVIEW_CLOSE_HOTKEY}
+          animationDuration={PREVIEW_ANIMATION_DURATION}
+          initialWidth={0}
+          exitWidth={0}
+          showResizeTooltip={true}
+          className="overflow-hidden bg-background border-l"
+          style={{ borderLeftWidth: "0.5px" }}
+        >
+          <WorkflowPreview />
+        </ResizableSidebar>
 
         {/* Update Banner */}
         <UpdateBanner />
