@@ -545,6 +545,39 @@ export const workflowsRouter = router({
       skills,
     }
   }),
+
+  /**
+   * Read the content of a workflow file
+   * Validates the path is within the Claude config directory to prevent path traversal
+   */
+  readFileContent: publicProcedure
+    .input(z.object({ path: z.string() }))
+    .query(async ({ input }) => {
+      // Get the base Claude config directory
+      const baseDir = await getClaudeConfigDir()
+
+      // Security: resolve both paths and ensure target is within base
+      const resolvedBase = path.resolve(baseDir)
+      const resolvedTarget = path.resolve(input.path)
+
+      // Path traversal check
+      if (!resolvedTarget.startsWith(resolvedBase)) {
+        throw new Error("Access denied: path is outside Claude config directory")
+      }
+
+      // Check if path is a file (not a directory)
+      try {
+        const stats = await fs.stat(resolvedTarget)
+        if (!stats.isFile()) {
+          throw new Error("Path is not a file")
+        }
+      } catch (err) {
+        throw new Error(`File not found: ${input.path}`)
+      }
+
+      // Read and return file content
+      return await fs.readFile(resolvedTarget, "utf-8")
+    }),
 })
 
 // ============ TYPE EXPORTS ============

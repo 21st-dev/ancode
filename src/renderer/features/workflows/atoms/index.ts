@@ -145,3 +145,35 @@ export const selectedWorkflowNodeAtom = atom<WorkflowNode | null>(null)
  * Starts at 0, increment with set(workflowsRefreshTriggerAtom, n => n + 1)
  */
 export const workflowsRefreshTriggerAtom = atom<number>(0)
+
+// ============================================
+// WORKFLOWS PREVIEW PANEL STATE
+// ============================================
+
+/**
+ * Controls the open/closed state of the workflows preview panel
+ * Persisted to localStorage as "workflows:preview-open"
+ */
+export const workflowsPreviewOpenAtom = atomWithStorage<boolean>(
+  "workflows:preview-open",
+  false, // Default: closed initially
+  undefined,
+  { getOnInit: true },
+)
+
+/**
+ * Width of the workflows preview panel in pixels
+ * Persisted to localStorage as "workflows:preview-width"
+ */
+export const workflowsPreviewWidthAtom = atomWithStorage<number>(
+  "workflows:preview-width",
+  400, // Default: 400px
+  undefined,
+  { getOnInit: true },
+)
+
+/**
+ * The source file path currently displayed in the preview panel
+ * null = no file selected
+ */
+export const workflowContentPathAtom = atom<string | null>(null)
