@@ -5,33 +5,34 @@
 See: .planning/PROJECT.md (updated 2025-01-18)
 
 **Core value:** See inside your Claude Code workflows — Understand how agents and commands work by visualizing their dependency tree with full source code inspection.
-**Current focus:** Phase 2 — Tree Visualization
+**Current focus:** Phase 3 — Content Preview
 
 ## Current Position
 
-Phase: 2 of 3 (Tree Visualization)
-Plan: 02 of 3 (Workflows sidebar component)
-Status: Plan 02-02 complete, continuing Phase 2 execution
-Last activity: 2026-01-18 — Workflows sidebar section created
+Phase: 3 of 3 (Content Preview)
+Plan: 01 of 1 (Workflow source preview panel)
+Status: Phase 3 COMPLETE - Workflow Inspector feature finished
+Last activity: 2026-01-18 — Content preview panel with Shiki syntax highlighting
 
-Progress: ██████████ 85%
+Progress: ██████████ 100%
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 4
-- Average duration: 10.5 min
-- Total execution time: 0.7 hours
+- Total plans completed: 8
+- Average duration: 10.2 min
+- Total execution time: 1.3 hours
 
 **By Phase:**
 
 | Phase | Plans | Complete | Avg/Plan |
 |-------|-------|----------|----------|
 | 01-discovery-layer | 3 | 3 | 11.5min |
-| 02-tree-visualization | 3 | 2 | 9.5min |
+| 02-tree-visualization | 4 | 4 | 9.5min |
+| 03-content-preview | 1 | 1 | 15min |
 
 **Recent Trend:**
-- Last 3 plans: 8min, 7min, 12min
+- Last 3 plans: 12min, 15min
 - Trend: Stable
 
 ## Accumulated Context
@@ -52,6 +53,10 @@ Recent decisions affecting current work:
 9. **Direct tRPC query in UI components** (2026-01-18): WorkflowTree uses tRPC useQuery directly instead of prop drilling for simplicity
 10. **3-level tree nesting structure** (2026-01-18): Category (Agents/Commands/Skills) -> Item -> Dependency categories (Tools, Skills, MCP servers, Agents, Commands)
 11. **WorkflowGraph type exports** (2026-01-18): Types exported from workflows router for shared type safety across main/renderer
+12. **Shiki dark-plus theme** (2026-01-18): Using Shiki's dark-plus theme for VS Code-like syntax highlighting
+13. **Preview panel defaults to closed** (2026-01-18): workflowsPreviewOpenAtom defaults to false for user opt-in
+14. **Path validation in readFileContent** (2026-01-18): Uses resolve() and startsWith() to prevent path traversal attacks
+15. **Independent expand/collapse and preview** (2026-01-18): Chevron toggles tree expansion, row click opens preview
 
 ### Deferred Issues
 
@@ -64,11 +69,16 @@ None yet.
 ## Session Continuity
 
 Last session: 2026-01-18
-Stopped at: Plan 02-02 complete (workflows sidebar section created)
+Stopped at: Phase 3 COMPLETE - Workflow Inspector feature finished
 Resume file: None
 
 ## Next Steps
 
-**Phase 2: Tree Visualization** — Plan 02-03: Source code preview panel
+**Workflow Inspector Feature COMPLETE**
 
-Next command: Execute plan 02-03 or continue with remaining Phase 2 plans
+All 3 phases finished:
+- Phase 1: Discovery Layer (tRPC routers for scanning workflows)
+- Phase 2: Tree Visualization (collapsible tree UI)
+- Phase 3: Content Preview (source code preview panel)
+
+Next command: Feature is ready for use. Consider polish, testing, or new features.
