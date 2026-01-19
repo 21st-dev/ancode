@@ -119,6 +119,7 @@ export const chatsRouter = router({
         baseBranch: z.string().optional(), // Branch to base the worktree off
         useWorktree: z.boolean().default(true), // If false, work directly in project dir
         mode: z.enum(["plan", "agent"]).default("agent"),
+        modelId: z.enum(["opus", "sonnet", "haiku"]).optional(), // Per-chat model preference
       }),
     )
     .mutation(async ({ input }) => {
@@ -137,7 +138,11 @@ export const chatsRouter = router({
       // Create chat (fast path)
       const chat = db
         .insert(chats)
-        .values({ name: input.name, projectId: input.projectId })
+        .values({
+          name: input.name,
+          projectId: input.projectId,
+          modelId: input.modelId, // Per-chat model preference
+        })
         .returning()
         .get()
       console.log("[chats.create] created chat:", chat)
@@ -258,6 +263,21 @@ export const chatsRouter = router({
       return db
         .update(chats)
         .set({ name: input.name, updatedAt: new Date() })
+        .where(eq(chats.id, input.id))
+        .returning()
+        .get()
+    }),
+
+  /**
+   * Update chat model preference
+   */
+  updateModel: publicProcedure
+    .input(z.object({ id: z.string(), modelId: z.enum(["opus", "sonnet", "haiku"]) }))
+    .mutation(({ input }) => {
+      const db = getDatabase()
+      return db
+        .update(chats)
+        .set({ modelId: input.modelId, updatedAt: new Date() })
         .where(eq(chats.id, input.id))
         .returning()
         .get()

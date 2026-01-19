@@ -7,6 +7,7 @@ import {
   ctrlTabTargetAtom,
   notificationModeAtom,
   toastNotificationsEnabledAtom,
+  defaultModelIdAtom,
   type CtrlTabTarget,
   type NotificationMode,
 } from "../../../lib/atoms"
@@ -48,6 +49,7 @@ export function AgentsPreferencesTab() {
   const [notificationMode, setNotificationMode] = useAtom(notificationModeAtom)
   const [toastEnabled, setToastEnabled] = useAtom(toastNotificationsEnabledAtom)
   const [rightPanelOpen, setRightPanelOpen] = useAtom(rightPanelOpenAtom)
+  const [defaultModelId, setDefaultModelId] = useAtom(defaultModelIdAtom)
   const isNarrowScreen = useIsNarrowScreen()
 
   // Sync opt-out status to main process
@@ -76,6 +78,37 @@ export function AgentsPreferencesTab() {
       {/* Features Section */}
       <div className="bg-background rounded-lg border border-border overflow-hidden">
         <div className="p-4 space-y-6">
+          {/* Default Model Selector */}
+          <div className="flex items-start justify-between">
+            <div className="flex flex-col space-y-1">
+              <span className="text-sm font-medium text-foreground">
+                Default Model
+              </span>
+              <span className="text-xs text-muted-foreground">
+                Model used for new chats. Can be changed per-chat.
+              </span>
+            </div>
+            <Select
+              value={defaultModelId}
+              onValueChange={(value: string) => setDefaultModelId(value)}
+            >
+              <SelectTrigger className="w-auto px-2">
+                <span className="text-xs">
+                  {defaultModelId === "opus"
+                    ? "Claude 4.5 Opus"
+                    : defaultModelId === "haiku"
+                      ? "Claude 4.5 Haiku"
+                      : "Claude 4.5 Sonnet"}
+                </span>
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="opus">Claude 4.5 Opus</SelectItem>
+                <SelectItem value="sonnet">Claude 4.5 Sonnet</SelectItem>
+                <SelectItem value="haiku">Claude 4.5 Haiku</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+
           {/* Extended Thinking Toggle */}
           <div className="flex items-start justify-between">
             <div className="flex flex-col space-y-1">

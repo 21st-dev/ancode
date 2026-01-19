@@ -178,6 +178,14 @@ export const lastSelectedModelIdAtom = atomWithStorage<string>(
   { getOnInit: true },
 )
 
+// Global default model for new chats (configured in Settings > Preferences)
+export const defaultModelIdAtom = atomWithStorage<string>(
+  "preferences:default-model-id",
+  "sonnet",
+  undefined,
+  { getOnInit: true },
+)
+
 export const isPlanModeAtom = atomWithStorage<boolean>(
   "agents:isPlanMode",
   false,

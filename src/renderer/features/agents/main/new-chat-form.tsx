@@ -36,6 +36,7 @@ import {
   lastSelectedAgentIdAtom,
   lastSelectedBranchesAtom,
   lastSelectedModelIdAtom,
+  defaultModelIdAtom,
   lastSelectedRepoAtom,
   lastSelectedWorkModeAtom,
   selectedAgentChatIdAtom,
@@ -165,6 +166,7 @@ export function NewChatForm({
   const [lastSelectedModelId, setLastSelectedModelId] = useAtom(
     lastSelectedModelIdAtom,
   )
+  const defaultModelId = useAtomValue(defaultModelIdAtom)
   const [isPlanMode, setIsPlanMode] = useAtom(isPlanModeAtom)
   const [workMode, setWorkMode] = useAtom(lastSelectedWorkModeAtom)
   const debugMode = useAtomValue(agentsDebugModeAtom)
@@ -184,7 +186,7 @@ export function NewChatForm({
   )
   const [selectedModel, setSelectedModel] = useState(
     () =>
-      claudeModels.find((m) => m.id === lastSelectedModelId) || claudeModels[1],
+      claudeModels.find((m) => m.id === defaultModelId) || claudeModels[1],
   )
   const [repoPopoverOpen, setRepoPopoverOpen] = useState(false)
   const [branchPopoverOpen, setBranchPopoverOpen] = useState(false)
@@ -659,6 +661,7 @@ export function NewChatForm({
         workMode === "worktree" ? selectedBranch || undefined : undefined,
       useWorktree: workMode === "worktree",
       mode: isPlanMode ? "plan" : "agent",
+      modelId: selectedModel?.id as "opus" | "sonnet" | "haiku",
     })
     // Editor and images are cleared in onSuccess callback
   }, [

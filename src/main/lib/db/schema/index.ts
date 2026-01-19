@@ -49,6 +49,8 @@ export const chats = sqliteTable("chats", {
   // PR tracking fields
   prUrl: text("pr_url"),
   prNumber: integer("pr_number"),
+  // Model preference (per-chat)
+  modelId: text("model_id").default("sonnet"), // "opus" | "sonnet" | "haiku"
 })
 
 export const chatsRelations = relations(chats, ({ one, many }) => ({

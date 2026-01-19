@@ -131,9 +131,10 @@ export class IPCChatTransport implements ChatTransport<UIMessage> {
     const thinkingEnabled = appStore.get(extendedThinkingEnabledAtom)
     const maxThinkingTokens = thinkingEnabled ? 128_000 : undefined
 
-    // Read model selection dynamically (so model changes apply to existing chats)
-    const selectedModelId = appStore.get(lastSelectedModelIdAtom)
-    const modelString = MODEL_ID_MAP[selectedModelId]
+    // Use model from config (per-chat) or fall back to global atom
+    // Config model takes priority to avoid race conditions when switching chats
+    const modelId = this.config.model || appStore.get(lastSelectedModelIdAtom)
+    const modelString = MODEL_ID_MAP[modelId]
 
     const currentMode =
       useAgentSubChatStore

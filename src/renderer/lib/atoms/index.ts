@@ -10,6 +10,7 @@ export {
   selectedAgentChatIdAtom,
   isPlanModeAtom,
   lastSelectedModelIdAtom,
+  defaultModelIdAtom,
   lastSelectedAgentIdAtom,
   lastSelectedRepoAtom,
   agentsUnseenChangesAtom,
