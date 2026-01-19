@@ -10,29 +10,29 @@ See: .planning/PROJECT.md (updated 2025-01-18)
 ## Current Position
 
 Phase: 2 of 3 (Tree Visualization)
-Plan: 01 of 3 (Atoms)
-Status: Plan 01 complete, continuing Phase 2 execution
-Last activity: 2026-01-18 — Workflows atoms created
+Plan: 02 of 3 (Workflows sidebar component)
+Status: Plan 02-02 complete, continuing Phase 2 execution
+Last activity: 2026-01-18 — Workflows sidebar section created
 
-Progress: █████████░ 78%
+Progress: ██████████ 85%
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 3
-- Average duration: 10 min
-- Total execution time: 0.5 hours
+- Total plans completed: 4
+- Average duration: 10.5 min
+- Total execution time: 0.7 hours
 
 **By Phase:**
 
 | Phase | Plans | Complete | Avg/Plan |
 |-------|-------|----------|----------|
-| 01-discovery-layer | 3 | 2 | 11.5min |
-| 02-tree-visualization | 3 | 1 | 7min |
+| 01-discovery-layer | 3 | 3 | 11.5min |
+| 02-tree-visualization | 3 | 2 | 9.5min |
 
 **Recent Trend:**
-- Last 3 plans: 15min, 8min, 7min
-- Trend: ↓ (improving)
+- Last 3 plans: 8min, 7min, 12min
+- Trend: Stable
 
 ## Accumulated Context
 
@@ -49,6 +49,9 @@ Recent decisions affecting current work:
 6. **File body scanning with regex** (2026-01-18): Agent/command invocations detected via patterns like "Use the {agent} agent" and "/{command}"
 7. **Dependency categorization by type** (2026-01-18): Dependencies separated into tools, skills, MCP servers, agents, commands for UI visualization
 8. **Workflows atoms with localStorage persistence** (2026-01-18): Using atomWithStorage for sidebar state, tree expansion (Set<string>), selected node, and refresh trigger
+9. **Direct tRPC query in UI components** (2026-01-18): WorkflowTree uses tRPC useQuery directly instead of prop drilling for simplicity
+10. **3-level tree nesting structure** (2026-01-18): Category (Agents/Commands/Skills) -> Item -> Dependency categories (Tools, Skills, MCP servers, Agents, Commands)
+11. **WorkflowGraph type exports** (2026-01-18): Types exported from workflows router for shared type safety across main/renderer
 
 ### Deferred Issues
 
@@ -61,11 +64,11 @@ None yet.
 ## Session Continuity
 
 Last session: 2026-01-18
-Stopped at: Plan 02-01 complete (workflows atoms created)
+Stopped at: Plan 02-02 complete (workflows sidebar section created)
 Resume file: None
 
 ## Next Steps
 
-**Phase 2: Tree Visualization** — Plan 02-02: Workflows sidebar component
+**Phase 2: Tree Visualization** — Plan 02-03: Source code preview panel
 
-Next command: Execute plan 02-02 or continue with remaining Phase 2 plans
+Next command: Execute plan 02-03 or continue with remaining Phase 2 plans
