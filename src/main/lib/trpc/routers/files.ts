@@ -200,7 +200,9 @@ async function getGitStatus(projectPath: string): Promise<Map<string, GitFileSta
 
   try {
     // Check if this is a git repository
-    const { stdout } = await execAsync("git status --porcelain -uall", {
+    // --ignored shows gitignored files (marked with !)
+    // -uall shows all untracked files
+    const { stdout } = await execAsync("git status --porcelain --ignored -uall", {
       cwd: projectPath,
       maxBuffer: 10 * 1024 * 1024, // 10MB buffer for large repos
     })

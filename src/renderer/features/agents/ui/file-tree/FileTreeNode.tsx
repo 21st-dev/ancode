@@ -148,11 +148,14 @@ export const FileTreeNode = memo(function FileTreeNode({
   const folderHasChanges = useMemo(() => {
     if (node.type !== "folder") return false
 
-    // Check if any file in gitStatus starts with this folder path
-    return Object.keys(gitStatus).some(path =>
-      path.startsWith(node.path + "/")
+    // Check if any file in gitStatus starts with this folder path (exclude ignored)
+    return Object.entries(gitStatus).some(([path, status]) =>
+      path.startsWith(node.path + "/") && status.status !== "ignored"
     )
   }, [node.type, node.path, gitStatus])
+
+  // Check if this item is ignored
+  const isIgnored = statusCode === "ignored"
 
   const handleClick = useCallback(() => {
     if (node.type === "folder") {
@@ -306,35 +309,45 @@ export const FileTreeNode = memo(function FileTreeNode({
               isExpanded ? (
                 <FolderOpen className={cn(
                   "size-3.5 shrink-0",
-                  folderHasChanges ? "text-yellow-500 dark:text-yellow-400" : "text-muted-foreground"
+                  isIgnored
+                    ? "text-muted-foreground/50"
+                    : folderHasChanges
+                      ? "text-yellow-500 dark:text-yellow-400"
+                      : "text-muted-foreground"
                 )} />
               ) : (
                 <Folder className={cn(
                   "size-3.5 shrink-0",
-                  folderHasChanges ? "text-yellow-500 dark:text-yellow-400" : "text-muted-foreground"
+                  isIgnored
+                    ? "text-muted-foreground/50"
+                    : folderHasChanges
+                      ? "text-yellow-500 dark:text-yellow-400"
+                      : "text-muted-foreground"
                 )} />
               )
             ) : (
               // Use special icons for data files
               (() => {
                 const dataType = getDataFileType(node.name)
+                // Apply dimmed style for ignored files
+                const ignoredClass = isIgnored ? "opacity-50" : ""
                 if (dataType === "csv") {
-                  return <FileSpreadsheet className="size-3.5 shrink-0 text-green-500" />
+                  return <FileSpreadsheet className={cn("size-3.5 shrink-0 text-green-500", ignoredClass)} />
                 }
                 if (dataType === "json") {
-                  return <FileJson className="size-3.5 shrink-0 text-yellow-500" />
+                  return <FileJson className={cn("size-3.5 shrink-0 text-yellow-500", ignoredClass)} />
                 }
                 if (dataType === "sqlite") {
-                  return <Database className="size-3.5 shrink-0 text-blue-500" />
+                  return <Database className={cn("size-3.5 shrink-0 text-blue-500", ignoredClass)} />
                 }
                 if (dataType === "parquet") {
-                  return <FileBox className="size-3.5 shrink-0 text-purple-500" />
+                  return <FileBox className={cn("size-3.5 shrink-0 text-purple-500", ignoredClass)} />
                 }
                 if (dataType === "excel") {
-                  return <Table2 className="size-3.5 shrink-0 text-emerald-600" />
+                  return <Table2 className={cn("size-3.5 shrink-0 text-emerald-600", ignoredClass)} />
                 }
                 if (dataType === "arrow") {
-                  return <ArrowRight className="size-3.5 shrink-0 text-orange-500" />
+                  return <ArrowRight className={cn("size-3.5 shrink-0 text-orange-500", ignoredClass)} />
                 }
                 return <File className={cn("size-3.5 shrink-0", textColorClass)} />
               })()
