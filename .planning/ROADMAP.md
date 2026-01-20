@@ -14,6 +14,7 @@ None
 - [x] **Phase 2: Tree Visualization** — Sidebar entries + nested dependency tree UI
 - [x] **Phase 3: Content Preview** — Full source code/file content on node click
 - [x] **Phase 4: Flox Dev Environment** — Update dev env management to use Flox similar to ../avatar
+- [ ] **Phase 5: AWS Bedrock Authentication** — AWS SSO profile selection for Bedrock API access
 
 ## Phase Details
 
@@ -68,6 +69,35 @@ Plans:
 - `.flox/env/manifest.lock` for reproducible builds
 - Updated documentation explaining Flox activation workflow
 
+### Phase 5: AWS Bedrock Authentication
+**Goal**: Update Bedrock authentication to use AWS SSO profile selection with user email and portal URL configuration
+**Depends on**: Phase 4
+**Research**: Complete (AWS SSO authentication flow, profile selection UX patterns)
+**Plans**: 5 plans in 4 waves
+
+Plans:
+- [ ] 05-01-PLAN.md — AWS SSO Foundation & Client (database migration, AWS SDK packages, SSO client)
+- [ ] 05-02-PLAN.md — tRPC Backend (startDeviceAuth, pollDeviceAuth, listAccounts, saveProfile procedures)
+- [ ] 05-03-PLAN.md — Onboarding UI (AWS SSO authentication flow in onboarding page)
+- [ ] 05-04-PLAN.md — Settings UI (AWS SSO configuration and profile management in settings)
+- [ ] 05-05-PLAN.md — Claude Integration (buildClaudeEnv for AWS credentials, end-to-end verification)
+
+**Details:**
+- Add AWS SSO fields to claudeCodeSettings table (portal URL, region, account ID, role name)
+- Implement OAuth2 device authorization flow using AWS SDK v3
+- Cache SSO tokens to ~/.aws/sso/cache/ (AWS CLI compatible)
+- List accounts and roles via IAM Identity Center API
+- Add AWS SSO configuration UI to onboarding and settings
+- Inject AWS credentials into Claude SDK environment for Bedrock API access
+
+**Key deliverables:**
+- Database migration with AWS SSO fields
+- AWS SSO client module (device flow, account listing, token caching)
+- tRPC router for AWS SSO operations
+- Onboarding flow with AWS SSO option
+- Settings page with AWS SSO management
+- Claude SDK integration with Bedrock credentials
+
 ## Progress
 
 | Phase | Plans Complete | Status | Completed |
@@ -76,3 +106,4 @@ Plans:
 | 2. Tree Visualization | 2/2 | Complete | 2025-01-18 |
 | 3. Content Preview | 1/1 | Complete | 2026-01-18 |
 | 4. Flox Dev Environment | 1/1 | Complete | 2026-01-19 |
+| 5. AWS Bedrock Authentication | 0/5 | Planned | - |
