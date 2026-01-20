@@ -11,9 +11,12 @@ import {
 import {
   parseDuckDBFile,
   getDuckDBFileType,
-  listExcelSheets as listExcelSheetsFromDuckDB,
   queryDataFile as queryDataFileDuckDB,
 } from "./duckdb-parser"
+import {
+  listExcelSheets as listExcelSheetsFromXlsx,
+  parseExcelFile,
+} from "./excel-parser"
 
 // Re-export types
 export * from "./types"
@@ -80,11 +83,10 @@ export async function getDataFileInfo(filePath: string): Promise<DataFileInfo> {
       }
     }
 
-    // For Excel files, list sheets
+    // For Excel files, list sheets (supports both .xls and .xlsx)
     if (fileType === "excel") {
       try {
-        const sheets = await listExcelSheetsFromDuckDB(filePath)
-        // If no sheets found (e.g., .xls file which is not supported), leave tables undefined
+        const sheets = listExcelSheetsFromXlsx(filePath)
         if (sheets.length > 0) {
           info.tables = sheets
         }
@@ -128,8 +130,8 @@ export async function parseDataFile(
       return parseDuckDBFile(filePath, { limit, offset })
 
     case "excel":
-      // Use unified DuckDB parser for Excel files
-      return parseDuckDBFile(filePath, { limit, offset, sheetName: tableName })
+      // Use xlsx library for Excel files (supports both .xls and .xlsx)
+      return parseExcelFile(filePath, { limit, offset, sheetName: tableName })
 
     case "sqlite": {
       // For SQLite, we need a table name
@@ -171,10 +173,10 @@ export function listSqliteTables(filePath: string): string[] {
 }
 
 /**
- * List sheets in an Excel file
+ * List sheets in an Excel file (supports both .xls and .xlsx)
  */
-export async function listExcelSheets(filePath: string): Promise<string[]> {
-  return listExcelSheetsFromDuckDB(filePath)
+export function listExcelSheets(filePath: string): string[] {
+  return listExcelSheetsFromXlsx(filePath)
 }
 
 /**

@@ -253,7 +253,6 @@ export function DataViewerSidebar({
 }: DataViewerSidebarProps) {
   const fileType = getFileType(filePath)
   const fileName = getFileName(filePath)
-  const isLegacyXls = fileType === "excel" && getFileExtension(filePath) === ".xls"
   const { resolvedTheme } = useTheme()
   const isDark = resolvedTheme === "dark"
   const gridRef = useRef<any>(null)
@@ -402,15 +401,17 @@ export function DataViewerSidebar({
   // Use the appropriate tables/sheets based on file type
   const tables = fileType === "sqlite" ? sqliteTables : fileType === "excel" ? excelSheets : undefined
 
-  // Auto-select first table/sheet if none selected
+  // Auto-select first table/sheet if none selected or if current selection is invalid
   useEffect(() => {
     if (
       (fileType === "sqlite" || fileType === "excel") &&
       tables &&
-      tables.length > 0 &&
-      !selectedTable
+      tables.length > 0
     ) {
-      setSelectedTable(tables[0])
+      // If no selection or current selection doesn't exist in available tables
+      if (!selectedTable || !tables.includes(selectedTable)) {
+        setSelectedTable(tables[0])
+      }
     }
   }, [fileType, tables, selectedTable, setSelectedTable])
 
@@ -445,7 +446,6 @@ export function DataViewerSidebar({
       enabled:
         !isQueryMode &&
         fileType !== "unknown" &&
-        !isLegacyXls &&
         (fileType !== "sqlite" || (!!selectedTable && selectedTable !== "")) &&
         excelCanLoad,
     }
@@ -856,26 +856,6 @@ export function DataViewerSidebar({
     },
     [getCellContent]
   )
-
-  // Unsupported .xls format - show this immediately, don't try to load
-  if (isLegacyXls) {
-    return (
-      <div className="flex flex-col h-full">
-        <Header fileName={fileName} filePath={filePath} onClose={onClose} />
-        <div className="flex-1 flex items-center justify-center p-4">
-          <div className="text-center">
-            <p className="font-medium text-destructive">Unsupported file format</p>
-            <p className="text-sm text-muted-foreground mt-1">
-              Legacy Excel format (.xls) is not supported.
-            </p>
-            <p className="text-sm text-muted-foreground mt-1">
-              Please convert to .xlsx format to view this file.
-            </p>
-          </div>
-        </div>
-      </div>
-    )
-  }
 
   // Error state
   if (error) {
