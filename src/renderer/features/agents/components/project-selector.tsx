@@ -19,9 +19,9 @@ import {
   DialogContent,
   DialogHeader,
   DialogTitle,
-  DialogDescription,
 } from "../../../components/ui/dialog"
 import { Input } from "../../../components/ui/input"
+import { Button } from "../../../components/ui/button"
 import { IconChevronDown, CheckIcon, FolderPlusIcon, GitHubIcon } from "../../../components/ui/icons"
 import { trpc } from "../../../lib/trpc"
 import { selectedProjectAtom } from "../atoms"
@@ -288,41 +288,42 @@ export function ProjectSelector() {
     </Popover>
 
     <Dialog open={githubDialogOpen} onOpenChange={setGithubDialogOpen}>
-      <DialogContent className="w-[400px]">
-        <DialogHeader>
-          <DialogTitle>Clone from GitHub</DialogTitle>
-          <DialogDescription>
-            Enter a GitHub repository URL or owner/repo
-          </DialogDescription>
-        </DialogHeader>
+      <DialogContent className="w-[400px] p-0 gap-0 overflow-hidden">
         <form
           onSubmit={(e) => {
             e.preventDefault()
             handleCloneFromGitHub()
           }}
-          className="flex flex-col gap-4"
         >
-          <Input
-            placeholder="owner/repo or https://github.com/..."
-            value={githubUrl}
-            onChange={(e) => setGithubUrl(e.target.value)}
-            autoFocus
-          />
-          <div className="flex justify-end gap-2">
-            <button
+          <div className="p-6">
+            <h2 className="text-xl font-semibold mb-4">
+              Clone from GitHub
+            </h2>
+            <Input
+              placeholder="owner/repo or https://github.com/..."
+              value={githubUrl}
+              onChange={(e) => setGithubUrl(e.target.value)}
+              className="w-full h-11 text-sm"
+              autoFocus
+            />
+          </div>
+          <div className="bg-muted p-4 flex justify-between border-t border-border">
+            <Button
               type="button"
               onClick={() => setGithubDialogOpen(false)}
-              className="px-3 py-1.5 text-sm rounded-md hover:bg-muted transition-colors"
+              variant="ghost"
+              className="rounded-md"
             >
               Cancel
-            </button>
-            <button
+            </Button>
+            <Button
               type="submit"
               disabled={!githubUrl.trim() || cloneFromGitHub.isPending}
-              className="px-3 py-1.5 text-sm bg-primary text-primary-foreground rounded-md hover:bg-primary/90 transition-colors disabled:opacity-50"
+              variant="default"
+              className="rounded-md"
             >
               {cloneFromGitHub.isPending ? "Cloning..." : "Clone"}
-            </button>
+            </Button>
           </div>
         </form>
       </DialogContent>

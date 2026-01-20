@@ -128,6 +128,16 @@ export const AgentToolRegistry: Record<string, ToolMeta> = {
       const isInputStreaming = part.state === "input-streaming"
       if (isInputStreaming) return "Preparing search"
       if (isPending) return "Grepping"
+
+      // DEBUG: Log the part.output to understand its structure
+      console.log("[Grep DEBUG] part.output:", {
+        state: part.state,
+        output: part.output,
+        outputType: typeof part.output,
+        outputKeys: part.output && typeof part.output === 'object' ? Object.keys(part.output) : null,
+        numFiles: part.output?.numFiles,
+      })
+
       const numFiles = part.output?.numFiles || 0
       return numFiles > 0 ? `Grepped ${numFiles} files` : "No matches"
     },
@@ -156,6 +166,16 @@ export const AgentToolRegistry: Record<string, ToolMeta> = {
       const isInputStreaming = part.state === "input-streaming"
       if (isInputStreaming) return "Preparing search"
       if (isPending) return "Exploring files"
+
+      // DEBUG: Log the part.output to understand its structure
+      console.log("[Glob DEBUG] part.output:", {
+        state: part.state,
+        output: part.output,
+        outputType: typeof part.output,
+        outputKeys: part.output && typeof part.output === 'object' ? Object.keys(part.output) : null,
+        numFiles: part.output?.numFiles,
+      })
+
       const numFiles = part.output?.numFiles || 0
       return numFiles > 0 ? `Found ${numFiles} files` : "No files found"
     },

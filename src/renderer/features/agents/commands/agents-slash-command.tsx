@@ -22,6 +22,7 @@ import {
   FileText,
   ShieldCheck,
   Eye,
+  FolderGit2,
 } from "lucide-react"
 import type { SlashCommandOption, SlashTriggerPayload } from "./types"
 import {
@@ -46,6 +47,8 @@ function getCommandIcon(commandName: string) {
       return FileText
     case "security-review":
       return ShieldCheck
+    case "worktree-setup":
+      return FolderGit2
     default:
       return IconChatBubble
   }

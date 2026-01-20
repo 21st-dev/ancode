@@ -11,6 +11,7 @@ import { join } from "path"
 import { createIPCHandler } from "trpc-electron/main"
 import { createAppRouter } from "../lib/trpc/routers"
 import { getAuthManager, handleAuthCode, getBaseUrl } from "../index"
+import { registerGitWatcherIPC } from "../lib/git/watcher"
 
 // Register IPC handlers for window operations (only once)
 let ipcHandlersRegistered = false
@@ -190,6 +191,9 @@ function registerIpcHandlers(getWindow: () => BrowserWindow | null): void {
       throw error
     }
   })
+
+  // Register git watcher IPC handlers
+  registerGitWatcherIPC(getWindow)
 }
 
 // Current window reference

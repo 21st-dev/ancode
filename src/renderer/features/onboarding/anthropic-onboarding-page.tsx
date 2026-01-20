@@ -1,13 +1,17 @@
 "use client"
 
-import { useEffect, useRef, useState } from "react"
 import { useSetAtom } from "jotai"
+import { useEffect, useRef, useState } from "react"
+import { ChevronLeft } from "lucide-react"
 
-import { Input } from "../../components/ui/input"
 import { ClaudeCodeIcon, IconSpinner } from "../../components/ui/icons"
+import { Input } from "../../components/ui/input"
 import { Logo } from "../../components/ui/logo"
+import {
+  anthropicOnboardingCompletedAtom,
+  billingMethodAtom,
+} from "../../lib/atoms"
 import { trpc } from "../../lib/trpc"
-import { anthropicOnboardingCompletedAtom } from "../../lib/atoms"
 
 type AuthFlowState =
   | { step: "idle" }
@@ -38,6 +42,11 @@ export function AnthropicOnboardingPage() {
   const setAnthropicOnboardingCompleted = useSetAtom(
     anthropicOnboardingCompletedAtom
   )
+  const setBillingMethod = useSetAtom(billingMethodAtom)
+
+  const handleBack = () => {
+    setBillingMethod(null)
+  }
 
   // tRPC mutations
   const startAuthMutation = trpc.claudeCode.startAuth.useMutation()
@@ -212,6 +221,14 @@ export function AnthropicOnboardingPage() {
         style={{ WebkitAppRegion: "drag" } as React.CSSProperties}
       />
 
+      {/* Back button - fixed in top left corner below traffic lights */}
+      <button
+        onClick={handleBack}
+        className="fixed top-12 left-4 flex items-center justify-center h-8 w-8 rounded-full hover:bg-foreground/5 transition-colors"
+      >
+        <ChevronLeft className="h-5 w-5" />
+      </button>
+
       <div className="w-full max-w-[440px] space-y-8 px-4">
         {/* Header with dual icons */}
         <div className="text-center space-y-4">
@@ -234,7 +251,7 @@ export function AnthropicOnboardingPage() {
         </div>
 
         {/* Content */}
-        <div className="space-y-6">
+        <div className="space-y-6 flex flex-col items-center">
           {/* Connect Button - shows loader only if user clicked AND loading */}
           {!urlOpened &&
             flowState.step !== "has_url" &&
@@ -242,7 +259,7 @@ export function AnthropicOnboardingPage() {
               <button
                 onClick={handleConnectClick}
                 disabled={userClickedConnect && isLoadingAuth}
-                className="w-full h-8 px-3 bg-primary text-primary-foreground rounded-lg text-sm font-medium transition-[background-color,transform] duration-150 hover:bg-primary/90 active:scale-[0.97] shadow-[0_0_0_0.5px_rgb(23,23,23),inset_0_0_0_1px_rgba(255,255,255,0.14)] dark:shadow-[0_0_0_0.5px_rgb(23,23,23),inset_0_0_0_1px_rgba(255,255,255,0.14)] disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center"
+                className="h-8 px-4 min-w-[85px] bg-primary text-primary-foreground rounded-lg text-sm font-medium transition-[background-color,transform] duration-150 hover:bg-primary/90 active:scale-[0.97] shadow-[0_0_0_0.5px_rgb(23,23,23),inset_0_0_0_1px_rgba(255,255,255,0.14)] dark:shadow-[0_0_0_0.5px_rgb(23,23,23),inset_0_0_0_1px_rgba(255,255,255,0.14)] disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center"
               >
                 {userClickedConnect && isLoadingAuth ? (
                   <IconSpinner className="h-4 w-4" />
@@ -305,6 +322,7 @@ export function AnthropicOnboardingPage() {
               </button>
             </div>
           )}
+
         </div>
       </div>
     </div>

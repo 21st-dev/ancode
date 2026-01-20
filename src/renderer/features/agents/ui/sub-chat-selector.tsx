@@ -838,8 +838,8 @@ export function SubChatSelector({
         </div>
       )}
 
-      {/* Diff button - always visible on desktop when sandbox exists, disabled if no changes */}
-      {!isMobile && canOpenDiff && !isDiffSidebarOpen && (
+      {/* Diff button - always visible on desktop when sandbox exists */}
+      {!isMobile && canOpenDiff && (
         <div
           className="rounded-md bg-background/10 backdrop-blur-[10px] flex items-center justify-center"
           style={{
@@ -853,13 +853,7 @@ export function SubChatSelector({
                 variant="ghost"
                 size="icon"
                 onClick={() => onOpenDiff?.()}
-                disabled={!diffStats?.hasChanges || diffStats?.isLoading}
-                className={cn(
-                  "h-6 w-6 p-0 transition-[background-color,transform] duration-150 ease-out active:scale-[0.97] flex-shrink-0 rounded-md flex items-center justify-center",
-                  diffStats?.hasChanges && !diffStats?.isLoading
-                    ? "hover:bg-foreground/10"
-                    : "text-muted-foreground cursor-not-allowed",
-                )}
+                className="h-6 w-6 p-0 transition-[background-color,transform] duration-150 ease-out active:scale-[0.97] flex-shrink-0 rounded-md flex items-center justify-center hover:bg-foreground/10"
               >
                 {diffStats?.isLoading ? (
                   <IconSpinner className="h-4 w-4" />

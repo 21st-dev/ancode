@@ -10,6 +10,7 @@ import {
 	uniqueNamesGenerator,
 } from "unique-names-generator";
 import { checkGitLfsAvailable, getShellEnvironment } from "./shell-env";
+import { executeWorktreeSetup } from "./worktree-config";
 
 const execFileAsync = promisify(execFile);
 
@@ -910,6 +911,17 @@ export async function createWorktreeForChat(
 
 		await createWorktree(projectPath, branch, worktreePath, `origin/${baseBranch}`);
 
+		// Run worktree setup commands (install deps, copy envs, etc.)
+		// Don't fail worktree creation if setup fails, just log
+		try {
+			const setupResult = await executeWorktreeSetup(worktreePath, projectPath);
+			if (!setupResult.success) {
+				console.warn(`[worktree] Setup completed with errors: ${setupResult.errors.join(", ")}`);
+			}
+		} catch (setupError) {
+			console.warn(`[worktree] Setup failed: ${setupError}`);
+		}
+
 		return { success: true, worktreePath, branch, baseBranch };
 	} catch (error) {
 		return {
@@ -927,6 +939,7 @@ export async function createWorktreeForChat(
 export async function getWorktreeDiff(
 	worktreePath: string,
 	baseBranch?: string,
+	options?: { onlyUncommitted?: boolean },
 ): Promise<{ success: boolean; diff?: string; error?: string }> {
 	try {
 		const git = simpleGit(worktreePath);
@@ -952,6 +965,11 @@ export async function getWorktreeDiff(
 			await git.reset(["HEAD"]).catch(() => {});
 
 			return { success: true, diff: diff || "" };
+		}
+
+		// All committed - if onlyUncommitted mode, return empty diff
+		if (options?.onlyUncommitted) {
+			return { success: true, diff: "" };
 		}
 
 		// All committed - diff against base branch

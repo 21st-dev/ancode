@@ -19,6 +19,7 @@ import {
   downloadUpdate,
   setupFocusUpdateCheck,
 } from "./lib/auto-updater"
+import { cleanupGitWatchers } from "./lib/git/watcher"
 
 // Dev mode detection
 const IS_DEV = !!process.env.ELECTRON_RENDERER_URL
@@ -658,6 +659,7 @@ if (gotTheLock) {
   // Cleanup before quit
   app.on("before-quit", async () => {
     console.log("[App] Shutting down...")
+    await cleanupGitWatchers()
     await shutdownAnalytics()
     await closeDatabase()
   })

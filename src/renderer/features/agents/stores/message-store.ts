@@ -93,6 +93,139 @@ export const isMessageStreamingAtomFamily = atomFamily((messageId: string) =>
 )
 
 // ============================================================================
+// TEXT PART ATOMS - For IsolatedTextPart optimization
+// ============================================================================
+// Problem: When IsolatedTextPart subscribes to messageAtomFamily, ALL text parts
+// of that message re-render when ANY part changes (even tool parts).
+//
+// Solution: Create a derived atom that extracts ONLY the specific text part.
+// This way, a text part only re-renders when ITS text changes, not when
+// other parts of the same message change.
+
+// Cache for text part content to return stable references
+const textPartCache = new Map<string, string>()
+
+export const textPartAtomFamily = atomFamily((key: string) => {
+  // Key format: "messageId:partIndex"
+  const [messageId, partIndexStr] = key.split(":")
+  const partIndex = parseInt(partIndexStr!, 10)
+
+  return atom((get) => {
+    const message = get(messageAtomFamily(messageId!))
+    const parts = message?.parts || []
+    const part = parts[partIndex]
+    const text = part?.type === "text" ? (part.text || "") : ""
+
+    // Return cached value if text hasn't changed (stable reference)
+    const cached = textPartCache.get(key)
+    if (cached === text) {
+      return cached
+    }
+
+    textPartCache.set(key, text)
+    return text
+  })
+})
+
+// ============================================================================
+// MESSAGE PARTS STRUCTURE - For AssistantMessageItem optimization
+// ============================================================================
+// Problem: AssistantMessageItem subscribes to the whole message object.
+// When ANY part changes (including text content), the whole component re-renders,
+// causing all IsolatedTextPart children to re-render.
+//
+// Solution: Create an atom that returns only the STRUCTURE of parts (types, states,
+// toolCallIds) without text content. This way AssistantMessageItem only re-renders
+// when the structure changes (new part added, tool state changed), not when text
+// content streams in.
+
+interface PartStructure {
+  type: string
+  toolCallId?: string
+  state?: string
+  // For tools we need input to determine rendering
+  inputJson?: string
+  // For tool results
+  hasOutput?: boolean
+  hasResult?: boolean
+  hasError?: boolean
+  // For text parts - whether text is non-empty (without including actual text)
+  hasText?: boolean
+}
+
+interface MessageStructure {
+  id: string
+  role: "user" | "assistant" | "system"
+  partsStructure: PartStructure[]
+  metadata?: any
+}
+
+// Cache for message structure
+const messageStructureCache = new Map<string, MessageStructure>()
+
+export const messageStructureAtomFamily = atomFamily((messageId: string) =>
+  atom((get) => {
+    const message = get(messageAtomFamily(messageId))
+    if (!message) return null
+
+    // Build structure without text content
+    const partsStructure: PartStructure[] = (message.parts || []).map((part: any) => {
+      const structure: PartStructure = {
+        type: part.type,
+      }
+      if (part.toolCallId) structure.toolCallId = part.toolCallId
+      if (part.state) structure.state = part.state
+      // For tools, include input as JSON for comparison
+      if (part.input) structure.inputJson = JSON.stringify(part.input)
+      if (part.output !== undefined) structure.hasOutput = true
+      if (part.result !== undefined) structure.hasResult = true
+      if (part.error !== undefined || part.errorText !== undefined) structure.hasError = true
+      // For text parts, track whether text is non-empty (without including actual text)
+      if (part.type === "text") structure.hasText = !!part.text?.trim()
+      return structure
+    })
+
+    const newStructure: MessageStructure = {
+      id: message.id,
+      role: message.role,
+      partsStructure,
+      metadata: message.metadata,
+    }
+
+    // Check if structure changed
+    const cached = messageStructureCache.get(messageId)
+    if (cached) {
+      // Compare structures
+      if (
+        cached.id === newStructure.id &&
+        cached.role === newStructure.role &&
+        cached.partsStructure.length === newStructure.partsStructure.length &&
+        cached.partsStructure.every((p, i) => {
+          const n = newStructure.partsStructure[i]
+          return (
+            p.type === n?.type &&
+            p.toolCallId === n?.toolCallId &&
+            p.state === n?.state &&
+            p.inputJson === n?.inputJson &&
+            p.hasOutput === n?.hasOutput &&
+            p.hasResult === n?.hasResult &&
+            p.hasError === n?.hasError &&
+            p.hasText === n?.hasText
+          )
+        }) &&
+        // Shallow compare metadata (for usage tracking)
+        cached.metadata === message.metadata
+      ) {
+        return cached
+      }
+    }
+
+    messageStructureCache.set(messageId, newStructure)
+    return newStructure
+  })
+)
+
+// ============================================================================
 // USER MESSAGE IDS - For IsolatedMessagesSection
 // ============================================================================
 // Uses a cache to return stable reference when IDs haven't changed

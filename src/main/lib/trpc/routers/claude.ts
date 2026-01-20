@@ -1,9 +1,9 @@
 import { observable } from "@trpc/server/observable"
 import { eq } from "drizzle-orm"
-import { app, safeStorage, BrowserWindow } from "electron"
-import path from "path"
-import * as os from "os"
+import { app, BrowserWindow, safeStorage } from "electron"
 import * as fs from "fs/promises"
+import * as os from "os"
+import path from "path"
 import { z } from "zod"
 import {
   buildClaudeEnv,
@@ -172,6 +172,13 @@ export const claudeRouter = router({
         mode: z.enum(["plan", "agent"]).default("agent"),
         sessionId: z.string().optional(),
         model: z.string().optional(),
+        customConfig: z
+          .object({
+            model: z.string().min(1),
+            token: z.string().min(1),
+            baseUrl: z.string().min(1),
+          })
+          .optional(),
         maxThinkingTokens: z.number().optional(), // Enable extended thinking
         images: z.array(imageAttachmentSchema).optional(), // Image attachments
       }),
@@ -380,7 +387,16 @@ export const claudeRouter = router({
             }
 
             // Build full environment for Claude SDK (includes HOME, PATH, etc.)
-            const claudeEnv = buildClaudeEnv()
+            const claudeEnv = buildClaudeEnv(
+              input.customConfig
+                ? {
+                    customEnv: {
+                      ANTHROPIC_AUTH_TOKEN: input.customConfig.token,
+                      ANTHROPIC_BASE_URL: input.customConfig.baseUrl,
+                    },
+                  }
+                : undefined,
+            )
 
             // Debug logging in dev
             if (process.env.NODE_ENV !== "production") {
@@ -486,6 +502,15 @@ export const claudeRouter = router({
 
             const resumeSessionId = input.sessionId || existingSessionId || undefined
             console.log(`[SD] Query options - cwd: ${input.cwd}, projectPath: ${input.projectPath || "(not set)"}, mcpServers: ${mcpServersForSdk ? Object.keys(mcpServersForSdk).join(", ") : "(none)"}`)
+            if (input.customConfig) {
+              const redactedConfig = {
+                ...input.customConfig,
+                token: `${input.customConfig.token.slice(0, 6)}...`,
+              }
+              console.log(`[claude] Custom config: ${JSON.stringify(redactedConfig)}`)
+            }
+
+            const resolvedModel = input.customConfig?.model || input.model
 
             const queryOptions = {
               prompt,
@@ -608,7 +633,7 @@ export const claudeRouter = router({
                   resume: resumeSessionId,
                   continue: true,
                 }),
-                ...(input.model && { model: input.model }),
+                ...(resolvedModel && { model: resolvedModel }),
                 // fallbackModel: "claude-opus-4-5-20251101",
                 ...(input.maxThinkingTokens && {
                   maxThinkingTokens: input.maxThinkingTokens,
@@ -675,7 +700,7 @@ export const claudeRouter = router({
                     sdkError.includes("rate")
                   ) {
                     errorCategory = "RATE_LIMIT_SDK"
-                    errorContext = "Rate limit exceeded"
+                    errorContext = "Session limit reached"
                   } else if (
                     sdkError === "overloaded" ||
                     sdkError.includes("overload")
@@ -875,7 +900,7 @@ export const claudeRouter = router({
                 err.message?.includes("rate_limit") ||
                 err.message?.includes("429")
               ) {
-                errorContext = "Rate limit exceeded"
+                errorContext = "Session limit reached"
                 errorCategory = "RATE_LIMIT"
               } else if (
                 err.message?.includes("network") ||

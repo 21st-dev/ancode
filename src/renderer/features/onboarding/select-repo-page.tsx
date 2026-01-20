@@ -1,25 +1,38 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect, useRef } from "react"
 import { useAtom } from "jotai"
+import { AnimatePresence, motion } from "motion/react"
+import { createPortal } from "react-dom"
 
 import { IconSpinner, GitHubIcon } from "../../components/ui/icons"
 import { Logo } from "../../components/ui/logo"
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogDescription,
-} from "../../components/ui/dialog"
 import { Input } from "../../components/ui/input"
+import { Button } from "../../components/ui/button"
 import { trpc } from "../../lib/trpc"
 import { selectedProjectAtom } from "../agents/atoms"
+
+const EASING_CURVE = [0.55, 0.055, 0.675, 0.19] as const
+const INTERACTION_DELAY_MS = 250
 
 export function SelectRepoPage() {
   const [, setSelectedProject] = useAtom(selectedProjectAtom)
   const [githubDialogOpen, setGithubDialogOpen] = useState(false)
   const [githubUrl, setGithubUrl] = useState("")
+  const [mounted, setMounted] = useState(false)
+  const openAtRef = useRef<number>(0)
+  const inputRef = useRef<HTMLInputElement>(null)
+
+  useEffect(() => {
+    setMounted(true)
+  }, [])
+
+  useEffect(() => {
+    if (githubDialogOpen) {
+      openAtRef.current = performance.now()
+      setGithubUrl("")
+    }
+  }, [githubDialogOpen])
 
   // Get tRPC utils for cache management
   const utils = trpc.useUtils()
@@ -100,6 +113,18 @@ export function SelectRepoPage() {
     await cloneFromGitHub.mutateAsync({ repoUrl: githubUrl.trim() })
   }
 
+  const handleCloseDialog = () => {
+    const canInteract = performance.now() - openAtRef.current > INTERACTION_DELAY_MS
+    if (!canInteract || cloneFromGitHub.isPending) return
+    setGithubDialogOpen(false)
+  }
+
+  const handleAnimationComplete = () => {
+    if (githubDialogOpen) {
+      inputRef.current?.focus()
+    }
+  }
+
   return (
     <div className="h-screen w-screen flex flex-col items-center justify-center bg-background select-none">
       {/* Draggable title bar area */}
@@ -131,7 +156,7 @@ export function SelectRepoPage() {
           <button
             onClick={handleOpenFolder}
             disabled={openFolder.isPending}
-            className="w-full h-8 px-3 bg-primary text-primary-foreground rounded-lg text-sm font-medium transition-[background-color,transform] duration-150 hover:bg-primary/90 active:scale-[0.97] shadow-[0_0_0_0.5px_rgb(23,23,23),inset_0_0_0_1px_rgba(255,255,255,0.14)] dark:shadow-[0_0_0_0.5px_rgb(23,23,23),inset_0_0_0_1px_rgba(255,255,255,0.14)] disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center"
+            className="w-full h-8 px-4 bg-primary text-primary-foreground rounded-lg text-sm font-medium transition-[background-color,transform] duration-150 hover:bg-primary/90 active:scale-[0.97] shadow-[0_0_0_0.5px_rgb(23,23,23),inset_0_0_0_1px_rgba(255,255,255,0.14)] dark:shadow-[0_0_0_0.5px_rgb(23,23,23),inset_0_0_0_1px_rgba(255,255,255,0.14)] disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center"
           >
             {openFolder.isPending ? (
               <IconSpinner className="h-4 w-4" />
@@ -156,46 +181,92 @@ export function SelectRepoPage() {
         </div>
       </div>
 
-      <Dialog open={githubDialogOpen} onOpenChange={setGithubDialogOpen}>
-        <DialogContent className="w-[400px]">
-          <DialogHeader>
-            <DialogTitle>Clone from GitHub</DialogTitle>
-            <DialogDescription>
-              Enter a GitHub repository URL or owner/repo
-            </DialogDescription>
-          </DialogHeader>
-          <form
-            onSubmit={(e) => {
-              e.preventDefault()
-              handleCloneFromGitHub()
-            }}
-            className="flex flex-col gap-4"
-          >
-            <Input
-              placeholder="owner/repo or https://github.com/..."
-              value={githubUrl}
-              onChange={(e) => setGithubUrl(e.target.value)}
-              autoFocus
-            />
-            <div className="flex justify-end gap-2">
-              <button
-                type="button"
-                onClick={() => setGithubDialogOpen(false)}
-                className="px-3 py-1.5 text-sm rounded-md hover:bg-muted transition-colors"
-              >
-                Cancel
-              </button>
-              <button
-                type="submit"
-                disabled={!githubUrl.trim() || cloneFromGitHub.isPending}
-                className="px-3 py-1.5 text-sm bg-primary text-primary-foreground rounded-md hover:bg-primary/90 transition-colors disabled:opacity-50"
-              >
-                {cloneFromGitHub.isPending ? "Cloning..." : "Clone"}
-              </button>
-            </div>
-          </form>
-        </DialogContent>
-      </Dialog>
+      {/* Clone from GitHub Dialog */}
+      {mounted && createPortal(
+        <AnimatePresence mode="wait" initial={false}>
+          {githubDialogOpen && (
+            <>
+              {/* Overlay */}
+              <motion.div
+                initial={{ opacity: 0 }}
+                animate={{
+                  opacity: 1,
+                  transition: { duration: 0.18, ease: EASING_CURVE },
+                }}
+                exit={{
+                  opacity: 0,
+                  pointerEvents: "none" as const,
+                  transition: { duration: 0.15, ease: EASING_CURVE },
+                }}
+                className="fixed inset-0 z-[45] bg-black/25"
+                onClick={handleCloseDialog}
+                style={{ pointerEvents: "auto" }}
+                data-modal="clone-github-dialog"
+              />
+
+              {/* Main Dialog */}
+              <div className="fixed top-[50%] left-[50%] translate-x-[-50%] translate-y-[-50%] z-[46] pointer-events-none">
+                <motion.div
+                  initial={{ scale: 0.95, opacity: 0 }}
+                  animate={{ scale: 1, opacity: 1 }}
+                  exit={{ scale: 0.95, opacity: 0 }}
+                  transition={{ duration: 0.2, ease: EASING_CURVE }}
+                  onAnimationComplete={handleAnimationComplete}
+                  className="w-[90vw] max-w-[400px] pointer-events-auto"
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  <form
+                    onSubmit={(e) => {
+                      e.preventDefault()
+                      handleCloneFromGitHub()
+                    }}
+                  >
+                    <div className="bg-background rounded-2xl border shadow-2xl overflow-hidden" data-canvas-dialog>
+                      <div className="p-6">
+                        <h2 className="text-xl font-semibold mb-4">
+                          Clone from GitHub
+                        </h2>
+
+                        {/* Input */}
+                        <Input
+                          ref={inputRef}
+                          value={githubUrl}
+                          onChange={(e) => setGithubUrl(e.target.value)}
+                          placeholder="owner/repo or https://github.com/..."
+                          className="w-full h-11 text-sm"
+                          disabled={cloneFromGitHub.isPending}
+                        />
+                      </div>
+
+                      {/* Footer with buttons */}
+                      <div className="bg-muted p-4 flex justify-between border-t border-border rounded-b-xl">
+                        <Button
+                          type="button"
+                          onClick={handleCloseDialog}
+                          variant="ghost"
+                          disabled={cloneFromGitHub.isPending}
+                          className="rounded-md"
+                        >
+                          Cancel
+                        </Button>
+                        <Button
+                          type="submit"
+                          variant="default"
+                          disabled={!githubUrl.trim() || cloneFromGitHub.isPending}
+                          className="rounded-md"
+                        >
+                          {cloneFromGitHub.isPending ? "Cloning..." : "Clone"}
+                        </Button>
+                      </div>
+                    </div>
+                  </form>
+                </motion.div>
+              </div>
+            </>
+          )}
+        </AnimatePresence>,
+        document.body
+      )}
     </div>
   )
 }

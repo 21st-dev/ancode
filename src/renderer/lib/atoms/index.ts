@@ -36,6 +36,7 @@ export {
 
   // Diff atoms
   agentsDiffSidebarWidthAtom,
+  agentsChangesPanelWidthAtom,
   agentsDiffSidebarOpenAtom,
   agentsFocusedDiffFileAtom,
   filteredDiffFilesAtom,
@@ -46,8 +47,7 @@ export {
   archiveSearchQueryAtom,
   archiveRepositoryFilterAtom,
 
-  // Scroll & UI state
-  agentsScrollPositionsAtom,
+  // UI state
   agentsMobileViewModeAtom,
 
   // Debug mode
@@ -163,9 +163,49 @@ export const clearSubChatSelectionAtom = atom(null, (_get, set) => {
 // ============================================
 
 // Settings dialog
-export type SettingsTab = "profile" | "appearance" | "preferences" | "skills" | "agents" | "mcp" | "debug"
+export type SettingsTab =
+  | "profile"
+  | "appearance"
+  | "preferences"
+  | "models"
+  | "skills"
+  | "agents"
+  | "mcp"
+  | "worktrees"
+  | "debug"
+  | "beta"
+  | `project-${string}` // Dynamic project tabs
 export const agentsSettingsDialogActiveTabAtom = atom<SettingsTab>("profile")
 export const agentsSettingsDialogOpenAtom = atom<boolean>(false)
+
+export type CustomClaudeConfig = {
+  model: string
+  token: string
+  baseUrl: string
+}
+
+export const customClaudeConfigAtom = atomWithStorage<CustomClaudeConfig>(
+  "agents:claude-custom-config",
+  {
+    model: "",
+    token: "",
+    baseUrl: "",
+  },
+  undefined,
+  { getOnInit: true },
+)
+
+export function normalizeCustomClaudeConfig(
+  config: CustomClaudeConfig,
+): CustomClaudeConfig | undefined {
+  const model = config.model.trim()
+  const token = config.token.trim()
+  const baseUrl = config.baseUrl.trim()
+
+  if (!model || !token || !baseUrl) return undefined
+
+  return { model, token, baseUrl }
+}
 
 // Preferences - Extended Thinking
 // When enabled, Claude will use extended thinking for deeper reasoning (128K tokens)
@@ -191,6 +231,16 @@ export const soundNotificationsEnabledAtom = atomWithStorage<boolean>(
 export const analyticsOptOutAtom = atomWithStorage<boolean>(
   "preferences:analytics-opt-out",
   false, // Default to opt-in (false means not opted out)
+  undefined,
+  { getOnInit: true },
+)
+
+// Beta: Enable git features in diff sidebar (commit, staging, file selection)
+// When enabled, shows checkboxes for file selection and commit UI in diff sidebar
+// When disabled, shows simple file list with "Create PR" button
+export const betaGitFeaturesEnabledAtom = atomWithStorage<boolean>(
+  "preferences:beta-git-features-enabled",
+  false, // Default OFF
   undefined,
   { getOnInit: true },
 )
@@ -358,14 +408,37 @@ export const isDesktopAtom = atom<boolean>(false)
 export const isFullscreenAtom = atom<boolean | null>(null)
 
 // ============================================
-// ANTHROPIC ONBOARDING ATOMS
+// ONBOARDING ATOMS
 // ============================================
+
+// Billing method selected during onboarding
+// "claude-subscription" = use Claude Pro/Max via OAuth
+// "api-key" = use Anthropic API key directly
+// "custom-model" = use custom base URL and model (e.g. for proxies or alternative providers)
+// null = not yet selected (show billing method selection screen)
+export type BillingMethod = "claude-subscription" | "api-key" | "custom-model" | null
+
+export const billingMethodAtom = atomWithStorage<BillingMethod>(
+  "onboarding:billing-method",
+  null,
+  undefined,
+  { getOnInit: true },
+)
 
 // Whether user has completed Anthropic OAuth during onboarding
 // This is used to show the onboarding screen after 21st.dev sign-in
 // Reset on logout
 export const anthropicOnboardingCompletedAtom = atomWithStorage<boolean>(
   "onboarding:anthropic-completed",
+  false,
+  undefined,
+  { getOnInit: true },
+)
+
+// Whether user has completed API key configuration during onboarding
+// Only relevant when billingMethod is "api-key"
+export const apiKeyOnboardingCompletedAtom = atomWithStorage<boolean>(
+  "onboarding:api-key-completed",
   false,
   undefined,
   { getOnInit: true },

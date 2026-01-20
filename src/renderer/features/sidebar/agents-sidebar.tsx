@@ -2080,13 +2080,13 @@ export function AgentsSidebar({
     return () => resizeObserver.disconnect()
   }, [filteredChats])
 
-  // Direct listener for Cmd+F to focus search input
+  // Direct listener for Cmd+K to focus search input
   useEffect(() => {
     const handleSearchHotkey = (e: KeyboardEvent) => {
-      // Check for Cmd+F or Ctrl+F (only for search functionality)
+      // Check for Cmd+K or Ctrl+K (only for search functionality)
       if (
         (e.metaKey || e.ctrlKey) &&
-        e.code === "KeyF" &&
+        e.code === "KeyK" &&
         !e.shiftKey &&
         !e.altKey
       ) {

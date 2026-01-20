@@ -70,6 +70,7 @@ type AgentsMentionsEditorProps = {
   placeholder?: string
   className?: string
   onSubmit?: () => void
+  onForceSubmit?: () => void // Opt+Enter: bypass queue, stop stream and send immediately
   disabled?: boolean
   onPaste?: (e: React.ClipboardEvent) => void
   onShiftTab?: () => void // callback for Shift+Tab (e.g., mode switching)
@@ -494,6 +495,7 @@ export const AgentsMentionsEditor = memo(
         placeholder,
         className,
         onSubmit,
+        onForceSubmit,
         disabled,
         onPaste,
         onShiftTab,
@@ -783,13 +785,19 @@ export const AgentsMentionsEditor = memo(
       // Handle keydown
       const handleKeyDown = useCallback(
         (e: React.KeyboardEvent) => {
-          if (e.key === "Enter" && !e.shiftKey) {
+          // Prevent submission during IME composition (e.g., Chinese/Japanese/Korean input)
+          if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
             if (triggerActive.current || slashTriggerActive.current) {
               // Let dropdown handle Enter
               return
             }
             e.preventDefault()
-            onSubmit?.()
+            // Opt+Enter = force submit (bypass queue, stop stream and send immediately)
+            if (e.altKey && onForceSubmit) {
+              onForceSubmit()
+            } else {
+              onSubmit?.()
+            }
           }
           if (e.key === "Escape") {
             // Close mention dropdown
@@ -817,7 +825,7 @@ export const AgentsMentionsEditor = memo(
             onShiftTab?.()
           }
         },
-        [onSubmit, onCloseTrigger, onCloseSlashTrigger, onShiftTab],
+        [onSubmit, onForceSubmit, onCloseTrigger, onCloseSlashTrigger, onShiftTab],
       )
 
       // Expose methods via ref (UNCONTROLLED pattern)

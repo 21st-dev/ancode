@@ -1,7 +1,7 @@
 "use client"
 
 import { memo, useState, useEffect, useCallback, useRef } from "react"
-import { ChevronUp, ChevronDown, CornerDownLeft } from "lucide-react"
+import { ChevronUp, ChevronDown, CornerDownLeft, Send } from "lucide-react"
 import { Button } from "../../../components/ui/button"
 import { cn } from "../../../lib/utils"
 import type { PendingUserQuestions } from "../atoms"
@@ -10,12 +10,16 @@ interface AgentUserQuestionProps {
   pendingQuestions: PendingUserQuestions
   onAnswer: (answers: Record<string, string>) => void
   onSkip: () => void
+  hasCustomText?: boolean
+  onAnswerWithCustomText?: (answers: Record<string, string>) => void
 }
 
 export const AgentUserQuestion = memo(function AgentUserQuestion({
   pendingQuestions,
   onAnswer,
   onSkip,
+  hasCustomText = false,
+  onAnswerWithCustomText,
 }: AgentUserQuestionProps) {
   const { questions, toolUseId } = pendingQuestions
   const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0)
@@ -155,6 +159,21 @@ export const AgentUserQuestion = memo(function AgentUserQuestion({
     setIsSubmitting(true)
     onSkip()
   }, [isSubmitting, onSkip])
+
+  // Handle sending answers with custom text from the main input
+  const handleSendWithCustomText = useCallback(() => {
+    if (isSubmitting || !onAnswerWithCustomText) return
+    setIsSubmitting(true)
+
+    // Convert current answers to SDK format
+    const formattedAnswers: Record<string, string> = {}
+    for (const question of questions) {
+      const selected = answers[question.question] || []
+      formattedAnswers[question.question] = selected.join(", ")
+    }
+
+    onAnswerWithCustomText(formattedAnswers)
+  }, [isSubmitting, onAnswerWithCustomText, questions, answers])
 
   const getOptionNumber = (index: number) => {
     return String(index + 1)
@@ -360,15 +379,24 @@ export const AgentUserQuestion = memo(function AgentUserQuestion({
         </Button>
         <Button
           size="sm"
-          onClick={handleContinue}
+          onClick={hasCustomText ? handleSendWithCustomText : handleContinue}
           disabled={
             isSubmitting ||
-            (isLastQuestion ? !allQuestionsAnswered : !currentQuestionHasAnswer)
+            (hasCustomText
+              ? false
+              : isLastQuestion
+                ? !allQuestionsAnswered
+                : !currentQuestionHasAnswer)
           }
           className="h-6 text-xs px-3 rounded-md"
         >
           {isSubmitting ? (
             "Sending..."
+          ) : hasCustomText ? (
+            <>
+              Send
+              <Send className="w-3 h-3 ml-1 opacity-60" />
+            </>
           ) : (
             <>
               {isLastQuestion ? "Submit" : "Continue"}

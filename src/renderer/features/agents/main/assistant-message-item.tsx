@@ -376,6 +376,7 @@ export const AssistantMessageItem = memo(function AssistantMessageItem({
           key={idx}
           text={part.text}
           messageId={message.id}
+          partIndex={idx}
           isFinalText={isFinalText}
           visibleStepsCount={visibleStepsCount}
           isStreaming={isTextStreaming}
@@ -388,10 +389,10 @@ export const AssistantMessageItem = memo(function AssistantMessageItem({
       return <AgentTaskTool key={idx} part={part} nestedTools={nestedTools} chatStatus={status} />
     }
 
-    if (part.type === "tool-Bash") return <AgentBashTool key={idx} part={part} chatStatus={status} />
+    if (part.type === "tool-Bash") return <AgentBashTool key={idx} part={part} messageId={message.id} partIndex={idx} chatStatus={status} />
     if (part.type === "tool-Thinking") return <AgentThinkingTool key={idx} part={part} chatStatus={status} />
-    if (part.type === "tool-Edit") return <AgentEditTool key={idx} part={part} chatStatus={status} />
-    if (part.type === "tool-Write") return <AgentEditTool key={idx} part={part} chatStatus={status} />
+    if (part.type === "tool-Edit") return <AgentEditTool key={idx} part={part} messageId={message.id} partIndex={idx} chatStatus={status} />
+    if (part.type === "tool-Write") return <AgentEditTool key={idx} part={part} messageId={message.id} partIndex={idx} chatStatus={status} />
     if (part.type === "tool-WebSearch") return <AgentWebSearchCollapsible key={idx} part={part} chatStatus={status} />
     if (part.type === "tool-WebFetch") return <AgentWebFetchTool key={idx} part={part} chatStatus={status} />
     if (part.type === "tool-PlanWrite") return <AgentPlanTool key={idx} part={part} chatStatus={status} />
@@ -453,7 +454,7 @@ export const AssistantMessageItem = memo(function AssistantMessageItem({
     }
 
     return null
-  }, [nestedToolsMap, nestedToolIds, orphanToolCallIds, orphanFirstToolCallIds, orphanTaskGroups, finalTextIndex, visibleStepsCount, status, isLastMessage, isStreaming, subChatId])
+  }, [nestedToolsMap, nestedToolIds, orphanToolCallIds, orphanFirstToolCallIds, orphanTaskGroups, finalTextIndex, visibleStepsCount, status, isLastMessage, isStreaming, subChatId, message.id])
 
   if (!message) return null
 

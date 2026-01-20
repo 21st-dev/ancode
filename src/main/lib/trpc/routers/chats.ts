@@ -18,6 +18,11 @@ import {
   trackPRCreated,
 } from "../../analytics"
 import { terminalManager } from "../../terminal/manager"
+import { splitUnifiedDiffByFile } from "../../git/diff-parser"
+import { secureFs } from "../../git/security"
+import { gitCache, computeContentHash } from "../../git/cache"
+import * as fs from "fs/promises"
+import * as path from "path"
 
 // Fallback to truncated user message if AI generation fails
 function getFallbackName(userMessage: string): string {
@@ -338,6 +343,12 @@ export const chatsRouter = router({
         }
       }
 
+      // Invalidate git cache for this worktree
+      if (chat?.worktreePath) {
+        gitCache.invalidateStatus(chat.worktreePath)
+        gitCache.invalidateParsedDiff(chat.worktreePath)
+      }
+
       return result
     }),
 
@@ -418,6 +429,12 @@ export const chatsRouter = router({
 
       // Track workspace deleted
       trackWorkspaceDeleted(input.id)
+
+      // Invalidate git cache for this worktree
+      if (chat?.worktreePath) {
+        gitCache.invalidateStatus(chat.worktreePath)
+        gitCache.invalidateParsedDiff(chat.worktreePath)
+      }
 
       return db.delete(chats).where(eq(chats.id, input.id)).returning().get()
     }),
@@ -585,6 +602,279 @@ export const chatsRouter = router({
     }),
 
   /**
+   * Get parsed diff with prefetched file contents
+   * This endpoint does all diff parsing on the server side to avoid blocking UI
+   * Uses GitCache for instant responses when diff hasn't changed
+   */
+  getParsedDiff: publicProcedure
+    .input(z.object({ chatId: z.string() }))
+    .query(async ({ input }) => {
+      const db = getDatabase()
+      const chat = db
+        .select()
+        .from(chats)
+        .where(eq(chats.id, input.chatId))
+        .get()
+
+      if (!chat?.worktreePath) {
+        return {
+          files: [],
+          totalAdditions: 0,
+          totalDeletions: 0,
+          fileContents: {},
+          error: "No worktree path",
+        }
+      }
+
+      // 1. Get raw diff (only uncommitted changes - don't show branch diff after commit)
+      const result = await getWorktreeDiff(
+        chat.worktreePath,
+        chat.baseBranch ?? undefined,
+        { onlyUncommitted: true },
+      )
+
+      if (!result.success) {
+        return {
+          files: [],
+          totalAdditions: 0,
+          totalDeletions: 0,
+          fileContents: {},
+          error: result.error,
+        }
+      }
+
+      // 2. Check cache using diff hash
+      const diffHash = computeContentHash(result.diff || "")
+      type ParsedDiffResponse = {
+        files: ReturnType<typeof splitUnifiedDiffByFile>
+        totalAdditions: number
+        totalDeletions: number
+        fileContents: Record<string, string>
+      }
+      const cached = gitCache.getParsedDiff<ParsedDiffResponse>(chat.worktreePath, diffHash)
+      if (cached) {
+        console.log("[getParsedDiff] Cache hit for:", chat.worktreePath)
+        return cached
+      }
+
+      console.log("[getParsedDiff] Cache miss, parsing:", chat.worktreePath)
+
+      // 3. Parse diff into files
+      const files = splitUnifiedDiffByFile(result.diff || "")
+
+      // 4. Calculate totals
+      const totalAdditions = files.reduce((sum, f) => sum + f.additions, 0)
+      const totalDeletions = files.reduce((sum, f) => sum + f.deletions, 0)
+
+      // 5. Prefetch file contents (first 20 files, non-deleted, non-binary)
+      const MAX_PREFETCH = 20
+      const MAX_FILE_SIZE = 2 * 1024 * 1024 // 2MB
+
+      const filesToFetch = files
+        .filter((f) => !f.isBinary && !f.isDeletedFile)
+        .slice(0, MAX_PREFETCH)
+        .map((f) => ({
+          key: f.key,
+          filePath: f.newPath !== "/dev/null" ? f.newPath : f.oldPath,
+        }))
+        .filter((f) => f.filePath && f.filePath !== "/dev/null")
+
+      const fileContents: Record<string, string> = {}
+
+      // Read files in parallel
+      await Promise.all(
+        filesToFetch.map(async ({ key, filePath }) => {
+          try {
+            const fullPath = path.join(chat.worktreePath!, filePath)
+
+            // Check file size first
+            const stats = await fs.stat(fullPath)
+            if (stats.size > MAX_FILE_SIZE) {
+              return // Skip large files
+            }
+
+            const content = await fs.readFile(fullPath, "utf-8")
+
+            // Quick binary check (NUL bytes in first 8KB)
+            const checkLength = Math.min(content.length, 8192)
+            for (let i = 0; i < checkLength; i++) {
+              if (content.charCodeAt(i) === 0) {
+                return // Skip binary files
+              }
+            }
+
+            fileContents[key] = content
+          } catch {
+            // File might not exist or be unreadable - skip
+          }
+        }),
+      )
+
+      const response: ParsedDiffResponse = {
+        files,
+        totalAdditions,
+        totalDeletions,
+        fileContents,
+      }
+
+      // 6. Store in cache
+      gitCache.setParsedDiff(chat.worktreePath, diffHash, response)
+
+      return response
+    }),
+
+  /**
+   * Generate a commit message using AI based on the diff
+   * @param chatId - The chat ID to get worktree path from
+   * @param filePaths - Optional list of file paths to generate message for (if not provided, uses all changed files)
+   */
+  generateCommitMessage: publicProcedure
+    .input(z.object({
+      chatId: z.string(),
+      filePaths: z.array(z.string()).optional(),
+    }))
+    .mutation(async ({ input }) => {
+      const db = getDatabase()
+      const chat = db
+        .select()
+        .from(chats)
+        .where(eq(chats.id, input.chatId))
+        .get()
+
+      if (!chat?.worktreePath) {
+        throw new Error("No worktree path")
+      }
+
+      // Get the diff to understand what changed
+      const result = await getWorktreeDiff(
+        chat.worktreePath,
+        chat.baseBranch ?? undefined,
+      )
+
+      if (!result.success || !result.diff) {
+        throw new Error("Failed to get diff")
+      }
+
+      // Parse diff to get file list
+      let files = splitUnifiedDiffByFile(result.diff)
+
+      // Filter to only selected files if filePaths provided
+      if (input.filePaths && input.filePaths.length > 0) {
+        const selectedPaths = new Set(input.filePaths)
+        files = files.filter((f) => {
+          const filePath = f.newPath !== "/dev/null" ? f.newPath : f.oldPath
+          // Match by exact path or by path suffix (handle different path formats)
+          return selectedPaths.has(filePath) ||
+            [...selectedPaths].some(sp => filePath.endsWith(sp) || sp.endsWith(filePath))
+        })
+        console.log(`[generateCommitMessage] Filtered ${files.length} files from ${input.filePaths.length} selected paths`)
+      }
+
+      if (files.length === 0) {
+        throw new Error("No changes to commit")
+      }
+
+      // Build filtered diff text for API (only selected files)
+      const filteredDiff = files.map(f => f.diffText).join('\n')
+
+      // Call web API to generate commit message
+      let apiError: string | null = null
+      try {
+        const authManager = getAuthManager()
+        const token = await authManager.getValidToken()
+        // Use localhost in dev, production otherwise
+        const apiUrl = process.env.NODE_ENV === "development" ? "http://localhost:3000" : "https://21st.dev"
+
+        if (!token) {
+          apiError = "No auth token available"
+        } else {
+          const response = await fetch(
+            `${apiUrl}/api/agents/generate-commit-message`,
+            {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+                "X-Desktop-Token": token,
+              },
+              body: JSON.stringify({
+                diff: filteredDiff.slice(0, 10000), // Limit diff size, use filtered diff
+                fileCount: files.length,
+                additions: files.reduce((sum, f) => sum + f.additions, 0),
+                deletions: files.reduce((sum, f) => sum + f.deletions, 0),
+              }),
+            },
+          )
+
+          if (response.ok) {
+            const data = await response.json()
+            if (data.message) {
+              return { message: data.message }
+            }
+            apiError = "API returned ok but no message in response"
+          } else {
+            apiError = `API returned ${response.status}`
+          }
+        }
+      } catch (error) {
+        apiError = `API call failed: ${error instanceof Error ? error.message : String(error)}`
+      }
+
+      // Fallback: Generate commit message with conventional commits style
+      const fileNames = files.map((f) => {
+        const path = f.newPath !== "/dev/null" ? f.newPath : f.oldPath
+        return path.split("/").pop() || path
+      })
+
+      // Detect commit type from file changes
+      const hasNewFiles = files.some((f) => f.oldPath === "/dev/null")
+      const hasDeletedFiles = files.some((f) => f.newPath === "/dev/null")
+      const hasOnlyDeletions = files.every((f) => f.additions === 0 && f.deletions > 0)
+
+      // Detect type from file paths
+      const allPaths = files.map((f) => f.newPath !== "/dev/null" ? f.newPath : f.oldPath)
+      const hasTestFiles = allPaths.some((p) => p.includes("test") || p.includes("spec"))
+      const hasDocFiles = allPaths.some((p) => p.endsWith(".md") || p.includes("doc"))
+      const hasConfigFiles = allPaths.some((p) =>
+        p.includes("config") ||
+        p.endsWith(".json") ||
+        p.endsWith(".yaml") ||
+        p.endsWith(".yml") ||
+        p.endsWith(".toml")
+      )
+
+      // Determine commit type prefix
+      let prefix = "chore"
+      if (hasNewFiles && !hasDeletedFiles) {
+        prefix = "feat"
+      } else if (hasOnlyDeletions) {
+        prefix = "chore"
+      } else if (hasTestFiles && !hasDocFiles && !hasConfigFiles) {
+        prefix = "test"
+      } else if (hasDocFiles && !hasTestFiles && !hasConfigFiles) {
+        prefix = "docs"
+      } else if (allPaths.some((p) => p.includes("fix") || p.includes("bug"))) {
+        prefix = "fix"
+      } else if (files.length > 0 && files.every((f) => f.additions > 0 || f.deletions > 0)) {
+        // Default to fix for modifications (most common case)
+        prefix = "fix"
+      }
+
+      const uniqueFileNames = [...new Set(fileNames)]
+      let message: string
+
+      if (uniqueFileNames.length === 1) {
+        message = `${prefix}: update ${uniqueFileNames[0]}`
+      } else if (uniqueFileNames.length <= 3) {
+        message = `${prefix}: update ${uniqueFileNames.join(", ")}`
+      } else {
+        message = `${prefix}: update ${uniqueFileNames.length} files`
+      }
+
+      console.log("[generateCommitMessage] Generated fallback message:", message)
+      return { message }
+    }),
+
+  /**
    * Generate a name for a sub-chat using AI (calls web API)
    * Always uses production API since it's a lightweight call
    */
@@ -742,6 +1032,7 @@ export const chatsRouter = router({
 
   /**
    * Merge PR via gh CLI
+   * First checks if PR is mergeable, returns helpful error if conflicts exist
    */
   mergePr: publicProcedure
     .input(
@@ -762,6 +1053,15 @@ export const chatsRouter = router({
         throw new Error("No PR to merge")
       }
 
+      // Check PR mergeability before attempting merge
+      const prStatus = await fetchGitHubPRStatus(chat.worktreePath)
+      if (prStatus?.pr?.mergeable === "CONFLICTING") {
+        throw new Error(
+          "MERGE_CONFLICT: This PR has merge conflicts with the base branch. " +
+          "Please sync your branch with the latest changes from main to resolve conflicts."
+        )
+      }
+
       try {
         await execWithShellEnv(
           "gh",
@@ -777,36 +1077,50 @@ export const chatsRouter = router({
         return { success: true }
       } catch (error) {
         console.error("[mergePr] Error:", error)
-        throw new Error(
-          error instanceof Error ? error.message : "Failed to merge PR",
-        )
+        const errorMsg = error instanceof Error ? error.message : "Failed to merge PR"
+
+        // Check for conflict-related error messages from gh CLI
+        if (
+          errorMsg.includes("not mergeable") ||
+          errorMsg.includes("merge conflict") ||
+          errorMsg.includes("cannot be cleanly created") ||
+          errorMsg.includes("CONFLICTING")
+        ) {
+          throw new Error(
+            "MERGE_CONFLICT: This PR has merge conflicts with the base branch. " +
+            "Please sync your branch with the latest changes from main to resolve conflicts."
+          )
+        }
+
+        throw new Error(errorMsg)
       }
     }),
 
   /**
-   * Get file change stats for all workspaces
-   * Parses messages from all sub-chats and aggregates Edit/Write tool calls
-   * If openSubChatIds provided, only count stats from those sub-chats
+   * Get file change stats for workspaces
+   * Parses messages from specified sub-chats and aggregates Edit/Write tool calls
+   * REQUIRES openSubChatIds to avoid loading all sub-chats (performance optimization)
    */
   getFileStats: publicProcedure
-    .input(z.object({ openSubChatIds: z.array(z.string()).optional() }).optional())
+    .input(z.object({ openSubChatIds: z.array(z.string()) }))
     .query(({ input }) => {
     const db = getDatabase()
-    const openSubChatIdsSet = input?.openSubChatIds ? new Set(input.openSubChatIds) : null
 
-    // Get all non-archived chats with their sub-chats
+    // Early return if no sub-chats to check
+    if (input.openSubChatIds.length === 0) {
+      return []
+    }
+
+    // Query only the specified sub-chats (VS Code style: load only what's needed)
     const allChats = db
       .select({
-        chatId: chats.id,
+        chatId: subChats.chatId,
         subChatId: subChats.id,
         messages: subChats.messages,
       })
-      .from(chats)
-      .leftJoin(subChats, eq(subChats.chatId, chats.id))
-      .where(isNull(chats.archivedAt))
+      .from(subChats)
+      .where(inArray(subChats.id, input.openSubChatIds))
       .all()
-      // Filter by open sub-chats if provided
-      .filter(row => !openSubChatIdsSet || !row.subChatId || openSubChatIdsSet.has(row.subChatId))
 
     // Aggregate stats per workspace (chatId)
     const statsMap = new Map<
@@ -917,27 +1231,28 @@ export const chatsRouter = router({
    * Get sub-chats with pending plan approvals
    * Parses messages to find ExitPlanMode tool calls without subsequent "Implement plan" user message
    * Logic must match active-chat.tsx hasUnapprovedPlan
-   * If openSubChatIds provided, only check those sub-chats
+   * REQUIRES openSubChatIds to avoid loading all sub-chats (performance optimization)
    */
   getPendingPlanApprovals: publicProcedure
-    .input(z.object({ openSubChatIds: z.array(z.string()).optional() }).optional())
+    .input(z.object({ openSubChatIds: z.array(z.string()) }))
     .query(({ input }) => {
     const db = getDatabase()
-    const openSubChatIdsSet = input?.openSubChatIds ? new Set(input.openSubChatIds) : null
 
-    // Get all non-archived chats with their sub-chats
+    // Early return if no sub-chats to check
+    if (input.openSubChatIds.length === 0) {
+      return []
+    }
+
+    // Query only the specified sub-chats (VS Code style: load only what's needed)
     const allSubChats = db
       .select({
-        chatId: chats.id,
+        chatId: subChats.chatId,
         subChatId: subChats.id,
         messages: subChats.messages,
       })
-      .from(chats)
-      .leftJoin(subChats, eq(subChats.chatId, chats.id))
-      .where(isNull(chats.archivedAt))
+      .from(subChats)
+      .where(inArray(subChats.id, input.openSubChatIds))
       .all()
-      // Filter by open sub-chats if provided
-      .filter(row => !openSubChatIdsSet || !row.subChatId || openSubChatIdsSet.has(row.subChatId))
 
     const pendingApprovals: Array<{ subChatId: string; chatId: string }> = []
 

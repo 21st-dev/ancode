@@ -2,7 +2,7 @@
 
 import { memo, useCallback, useRef, useState, useEffect } from "react"
 import { createPortal } from "react-dom"
-import { useAtom, useSetAtom } from "jotai"
+import { useAtom, useAtomValue, useSetAtom } from "jotai"
 import { ChevronDown } from "lucide-react"
 
 import { Button } from "../../../components/ui/button"
@@ -38,12 +38,19 @@ import { AgentsFileMention } from "../mentions"
 import { AgentContextIndicator, type MessageTokenData } from "../ui/agent-context-indicator"
 import { AgentFileItem } from "../ui/agent-file-item"
 import { AgentImageItem } from "../ui/agent-image-item"
+import { AgentTextContextItem } from "../ui/agent-text-context-item"
+import type { SelectedTextContext } from "../lib/queue-utils"
+import type { UploadedImage, UploadedFile } from "../hooks/use-agents-file-upload"
 import { handlePasteEvent } from "../utils/paste-text"
 import {
-  saveSubChatDraft,
+  saveSubChatDraftWithAttachments,
   clearSubChatDraft,
 } from "../lib/drafts"
 import { type SubChatFileChange } from "../atoms"
+import {
+  customClaudeConfigAtom,
+  normalizeCustomClaudeConfig,
+} from "../../../lib/atoms"
 
 // Claude models (same as in active-chat.tsx)
 const claudeModels = [
@@ -58,6 +65,7 @@ export interface ChatInputAreaProps {
   fileInputRef: React.RefObject<HTMLInputElement | null>
   // Core callbacks
   onSend: () => void
+  onForceSend: () => void // Opt+Enter: stop stream and send immediately, bypassing queue
   onStop: () => Promise<void>
   onApprovePlan: () => void
   onCompact: () => void
@@ -67,12 +75,15 @@ export interface ChatInputAreaProps {
   hasUnapprovedPlan: boolean
   isCompacting: boolean
   // File uploads
-  images: Array<{ id: string; filename: string; url?: string; isLoading?: boolean }>
-  files: Array<{ id: string; filename: string; url?: string; size?: number; isLoading?: boolean }>
+  images: UploadedImage[]
+  files: UploadedFile[]
   onAddAttachments: (files: File[]) => void
   onRemoveImage: (id: string) => void
   onRemoveFile: (id: string) => void
   isUploading: boolean
+  // Text context from selected assistant message text
+  textContexts: SelectedTextContext[]
+  onRemoveTextContext: (id: string) => void
   // Pre-computed token data for context indicator (avoids passing messages array)
   messageTokenData: MessageTokenData
   // Context
@@ -85,6 +96,12 @@ export interface ChatInputAreaProps {
   changedFiles: SubChatFileChange[]
   // Mobile
   isMobile?: boolean
+  // Queue - for sending from queue when input is empty
+  queueLength?: number
+  onSendFromQueue?: (itemId: string) => void
+  firstQueueItemId?: string
+  // Callback to notify parent when input has content (for custom text with questions)
+  onInputContentChange?: (hasContent: boolean) => void
 }
 
 /**
@@ -120,18 +137,37 @@ function arePropsEqual(prevProps: ChatInputAreaProps, nextProps: ChatInputAreaPr
   // Compare callbacks by identity (they should be memoized in parent)
   if (
     prevProps.onSend !== nextProps.onSend ||
+    prevProps.onForceSend !== nextProps.onForceSend ||
     prevProps.onStop !== nextProps.onStop ||
     prevProps.onApprovePlan !== nextProps.onApprovePlan ||
     prevProps.onCompact !== nextProps.onCompact ||
     prevProps.onCreateNewSubChat !== nextProps.onCreateNewSubChat ||
     prevProps.onAddAttachments !== nextProps.onAddAttachments ||
     prevProps.onRemoveImage !== nextProps.onRemoveImage ||
-    prevProps.onRemoveFile !== nextProps.onRemoveFile
+    prevProps.onRemoveFile !== nextProps.onRemoveFile ||
+    prevProps.onRemoveTextContext !== nextProps.onRemoveTextContext ||
+    prevProps.onInputContentChange !== nextProps.onInputContentChange
   ) {
     return false
   }
 
+  // Compare textContexts array - by length and ids
+  if (!prevProps.textContexts || !nextProps.textContexts) {
+    return prevProps.textContexts === nextProps.textContexts
+  }
+  if (prevProps.textContexts.length !== nextProps.textContexts.length) {
+    return false
+  }
+  for (let i = 0; i < prevProps.textContexts.length; i++) {
+    if (prevProps.textContexts[i]?.id !== nextProps.textContexts[i]?.id) {
+      return false
+    }
+  }
+
   // Compare images array - by length and ids
+  if (!prevProps.images || !nextProps.images) {
+    return prevProps.images === nextProps.images
+  }
   if (prevProps.images.length !== nextProps.images.length) {
     return false
   }
@@ -142,6 +178,9 @@ function arePropsEqual(prevProps: ChatInputAreaProps, nextProps: ChatInputAreaPr
   }
 
   // Compare files array - by length and ids
+  if (!prevProps.files || !nextProps.files) {
+    return prevProps.files === nextProps.files
+  }
   if (prevProps.files.length !== nextProps.files.length) {
     return false
   }
@@ -162,6 +201,9 @@ function arePropsEqual(prevProps: ChatInputAreaProps, nextProps: ChatInputAreaPr
   }
 
   // Compare changedFiles - by length and filePaths
+  if (!prevProps.changedFiles || !nextProps.changedFiles) {
+    return prevProps.changedFiles === nextProps.changedFiles
+  }
   if (prevProps.changedFiles.length !== nextProps.changedFiles.length) {
     return false
   }
@@ -192,6 +234,7 @@ export const ChatInputArea = memo(function ChatInputArea({
   editorRef,
   fileInputRef,
   onSend,
+  onForceSend,
   onStop,
   onApprovePlan,
   onCompact,
@@ -205,6 +248,8 @@ export const ChatInputArea = memo(function ChatInputArea({
   onRemoveImage,
   onRemoveFile,
   isUploading,
+  textContexts,
+  onRemoveTextContext,
   messageTokenData,
   subChatId,
   parentChatId,
@@ -214,6 +259,10 @@ export const ChatInputArea = memo(function ChatInputArea({
   projectPath,
   changedFiles,
   isMobile = false,
+  queueLength = 0,
+  onSendFromQueue,
+  firstQueueItemId,
+  onInputContentChange,
 }: ChatInputAreaProps) {
   // Local state - changes here don't re-render parent
   const [hasContent, setHasContent] = useState(false)
@@ -252,6 +301,10 @@ export const ChatInputArea = memo(function ChatInputArea({
   const [selectedModel, setSelectedModel] = useState(
     () => claudeModels.find((m) => m.id === lastSelectedModelId) || claudeModels[1],
   )
+  const customClaudeConfig = useAtomValue(customClaudeConfigAtom)
+  const normalizedCustomClaudeConfig =
+    normalizeCustomClaudeConfig(customClaudeConfig)
+  const hasCustomClaudeConfig = Boolean(normalizedCustomClaudeConfig)
 
   // Plan mode - global atom
   const [isPlanMode, setIsPlanMode] = useAtom(isPlanModeAtom)
@@ -269,16 +322,18 @@ export const ChatInputArea = memo(function ChatInputArea({
       if (e.metaKey && e.key === "/") {
         e.preventDefault()
         e.stopPropagation()
-        setIsModelDropdownOpen(true)
+        if (!hasCustomClaudeConfig) {
+          setIsModelDropdownOpen(true)
+        }
       }
     }
 
     window.addEventListener("keydown", handleKeyDown, true)
     return () => window.removeEventListener("keydown", handleKeyDown, true)
-  }, [])
+  }, [hasCustomClaudeConfig])
 
-  // Save draft on blur
-  const handleEditorBlur = useCallback(() => {
+  // Save draft on blur (with attachments and text contexts)
+  const handleEditorBlur = useCallback(async () => {
     setIsFocused(false)
 
     const draft = editorRef.current?.getValue() || ""
@@ -290,20 +345,31 @@ export const ChatInputArea = memo(function ChatInputArea({
 
     if (!chatId) return
 
-    if (draft.trim()) {
-      saveSubChatDraft(chatId, subChatIdValue, draft)
+    const hasContent =
+      draft.trim() ||
+      images.length > 0 ||
+      files.length > 0 ||
+      textContexts.length > 0
+
+    if (hasContent) {
+      await saveSubChatDraftWithAttachments(chatId, subChatIdValue, draft, {
+        images,
+        files,
+        textContexts,
+      })
     } else {
       clearSubChatDraft(chatId, subChatIdValue)
     }
-  }, [editorRef])
+  }, [editorRef, images, files, textContexts])
 
   // Content change handler
   const handleContentChange = useCallback((newHasContent: boolean) => {
     setHasContent(newHasContent)
+    onInputContentChange?.(newHasContent)
     // Sync the draft text ref for unmount save
     const draft = editorRef.current?.getValue() || ""
     currentDraftTextRef.current = draft
-  }, [editorRef])
+  }, [editorRef, onInputContentChange])
 
   // Mention select handler
   const handleMentionSelect = useCallback((mention: FileMentionOption) => {
@@ -384,7 +450,8 @@ export const ChatInputArea = memo(function ChatInputArea({
           case "review":
           case "pr-comments":
           case "release-notes":
-          case "security-review": {
+          case "security-review":
+          case "commit": {
             const prompt =
               COMMAND_PROMPTS[command.name as keyof typeof COMMAND_PROMPTS]
             if (prompt) {
@@ -462,7 +529,7 @@ export const ChatInputArea = memo(function ChatInputArea({
               maxHeight={200}
               onSubmit={onSend}
               contextItems={
-                images.length > 0 || files.length > 0 ? (
+                images.length > 0 || files.length > 0 || textContexts.length > 0 ? (
                   <div className="flex flex-wrap gap-[6px]">
                     {(() => {
                       // Build allImages array for gallery navigation
@@ -498,6 +565,14 @@ export const ChatInputArea = memo(function ChatInputArea({
                         onRemove={() => onRemoveFile(f.id)}
                       />
                     ))}
+                    {textContexts.map((tc) => (
+                      <AgentTextContextItem
+                        key={tc.id}
+                        text={tc.text}
+                        preview={tc.preview}
+                        onRemove={() => onRemoveTextContext(tc.id)}
+                      />
+                    ))}
                   </div>
                 ) : null
               }
@@ -526,6 +601,7 @@ export const ChatInputArea = memo(function ChatInputArea({
                   onCloseSlashTrigger={handleCloseSlashTrigger}
                   onContentChange={handleContentChange}
                   onSubmit={onSend}
+                  onForceSubmit={onForceSend}
                   onShiftTab={() => setIsPlanMode((prev) => !prev)}
                   placeholder="Plan, @ for context, / for commands"
                   className={cn(
@@ -557,11 +633,11 @@ export const ChatInputArea = memo(function ChatInputArea({
                     <DropdownMenuTrigger asChild>
                       <button className="flex items-center gap-1.5 px-2 py-1 text-sm text-muted-foreground hover:text-foreground transition-colors rounded-md hover:bg-muted/50 outline-offset-2 focus-visible:outline focus-visible:outline-2 focus-visible:outline-ring/70">
                         {isPlanMode ? (
-                          <PlanIcon className="h-3.5 w-3.5" />
+                          <PlanIcon className="h-3.5 w-3.5 shrink-0" />
                         ) : (
-                          <AgentIcon className="h-3.5 w-3.5" />
+                          <AgentIcon className="h-3.5 w-3.5 shrink-0" />
                         )}
-                        <span>{isPlanMode ? "Plan" : "Agent"}</span>
+                        <span className="truncate">{isPlanMode ? "Plan" : "Agent"}</span>
                         <ChevronDown className="h-3 w-3 shrink-0 opacity-50" />
                       </button>
                     </DropdownMenuTrigger>
@@ -709,15 +785,33 @@ export const ChatInputArea = memo(function ChatInputArea({
 
                   {/* Model selector */}
                   <DropdownMenu
-                    open={isModelDropdownOpen}
-                    onOpenChange={setIsModelDropdownOpen}
+                    open={hasCustomClaudeConfig ? false : isModelDropdownOpen}
+                    onOpenChange={(open) => {
+                      if (!hasCustomClaudeConfig) {
+                        setIsModelDropdownOpen(open)
+                      }
+                    }}
                   >
                     <DropdownMenuTrigger asChild>
-                      <button className="flex items-center gap-1.5 px-2 py-1 text-sm text-muted-foreground hover:text-foreground transition-colors rounded-md hover:bg-muted/50 outline-offset-2 focus-visible:outline focus-visible:outline-2 focus-visible:outline-ring/70">
-                        <ClaudeCodeIcon className="h-3.5 w-3.5" />
-                        <span>
-                          {selectedModel?.name}{" "}
-                          <span className="text-muted-foreground">4.5</span>
+                      <button
+                        disabled={hasCustomClaudeConfig}
+                        className={cn(
+                          "flex items-center gap-1.5 px-2 py-1 text-sm text-muted-foreground transition-colors rounded-md outline-offset-2 focus-visible:outline focus-visible:outline-2 focus-visible:outline-ring/70",
+                          hasCustomClaudeConfig
+                            ? "opacity-70 cursor-not-allowed"
+                            : "hover:text-foreground hover:bg-muted/50",
+                        )}
+                      >
+                        <ClaudeCodeIcon className="h-3.5 w-3.5 shrink-0" />
+                        <span className="truncate">
+                          {hasCustomClaudeConfig ? (
+                            "Custom Model"
+                          ) : (
+                            <>
+                              {selectedModel?.name}{" "}
+                              <span className="text-muted-foreground">4.5</span>
+                            </>
+                          )}
                         </span>
                         <ChevronDown className="h-3 w-3 shrink-0 opacity-50" />
                       </button>
@@ -790,20 +884,22 @@ export const ChatInputArea = memo(function ChatInputArea({
                     <AttachIcon className="h-4 w-4" />
                   </Button>
 
-                  {/* Send/Stop button or Implement Plan button */}
+                  {/* Send/Stop button or Build Plan button */}
                   <div className="ml-1">
-                    {/* Show "Implement plan" button when plan is ready and input is empty */}
-                    {hasUnapprovedPlan &&
+                    {/* Show "Build plan" button when plan is ready, input is empty, and in plan mode */}
+                    {isPlanMode &&
+                    hasUnapprovedPlan &&
                     !hasContent &&
                     images.length === 0 &&
                     files.length === 0 &&
+                    textContexts.length === 0 &&
                     !isStreaming ? (
                       <Button
                         onClick={onApprovePlan}
                         size="sm"
                         className="h-7 gap-1.5 rounded-lg"
                       >
-                        Implement plan
+                        Build plan
                         <Kbd className="text-primary-foreground/70">
                           ⌘↵
                         </Kbd>
@@ -815,11 +911,20 @@ export const ChatInputArea = memo(function ChatInputArea({
                         disabled={
                           (!hasContent &&
                             images.length === 0 &&
-                            files.length === 0) ||
-                          isUploading ||
-                          isStreaming
+                            files.length === 0 &&
+                            textContexts.length === 0 &&
+                            queueLength === 0) ||
+                          isUploading
                         }
-                        onClick={onSend}
+                        hasContent={hasContent || images.length > 0 || files.length > 0 || textContexts.length > 0}
+                        onClick={() => {
+                          // If input is empty and queue has items, send first queue item
+                          if (!hasContent && images.length === 0 && files.length === 0 && queueLength > 0 && onSendFromQueue && firstQueueItemId) {
+                            onSendFromQueue(firstQueueItemId)
+                          } else {
+                            onSend()
+                          }
+                        }}
                         onStop={onStop}
                         isPlanMode={isPlanMode}
                       />

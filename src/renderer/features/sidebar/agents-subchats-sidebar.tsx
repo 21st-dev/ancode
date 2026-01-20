@@ -974,6 +974,17 @@ export function AgentsSubChatsSidebar({
       className="flex flex-col h-full bg-background border-r overflow-hidden relative"
       style={{ borderRightWidth: "0.5px" }}
     >
+      {/* Draggable area for window movement - background layer (hidden in fullscreen) */}
+      {isDesktop && !isFullscreen && (
+        <div
+          className="absolute inset-0 z-0"
+          style={{
+            // @ts-expect-error - WebKit-specific property
+            WebkitAppRegion: "drag",
+          }}
+        />
+      )}
+
       {/* Spacer for macOS traffic lights - only when agents sidebar is open */}
       {isSidebarOpen && (
         <TrafficLightSpacer isDesktop={isDesktop} isFullscreen={isFullscreen} />
@@ -993,27 +1004,13 @@ export function AgentsSubChatsSidebar({
       )}
 
       {/* Header */}
-      <div className="p-2 pb-3 flex-shrink-0">
+      <div className="p-2 pb-3 flex-shrink-0 relative z-10">
         <div className="space-y-2">
           {/* Top row - different layout based on agents sidebar state */}
           {isSidebarOpen ? (
-            <div
-              className="h-6"
-              style={{
-                // @ts-expect-error - WebKit-specific property for Electron window dragging
-                WebkitAppRegion:
-                  isDesktop && !isFullscreen ? "drag" : undefined,
-              }}
-            />
+            <div className="h-6" />
           ) : (
-            <div
-              className="flex items-center justify-between gap-1 mb-1"
-              style={{
-                // @ts-expect-error - WebKit-specific property for Electron window dragging
-                WebkitAppRegion:
-                  isDesktop && !isFullscreen ? "drag" : undefined,
-              }}
-            >
+            <div className="flex items-center justify-between gap-1 mb-1">
               {onBackToChats && (
                 <Tooltip delayDuration={500}>
                   <TooltipTrigger asChild>
@@ -1047,7 +1044,13 @@ export function AgentsSubChatsSidebar({
             </div>
           )}
           {/* Search Input */}
-          <div className="relative">
+          <div
+            className="relative"
+            style={{
+              // @ts-expect-error - WebKit-specific property
+              WebkitAppRegion: "no-drag",
+            }}
+          >
             <Input
               ref={searchInputRef}
               placeholder="Search chats..."
@@ -1096,27 +1099,40 @@ export function AgentsSubChatsSidebar({
             />
           </div>
           {/* New Chat Button */}
-          <Tooltip delayDuration={500}>
-            <TooltipTrigger asChild>
-              <Button
-                onClick={handleCreateNew}
-                variant="outline"
-                size="sm"
-                className="h-7 px-2 w-full hover:bg-foreground/10 transition-[background-color,transform] duration-150 ease-out active:scale-[0.97] text-foreground rounded-lg"
-              >
-                <span className="text-sm font-medium">New Chat</span>
-              </Button>
-            </TooltipTrigger>
+          <div
+            style={{
+              // @ts-expect-error - WebKit-specific property
+              WebkitAppRegion: "no-drag",
+            }}
+          >
+            <Tooltip delayDuration={500}>
+              <TooltipTrigger asChild>
+                <Button
+                  onClick={handleCreateNew}
+                  variant="outline"
+                  size="sm"
+                  className="h-7 px-2 w-full hover:bg-foreground/10 transition-[background-color,transform] duration-150 ease-out active:scale-[0.97] text-foreground rounded-lg"
+                >
+                  <span className="text-sm font-medium">New Chat</span>
+                </Button>
+              </TooltipTrigger>
             <TooltipContent side="right">
               Create a new chat
               <Kbd>{getShortcutKey("newTab")}</Kbd>
             </TooltipContent>
           </Tooltip>
+          </div>
         </div>
       </div>
 
       {/* Scrollable Sub-Chats List */}
-      <div className="flex-1 min-h-0 relative">
+      <div
+        className="flex-1 min-h-0 relative z-10"
+        style={{
+          // @ts-expect-error - WebKit-specific property
+          WebkitAppRegion: "no-drag",
+        }}
+      >
         {/* Loading state - centered spinner */}
         {isLoading ? (
           <div className="flex items-center justify-center h-full">
@@ -1716,7 +1732,11 @@ export function AgentsSubChatsSidebar({
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: 8 }}
             transition={{ duration: 0 }}
-            className="flex-shrink-0 p-2 bg-background space-y-2"
+            className="flex-shrink-0 p-2 bg-background space-y-2 relative z-10"
+            style={{
+              // @ts-expect-error - WebKit-specific property
+              WebkitAppRegion: "no-drag",
+            }}
           >
             <div className="flex items-center justify-between px-1">
               <span className="text-xs text-muted-foreground">

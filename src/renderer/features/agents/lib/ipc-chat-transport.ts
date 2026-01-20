@@ -3,8 +3,11 @@ import type { ChatTransport, UIMessage } from "ai"
 import { toast } from "sonner"
 import {
   agentsLoginModalOpenAtom,
+  customClaudeConfigAtom,
   extendedThinkingEnabledAtom,
   sessionInfoAtom,
+  type CustomClaudeConfig,
+  normalizeCustomClaudeConfig,
 } from "../../../lib/atoms"
 import { appStore } from "../../../lib/jotai-store"
 import { trpcClient } from "../../../lib/trpc"
@@ -46,12 +49,26 @@ const ERROR_TOAST_CONFIG: Record<
       "Your Claude API key is invalid. Check your CLI configuration.",
   },
   RATE_LIMIT_SDK: {
-    title: "Rate limited",
-    description: "Too many requests. Please wait a moment and try again.",
+    title: "Session limit reached",
+    description: "You've hit the Claude Code usage limit.",
+    action: {
+      label: "View usage",
+      onClick: () =>
+        trpcClient.external.openExternal.mutate(
+          "https://claude.ai/settings/usage",
+        ),
+    },
   },
   RATE_LIMIT: {
-    title: "Rate limited",
-    description: "Too many requests. Please wait a moment and try again.",
+    title: "Session limit reached",
+    description: "You've hit the Claude Code usage limit.",
+    action: {
+      label: "View usage",
+      onClick: () =>
+        trpcClient.external.openExternal.mutate(
+          "https://claude.ai/settings/usage",
+        ),
+    },
   },
   OVERLOADED_SDK: {
     title: "Claude is busy",
@@ -131,6 +148,11 @@ export class IPCChatTransport implements ChatTransport<UIMessage> {
     const selectedModelId = appStore.get(lastSelectedModelIdAtom)
     const modelString = MODEL_ID_MAP[selectedModelId]
 
+    const storedCustomConfig = appStore.get(
+      customClaudeConfigAtom,
+    ) as CustomClaudeConfig
+    const customConfig = normalizeCustomClaudeConfig(storedCustomConfig)
+
     const currentMode =
       useAgentSubChatStore
         .getState()
@@ -141,7 +163,7 @@ export class IPCChatTransport implements ChatTransport<UIMessage> {
     const subId = this.config.subChatId.slice(-8)
     let chunkCount = 0
     let lastChunkType = ""
-    console.log(`[SD] R:START sub=${subId} cwd=${this.config.cwd} projectPath=${this.config.projectPath || "(not set)"}`)
+    console.log(`[SD] R:START sub=${subId} cwd=${this.config.cwd} projectPath=${this.config.projectPath || "(not set)"} customConfig=${customConfig ? "set" : "not set"}`)
 
     return new ReadableStream({
       start: (controller) => {
@@ -156,6 +178,7 @@ export class IPCChatTransport implements ChatTransport<UIMessage> {
             sessionId,
             ...(maxThinkingTokens && { maxThinkingTokens }),
             ...(modelString && { model: modelString }),
+            ...(customConfig && { customConfig }),
             ...(images.length > 0 && { images }),
           },
           {

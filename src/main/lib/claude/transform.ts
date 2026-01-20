@@ -309,6 +309,18 @@ export function createTransformer() {
 
     // ===== USER MESSAGE (tool results) =====
     if (msg.type === "user" && msg.message?.content) {
+      // DEBUG: Log the message structure to understand tool_use_result
+      console.log("[Transform DEBUG] User message:", {
+        tool_use_result: msg.tool_use_result,
+        tool_use_result_type: typeof msg.tool_use_result,
+        content_length: msg.message.content.length,
+        blocks: msg.message.content.map((b: any) => ({
+          type: b.type,
+          tool_use_id: b.tool_use_id,
+          content_preview: typeof b.content === 'string' ? b.content.slice(0, 100) : typeof b.content,
+        })),
+      })
+
       for (const block of msg.message.content) {
         if (block.type === "tool_result") {
           // Lookup composite ID from mapping, fallback to original
@@ -321,10 +333,33 @@ export function createTransformer() {
               errorText: String(block.content),
             }
           } else {
+            // Try to parse structured data from block.content if it's JSON
+            let output = msg.tool_use_result
+            if (!output && typeof block.content === 'string') {
+              try {
+                // Some tool results may have JSON embedded in the string
+                const parsed = JSON.parse(block.content)
+                if (parsed && typeof parsed === 'object') {
+                  output = parsed
+                }
+              } catch {
+                // Not JSON, use raw content
+              }
+            }
+            output = output || block.content
+
+            console.log("[Transform DEBUG] Tool output:", {
+              tool_use_id: block.tool_use_id,
+              compositeId,
+              output_type: typeof output,
+              output_keys: output && typeof output === 'object' ? Object.keys(output) : null,
+              numFiles: output?.numFiles,
+            })
+
             yield {
               type: "tool-output-available",
               toolCallId: compositeId,
-              output: msg.tool_use_result || block.content,
+              output,
             }
           }
         }

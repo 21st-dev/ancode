@@ -153,6 +153,11 @@ export function UpdateBanner() {
     }
   }
 
+  // For open source builds (!isPackaged), hide all update banners
+  if (!isPackaged) {
+    return null
+  }
+
   // Show "What's New" banner if app was just updated
   if (justUpdated) {
     return (
@@ -196,12 +201,6 @@ export function UpdateBanner() {
     state.status === "checking" ||
     state.status === "error"
   ) {
-    return null
-  }
-
-  // For open source builds (!isPackaged), hide the auto-update banner
-  // Auto-updates are only available for official packaged builds
-  if (!isPackaged) {
     return null
   }
 

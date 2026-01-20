@@ -47,9 +47,10 @@ import { WorkModeSelector } from "../components/work-mode-selector"
 // import { selectedTeamIdAtom } from "@/lib/atoms/team"
 import { atom } from "jotai"
 const selectedTeamIdAtom = atom<string | null>(null)
-// import { agentsSettingsDialogOpenAtom, agentsSettingsDialogActiveTabAtom } from "@/lib/atoms/agents-settings-dialog"
-const agentsSettingsDialogOpenAtom = atom(false)
-const agentsSettingsDialogActiveTabAtom = atom<string | null>(null)
+import {
+  agentsSettingsDialogOpenAtom,
+  agentsSettingsDialogActiveTabAtom,
+} from "../../../lib/atoms"
 // Desktop uses real tRPC
 import { toast } from "sonner"
 import { trpc } from "../../../lib/trpc"
@@ -173,6 +174,43 @@ export function NewChatForm({
   const setJustCreatedIds = useSetAtom(justCreatedIdsAtom)
   const [repoSearchQuery, setRepoSearchQuery] = useState("")
   const [createBranchDialogOpen, setCreateBranchDialogOpen] = useState(false)
+
+  // Worktree config banner state
+  const [worktreeBannerDismissed, setWorktreeBannerDismissed] = useState(() => {
+    try {
+      return localStorage.getItem("worktree-banner-dismissed") === "true"
+    } catch {
+      return false
+    }
+  })
+
+  // Check if project has worktree config
+  const { data: worktreeConfigData } = trpc.worktreeConfig.get.useQuery(
+    { projectId: validatedProject?.id ?? "" },
+    { enabled: !!validatedProject?.id && workMode === "worktree" && !worktreeBannerDismissed },
+  )
+
+  const showWorktreeBanner =
+    workMode === "worktree" &&
+    validatedProject &&
+    !worktreeBannerDismissed &&
+    worktreeConfigData &&
+    !worktreeConfigData.config
+
+  const handleDismissWorktreeBanner = () => {
+    setWorktreeBannerDismissed(true)
+    try {
+      localStorage.setItem("worktree-banner-dismissed", "true")
+    } catch {}
+  }
+
+  const handleConfigureWorktree = () => {
+    // Open the project-specific worktree settings tab
+    if (validatedProject?.id) {
+      setSettingsActiveTab(`project-${validatedProject.id}` as any)
+      setSettingsDialogOpen(true)
+    }
+  }
   // Parse owner/repo from GitHub URL
   const parseGitHubUrl = (url: string) => {
     const match = url.match(/(?:github\.com\/)?([^\/]+)\/([^\/\s#?]+)/)
@@ -1434,6 +1472,41 @@ export function NewChatForm({
                     />
                   )}
                 </div>
+
+                {/* Worktree config banner - absolute positioned to avoid layout shift */}
+                {showWorktreeBanner && (
+                  <div className="absolute left-0 right-0 top-full mt-2 ml-[5px] mr-[5px] p-3 pb-4 bg-muted/50 rounded-lg border border-border space-y-3">
+                    <p className="text-sm text-muted-foreground">
+                      Configure a worktree setup script to install dependencies or copy environment variables.
+                    </p>
+                    <div className="flex items-center justify-end gap-2">
+                      <Button
+                        variant="secondary"
+                        size="sm"
+                        onClick={handleConfigureWorktree}
+                      >
+                        Settings
+                      </Button>
+                      <Button
+                        size="sm"
+                        onClick={() => {
+                          const prompt = COMMAND_PROMPTS["worktree-setup"]
+                          if (prompt && validatedProject) {
+                            createChatMutation.mutate({
+                              projectId: validatedProject.id,
+                              name: "Worktree Setup",
+                              initialMessageParts: [{ type: "text", text: prompt }],
+                              useWorktree: false,
+                              mode: "agent",
+                            })
+                          }
+                        }}
+                      >
+                        Fill with AI
+                      </Button>
+                    </div>
+                  </div>
+                )}
 
                 {/* File mention dropdown */}
                 {/* Desktop: use projectPath for local file search */}

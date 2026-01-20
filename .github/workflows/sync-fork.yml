@@ -2,8 +2,8 @@ name: Sync Fork with Upstream
 
 on:
   schedule:
-    # Check every 30 minutes
-    - cron: "*/30 * * * *"
+    # Check every 6 hours
+    - cron: "0 */6 * * *"
   workflow_dispatch:
     inputs:
       force_build:
@@ -40,22 +40,22 @@ jobs:
           # Get current HEAD
           BEFORE=$(git rev-parse HEAD)
 
-          # Merge upstream changes
-          git merge upstream/main --no-edit || {
-            echo "Merge conflict detected. Please resolve manually."
-            exit 1
-          }
+          # Try to merge upstream changes
+          if git merge upstream/main --no-edit; then
+            AFTER=$(git rev-parse HEAD)
 
-          # Get new HEAD
-          AFTER=$(git rev-parse HEAD)
-
-          # Check if there are changes
-          if [ "$BEFORE" != "$AFTER" ] || [ "${{ github.event.inputs.force_build }}" == "true" ]; then
-            echo "has_changes=true" >> $GITHUB_OUTPUT
-            echo "Changes detected or force build requested"
+            if [ "$BEFORE" != "$AFTER" ] || [ "${{ github.event.inputs.force_build }}" == "true" ]; then
+              echo "has_changes=true" >> $GITHUB_OUTPUT
+              echo "Changes detected or force build requested"
+            else
+              echo "has_changes=false" >> $GITHUB_OUTPUT
+              echo "No changes from upstream"
+            fi
           else
+            # Merge conflict - abort and skip this sync
+            echo "::warning::Merge conflict detected. Skipping sync. Please resolve manually."
+            git merge --abort
             echo "has_changes=false" >> $GITHUB_OUTPUT
-            echo "No changes from upstream"
           fi
 
       - name: Push changes

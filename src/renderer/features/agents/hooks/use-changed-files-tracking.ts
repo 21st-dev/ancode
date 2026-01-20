@@ -33,7 +33,7 @@ export function useChangedFilesTracking(
   const setSubChatFiles = useSetAtom(subChatFilesAtom)
   const setSubChatToChatMap = useSetAtom(subChatToChatMapAtom)
 
-  // Helper to get display path (removes sandbox prefixes)
+  // Helper to get display path (removes sandbox prefixes and worktree paths)
   const getDisplayPath = useCallback((filePath: string): string => {
     if (!filePath) return ""
 
@@ -44,6 +44,13 @@ export function useChangedFilesTracking(
       if (filePath.startsWith(prefix)) {
         return filePath.slice(prefix.length)
       }
+    }
+
+    // Handle worktree paths: /Users/.../.21st/worktrees/{chatId}/{subChatId}/relativePath
+    // Extract everything after the subChatId directory
+    const worktreeMatch = filePath.match(/\.21st\/worktrees\/[^/]+\/[^/]+\/(.+)$/)
+    if (worktreeMatch) {
+      return worktreeMatch[1]
     }
 
     // Heuristic: find common root directories
