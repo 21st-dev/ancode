@@ -1,4 +1,4 @@
-import { useEffect, useMemo } from "react"
+import { useEffect, useMemo, useRef } from "react"
 import { Provider as JotaiProvider, useAtomValue } from "jotai"
 import { ThemeProvider, useTheme } from "next-themes"
 import { Toaster } from "sonner"
@@ -15,6 +15,8 @@ import { VSCodeThemeProvider } from "./lib/themes/theme-provider"
 import { anthropicOnboardingCompletedAtom } from "./lib/atoms"
 import { selectedProjectAtom } from "./features/agents/atoms"
 import { trpc } from "./lib/trpc"
+import { soundManager } from "./lib/sound-manager"
+import { useNaggingSound } from "./features/agents/hooks/use-nagging-sound"
 
 /**
  * Custom Toaster that adapts to theme
@@ -39,6 +41,9 @@ function AppContent() {
     anthropicOnboardingCompletedAtom
   )
   const selectedProject = useAtomValue(selectedProjectAtom)
+
+  // Play nagging sound when user questions are pending
+  useNaggingSound()
 
   // Fetch projects to validate selectedProject exists
   const { data: projects, isLoading: isLoadingProjects } =
@@ -71,6 +76,33 @@ function AppContent() {
 }
 
 export function App() {
+  const soundInitializedRef = useRef(false)
+
+  // Initialize sound on first user interaction (required by Web Audio API)
+  useEffect(() => {
+    const initSound = async () => {
+      if (soundInitializedRef.current) return
+      soundInitializedRef.current = true
+      await soundManager.init()
+    }
+
+    // Listen for first user interaction
+    const handleInteraction = () => {
+      initSound()
+      // Remove listeners after initialization
+      document.removeEventListener("click", handleInteraction)
+      document.removeEventListener("keydown", handleInteraction)
+    }
+
+    document.addEventListener("click", handleInteraction)
+    document.addEventListener("keydown", handleInteraction)
+
+    return () => {
+      document.removeEventListener("click", handleInteraction)
+      document.removeEventListener("keydown", handleInteraction)
+    }
+  }, [])
+
   // Initialize analytics on mount
   useEffect(() => {
     initAnalytics()
