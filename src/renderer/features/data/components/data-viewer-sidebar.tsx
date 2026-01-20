@@ -316,7 +316,6 @@ export function DataViewerSidebar({
   const [showHistory, setShowHistory] = useState(false)
   const [queryHistory, setQueryHistory] = useState<QueryHistoryEntry[]>([])
   const textareaRef = useRef<HTMLTextAreaElement>(null)
-  const historyRef = useRef<HTMLDivElement>(null)
 
   // Build absolute path - must be defined before useEffects that depend on it
   const absolutePath = filePath.startsWith("/")
@@ -507,19 +506,6 @@ export function DataViewerSidebar({
     setQueryHistory([])
     setShowHistory(false)
   }, [absolutePath])
-
-  // Close history dropdown when clicking outside
-  useEffect(() => {
-    const handleClickOutside = (e: MouseEvent) => {
-      if (historyRef.current && !historyRef.current.contains(e.target as Node)) {
-        setShowHistory(false)
-      }
-    }
-    if (showHistory) {
-      document.addEventListener("mousedown", handleClickOutside)
-      return () => document.removeEventListener("mousedown", handleClickOutside)
-    }
-  }, [showHistory])
 
   // Reset to file view
   const resetToFileView = useCallback(() => {
@@ -1027,51 +1013,47 @@ export function DataViewerSidebar({
               <div className="absolute right-1.5 bottom-1.5 flex items-center gap-0.5">
                 {/* History button */}
                 {queryHistory.length > 0 && (
-                  <div className="relative" ref={historyRef}>
+                  <DropdownMenu open={showHistory} onOpenChange={setShowHistory}>
                     <TooltipProvider delayDuration={300}>
                       <Tooltip>
                         <TooltipTrigger asChild>
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            className={cn("h-6 w-6", showHistory && "bg-accent")}
-                            onClick={() => setShowHistory((prev) => !prev)}
-                          >
-                            <History className="h-3.5 w-3.5" />
-                          </Button>
+                          <DropdownMenuTrigger asChild>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className={cn("h-6 w-6", showHistory && "bg-accent")}
+                            >
+                              <History className="h-3.5 w-3.5" />
+                            </Button>
+                          </DropdownMenuTrigger>
                         </TooltipTrigger>
                         <TooltipContent side="top">Query history</TooltipContent>
                       </Tooltip>
                     </TooltipProvider>
-
-                    {/* History dropdown */}
-                    {showHistory && (
-                      <div className="absolute bottom-full right-0 mb-1 w-64 max-h-48 overflow-y-auto rounded-md border bg-popover shadow-md z-50">
-                        <div className="flex items-center justify-between px-2 py-1.5 border-b">
-                          <span className="text-[10px] font-medium text-muted-foreground">Recent queries</span>
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            className="h-5 w-5"
-                            onClick={handleClearHistory}
-                          >
-                            <Trash2 className="h-3 w-3 text-muted-foreground" />
-                          </Button>
-                        </div>
-                        {queryHistory.map((entry, idx) => (
-                          <button
-                            key={idx}
-                            className="w-full px-2 py-1.5 text-left hover:bg-accent transition-colors border-b last:border-b-0"
-                            onClick={() => loadQueryFromHistory(entry.query)}
-                          >
-                            <div className="text-[10px] font-mono text-foreground truncate">
-                              {entry.query}
-                            </div>
-                          </button>
-                        ))}
+                    <DropdownMenuContent align="end" side="top" className="w-64 max-h-48 overflow-y-auto">
+                      <div className="flex items-center justify-between px-2 py-1.5">
+                        <span className="text-[10px] font-medium text-muted-foreground">Recent queries</span>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-5 w-5"
+                          onClick={handleClearHistory}
+                        >
+                          <Trash2 className="h-3 w-3 text-muted-foreground" />
+                        </Button>
                       </div>
-                    )}
-                  </div>
+                      <DropdownMenuSeparator />
+                      {queryHistory.map((entry, idx) => (
+                        <DropdownMenuItem
+                          key={idx}
+                          className="px-2 py-1.5"
+                          onClick={() => loadQueryFromHistory(entry.query)}
+                        >
+                          <span className="text-[10px] font-mono truncate">{entry.query}</span>
+                        </DropdownMenuItem>
+                      ))}
+                    </DropdownMenuContent>
+                  </DropdownMenu>
                 )}
                 {isQueryMode && (
                   <TooltipProvider delayDuration={300}>
@@ -1453,10 +1435,7 @@ export function DataViewerSidebar({
             {cellDetailsContent && (
               <div className="relative">
                 <pre
-                  className={cn(
-                    "p-3 rounded-lg text-xs font-mono whitespace-pre-wrap break-all max-h-[50vh] overflow-auto",
-                    isDark ? "bg-zinc-900/50 border border-zinc-800" : "bg-zinc-100 border border-zinc-200"
-                  )}
+                  className="p-3 rounded-lg text-xs font-mono whitespace-pre-wrap break-all max-h-[50vh] overflow-auto bg-muted border border-border"
                 >
                   {isJsonLike(cellDetailsContent.value)
                     ? formatJsonForDisplay(cellDetailsContent.value)
