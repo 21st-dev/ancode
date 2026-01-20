@@ -179,8 +179,8 @@
       "icon": "build/icon.icns",
       "hardenedRuntime": true,
       "gatekeeperAssess": false,
-      "entitlements": "build/entitlements.mac.plist",
-      "entitlementsInherit": "build/entitlements.mac.plist"
+      "entitlements": "${env.PERSONAL_BUILD === 'true' ? 'build/entitlements.mac.personal.plist' : 'build/entitlements.mac.plist'}",
+      "entitlementsInherit": "${env.PERSONAL_BUILD === 'true' ? 'build/entitlements.mac.personal.plist' : 'build/entitlements.mac.plist'}"
     },
     "dmg": {
       "window": {

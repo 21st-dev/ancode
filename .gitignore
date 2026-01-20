@@ -30,3 +30,6 @@ electron.vite.config.*.mjs
 
 # Claude binary (downloaded at build time)
 resources/bin/
+
+# Personal entitlements (local dev only)
+build/entitlements.mac.personal.plist
