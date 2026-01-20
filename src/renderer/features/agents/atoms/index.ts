@@ -497,6 +497,15 @@ export const lastSelectedBranchesAtom = atomWithStorage<Record<string, string>>(
 // Set<subChatId> - subChats currently being compacted
 export const compactingSubChatsAtom = atom<Set<string>>(new Set())
 
+export type LastCompactInfo = {
+  preTokens: number
+  at: number
+}
+
+// Last known compact info per sub-chat (not persisted)
+// Useful to explain why context usage may look stale until the next request.
+export const lastCompactInfoAtom = atom<Record<string, LastCompactInfo>>({})
+
 // Track IDs of chats/subchats created in this browser session (NOT persisted - resets on reload)
 // Used to determine whether to show placeholder + typewriter effect
 export const justCreatedIdsAtom = atom<Set<string>>(new Set())

@@ -498,9 +498,16 @@ export const claudeRouter = router({
                 ) => {
                   // Ask mode: deny ALL tools (defense-in-depth alongside permissionMode: "dontAsk")
                   if (input.mode === "ask") {
+                    const denyMessage = "Tools are not available in Ask mode"
+                    // Emit error to frontend so user sees feedback
+                    safeEmit({
+                      type: "tool-output-error",
+                      toolCallId: options.toolUseID,
+                      errorText: denyMessage,
+                    } as UIMessageChunk)
                     return {
                       behavior: "deny",
-                      message: "Tools are not available in Ask mode",
+                      message: denyMessage,
                     }
                   }
                   if (toolName === "AskUserQuestion") {
@@ -804,11 +811,17 @@ export const claudeRouter = router({
                       )
                       if (existingCompact) {
                         existingCompact.state = chunk.state
+                        if (typeof chunk.preTokens === "number") {
+                          existingCompact.preTokens = chunk.preTokens
+                        }
                       } else {
                         parts.push({
                           type: "system-Compact",
                           toolCallId: chunk.toolCallId,
                           state: chunk.state,
+                          ...(typeof chunk.preTokens === "number" && {
+                            preTokens: chunk.preTokens,
+                          }),
                         })
                       }
                       break

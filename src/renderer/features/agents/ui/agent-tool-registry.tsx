@@ -452,6 +452,11 @@ export const AgentToolRegistry: Record<string, ToolMeta> = {
         part.state !== "output-available" && part.state !== "output-error"
       return isPending ? "Compacting..." : "Compacted"
     },
+    subtitle: (part) => {
+      const preTokens = (part as any)?.preTokens
+      if (typeof preTokens !== "number" || preTokens <= 0) return ""
+      return `Before: ${preTokens.toLocaleString()} tokens`
+    },
     variant: "simple",
   },
 

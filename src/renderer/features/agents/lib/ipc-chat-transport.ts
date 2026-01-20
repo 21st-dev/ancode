@@ -12,6 +12,7 @@ import {
   askUserQuestionResultsAtom,
   chatWaitingForUserAtom,
   compactingSubChatsAtom,
+  lastCompactInfoAtom,
   lastSelectedModelIdAtom,
   MODEL_ID_MAP,
   pendingAuthRetryMessageAtom,
@@ -147,6 +148,9 @@ export class IPCChatTransport implements ChatTransport<UIMessage> {
       subChatModelId || this.config.model || appStore.get(lastSelectedModelIdAtom)
     const modelString = MODEL_ID_MAP[modelId]
 
+    // Read mode dynamically from sub-chat store (like model above).
+    // This lets mode switches (Agent/Plan/Ask) apply to the next send without recreating the Chat instance.
+    // Users can change modes mid-conversation via the dropdown or /agent, /plan, /ask commands.
     const currentMode =
       useAgentSubChatStore
         .getState()
@@ -218,6 +222,21 @@ export class IPCChatTransport implements ChatTransport<UIMessage> {
                   newCompacting.delete(this.config.subChatId)
                 }
                 appStore.set(compactingSubChatsAtom, newCompacting)
+
+                if (
+                  chunk.state === "output-available" &&
+                  typeof chunk.preTokens === "number" &&
+                  chunk.preTokens > 0
+                ) {
+                  const current = appStore.get(lastCompactInfoAtom)
+                  appStore.set(lastCompactInfoAtom, {
+                    ...current,
+                    [this.config.subChatId]: {
+                      preTokens: chunk.preTokens,
+                      at: Date.now(),
+                    },
+                  })
+                }
               }
 
               // Handle session init - store MCP servers, plugins, tools info
@@ -264,6 +283,12 @@ export class IPCChatTransport implements ChatTransport<UIMessage> {
                   undefined,
                   chunk.errorText,
                 )
+                // Show toast for Ask mode tool denial so user gets clear feedback
+                if (chunk.errorText?.includes("Ask mode")) {
+                  toast.error("Tool blocked", {
+                    description: chunk.errorText,
+                  })
+                }
               }
 
               // === SOUND TRIGGERS ===

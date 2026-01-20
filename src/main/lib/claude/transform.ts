@@ -401,9 +401,11 @@ export function createTransformer() {
       const cacheReadTokens = msg.usage?.cache_read_input_tokens || 0
       const cacheCreationTokens = msg.usage?.cache_creation_input_tokens || 0
 
-      // Context size for this turn = new input tokens + tokens read from cache
-      // This represents what was actually in the context window for this API call
-      const contextTokens = perTurnInputTokens + cacheReadTokens
+      // Total input tokens for this turn includes cache creation + cache read tokens.
+      // https://docs.anthropic.com/en/api/messages#usage
+      // This best matches "what the model saw" in the context window for this call.
+      const totalInputTokens =
+        perTurnInputTokens + cacheReadTokens + cacheCreationTokens
 
       // Get context window from modelUsage if available
       let maxContextWindow = 0
@@ -417,13 +419,13 @@ export function createTransformer() {
 
       const metadata: MessageMetadata = {
         sessionId: msg.session_id,
-        // Store the actual context size (input + cache read) for context indicator
-        inputTokens: contextTokens,
+        // Store the total input tokens (incl. cache tokens) for context indicator
+        inputTokens: totalInputTokens,
         outputTokens: perTurnOutputTokens,
         cacheReadInputTokens: cacheReadTokens,
         cacheCreationInputTokens: cacheCreationTokens,
         contextWindow: maxContextWindow || undefined,
-        totalTokens: contextTokens + perTurnOutputTokens,
+        totalTokens: totalInputTokens + perTurnOutputTokens,
         totalCostUsd: msg.total_cost_usd,
         durationMs: startTime ? Date.now() - startTime : undefined,
         resultSubtype: msg.subtype || "success",

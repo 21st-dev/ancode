@@ -19,6 +19,7 @@ interface AgentContextIndicatorProps {
   onCompact?: () => void
   isCompacting?: boolean
   disabled?: boolean
+  lastCompactPreTokens?: number
 }
 
 function formatTokens(tokens: number): string {
@@ -87,6 +88,7 @@ export const AgentContextIndicator = memo(function AgentContextIndicator({
   onCompact,
   isCompacting,
   disabled,
+  lastCompactPreTokens,
 }: AgentContextIndicatorProps) {
   // Calculate context usage from most recent API call
   // For new messages: Use modelUsage data which includes full context with caching
@@ -227,6 +229,11 @@ export const AgentContextIndicator = memo(function AgentContextIndicator({
             </>
           )}
         </p>
+        {typeof lastCompactPreTokens === "number" && lastCompactPreTokens > 0 && (
+          <p className="text-xs text-muted-foreground mt-1">
+            Last compact (pre): {formatTokens(lastCompactPreTokens)} tokens
+          </p>
+        )}
         {isClickable && (
           <p className="text-xs text-muted-foreground mt-1">
             Click to compact context

@@ -102,6 +102,7 @@ import {
   chatWaitingForUserAtom,
   clearLoading,
   compactingSubChatsAtom,
+  lastCompactInfoAtom,
   diffSidebarOpenAtomFamily,
   chatModeAtom,
   type ChatMode,
@@ -1519,6 +1520,8 @@ function ChatViewInner({
   // Track compacting status from SDK
   const compactingSubChats = useAtomValue(compactingSubChatsAtom)
   const isCompacting = compactingSubChats.has(subChatId)
+  const lastCompactInfoBySubChat = useAtomValue(lastCompactInfoAtom)
+  const lastCompactInfo = lastCompactInfoBySubChat[subChatId]
 
   // Handler to trigger manual context compaction
   const handleCompact = useCallback(() => {
@@ -3342,6 +3345,7 @@ function ChatViewInner({
                       onCompact={handleCompact}
                       isCompacting={isCompacting}
                       disabled={isStreaming}
+                      lastCompactPreTokens={lastCompactInfo?.preTokens}
                     />
 
                     {/* Attachment button */}
