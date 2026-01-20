@@ -497,6 +497,14 @@ export type PendingUserQuestions = {
 }
 export const pendingUserQuestionsAtom = atom<PendingUserQuestions | null>(null)
 
+// Track when a chat has finished and is waiting for user input
+// Set to subChatId when chat finishes, cleared when user sends a message
+export const chatWaitingForUserAtom = atom<string | null>(null)
+
+// Track if nagging sound is muted (user clicked the bell to silence it)
+// Resets when a new nag starts (new chat finishes or new question appears)
+export const nagMutedAtom = atom<boolean>(false)
+
 // Track sub-chats with pending plan approval (plan ready but not yet implemented)
 // Set<subChatId>
 export const pendingPlanApprovalsAtom = atom<Set<string>>(new Set())

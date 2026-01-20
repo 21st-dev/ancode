@@ -51,6 +51,8 @@ import { Chat, useChat } from "@ai-sdk/react"
 import { DiffModeEnum } from "@git-diff-view/react"
 import { atom, useAtom, useAtomValue, useSetAtom } from "jotai"
 import {
+  Bell,
+  BellOff,
   ChevronDown,
   Code,
   Columns2,
@@ -96,6 +98,7 @@ import {
   agentsSubChatsSidebarModeAtom,
   agentsSubChatUnseenChangesAtom,
   agentsUnseenChangesAtom,
+  chatWaitingForUserAtom,
   clearLoading,
   compactingSubChatsAtom,
   diffSidebarOpenAtomFamily,
@@ -103,6 +106,7 @@ import {
   justCreatedIdsAtom,
   lastSelectedModelIdAtom,
   loadingSubChatsAtom,
+  nagMutedAtom,
   pendingAuthRetryMessageAtom,
   pendingPrMessageAtom,
   pendingReviewMessageAtom,
@@ -710,6 +714,42 @@ function PlayButton({
         </button>
       )}
     </div>
+  )
+}
+
+// Bell button to show nag status and allow muting
+function NagBellButton({ isMobile = false }: { isMobile?: boolean }) {
+  const pendingQuestions = useAtomValue(pendingUserQuestionsAtom)
+  const chatWaiting = useAtomValue(chatWaitingForUserAtom)
+  const [isMuted, setMuted] = useAtom(nagMutedAtom)
+
+  const isNagging = !!pendingQuestions || !!chatWaiting
+
+  // Don't render if not nagging
+  if (!isNagging) return null
+
+  const handleClick = () => {
+    setMuted(!isMuted)
+  }
+
+  return (
+    <button
+      onClick={handleClick}
+      tabIndex={-1}
+      className={cn(
+        "p-1.5 rounded-md transition-[background-color,transform] duration-150 ease-out hover:bg-accent active:scale-[0.97]",
+        isMobile ? "opacity-100" : "opacity-100",
+      )}
+      title={isMuted ? "Unmute notifications" : "Mute notifications"}
+    >
+      <div className="relative w-3.5 h-3.5">
+        {isMuted ? (
+          <BellOff className="w-3.5 h-3.5 text-muted-foreground" />
+        ) : (
+          <Bell className="w-3.5 h-3.5 text-amber-500 animate-pulse" />
+        )}
+      </div>
+    </button>
   )
 }
 
@@ -1413,11 +1453,24 @@ function ChatViewInner({
   }, [subChatId, parentChatId])
 
   // Use subChatId as stable key to prevent HMR-induced duplicate resume requests
-  // resume: !!streamId to reconnect to active streams (background streaming support)
+  // Only attempt resume when the chat is idle; otherwise it can clobber the active request
+  // (and break stop/cancel) if `streamId` updates during an in-flight stream.
+  const lastResumeStreamIdRef = useRef<string | null>(null)
+  const shouldResumeStream =
+    !!streamId &&
+    chat.status === "ready" &&
+    streamId !== lastResumeStreamIdRef.current
+
+  useEffect(() => {
+    if (shouldResumeStream) {
+      lastResumeStreamIdRef.current = streamId || null
+    }
+  }, [shouldResumeStream, streamId])
+
   const { messages, sendMessage, status, stop, regenerate } = useChat({
     id: subChatId,
     chat,
-    resume: !!streamId,
+    resume: shouldResumeStream,
     experimental_throttle: 200,
   })
 
@@ -1465,6 +1518,20 @@ function ChatViewInner({
   }, [status, subChatId, messages.length])
 
   const isStreaming = status === "streaming" || status === "submitted"
+
+  const handleStopStream = useCallback(async () => {
+    if (!isStreaming) return
+    agentChatStore.setManuallyAborted(subChatId, true)
+
+    // Cancel server-side stream too (covers edge cases where the local abort controller is stale)
+    try {
+      trpcClient.claude.cancel.mutate({ subChatId })
+    } catch {
+      // Ignore
+    }
+
+    await stop()
+  }, [isStreaming, stop, subChatId])
 
   // Extract sessionId from last assistant message for CLI handoff
   // Fallback to database sessionId for older chats that don't have it in message metadata
@@ -1900,20 +1967,13 @@ function ChatViewInner({
 
       if (shouldStop) {
         e.preventDefault()
-        // Mark as manually aborted to prevent completion sound
-        agentChatStore.setManuallyAborted(subChatId, true)
-        await stop()
-        // Call DELETE endpoint to cancel server-side stream
-        await fetch(`/api/agents/chat?id=${encodeURIComponent(subChatId)}`, {
-          method: "DELETE",
-          credentials: "include",
-        })
+        await handleStopStream()
       }
     }
 
     window.addEventListener("keydown", handleKeyDown)
     return () => window.removeEventListener("keydown", handleKeyDown)
-  }, [isStreaming, stop, subChatId])
+  }, [handleStopStream, isStreaming])
 
   // Keyboard shortcut: Enter to focus input when not already focused
   useFocusInputOnEnter(editorRef)
@@ -3039,6 +3099,7 @@ function ChatViewInner({
                                 playbackRate={ttsPlaybackRate}
                                 onPlaybackRateChange={handlePlaybackRateChange}
                               />
+                              <NagBellButton isMobile={isMobile} />
                             </div>
                             {/* Token usage info - right side */}
                             <AgentMessageUsage
@@ -3100,19 +3161,7 @@ function ChatViewInner({
                 isCompacting={isCompacting}
                 changedFiles={changedFilesForSubChat}
                 worktreePath={projectPath}
-                onStop={async () => {
-                  // Mark as manually aborted to prevent completion sound
-                  agentChatStore.setManuallyAborted(subChatId, true)
-                  await stop()
-                  // Call DELETE endpoint to cancel server-side stream
-                  await fetch(
-                    `/api/agents/chat?id=${encodeURIComponent(subChatId)}`,
-                    {
-                      method: "DELETE",
-                      credentials: "include",
-                    },
-                  )
-                }}
+                onStop={handleStopStream}
               />
             </div>
           </div>
@@ -3359,16 +3408,7 @@ function ChatViewInner({
                             isStreaming
                           }
                           onClick={handleSend}
-                          onStop={async () => {
-                            // Mark as manually aborted to prevent completion sound
-                            agentChatStore.setManuallyAborted(subChatId, true)
-                            await stop()
-                            // Call DELETE endpoint to cancel server-side stream
-                            await fetch(
-                              `/api/agents/chat?id=${encodeURIComponent(subChatId)}`,
-                              { method: "DELETE", credentials: "include" },
-                            )
-                          }}
+                          onStop={handleStopStream}
                           isPlanMode={isPlanMode}
                         />
                       )}

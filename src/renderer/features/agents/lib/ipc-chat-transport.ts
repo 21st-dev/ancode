@@ -10,6 +10,7 @@ import { appStore } from "../../../lib/jotai-store"
 import { trpcClient } from "../../../lib/trpc"
 import {
   askUserQuestionResultsAtom,
+  chatWaitingForUserAtom,
   compactingSubChatsAtom,
   lastSelectedModelIdAtom,
   MODEL_ID_MAP,
@@ -115,6 +116,9 @@ export class IPCChatTransport implements ChatTransport<UIMessage> {
     messages: UIMessage[]
     abortSignal?: AbortSignal
   }): Promise<ReadableStream<UIMessageChunk>> {
+    // Clear waiting-for-user state when user sends a new message
+    appStore.set(chatWaitingForUserAtom, null)
+
     // Extract prompt and images from last user message
     const lastUser = [...options.messages]
       .reverse()
@@ -288,9 +292,11 @@ export class IPCChatTransport implements ChatTransport<UIMessage> {
                 }
               }
 
-              // Stream complete sound
+              // Stream complete sound + set waiting for user state
               if (chunk.type === "finish") {
                 soundManager.play("stop")
+                // Mark this chat as waiting for user input (triggers nagging sound)
+                appStore.set(chatWaitingForUserAtom, this.config.subChatId)
               }
 
               // Clear pending questions ONLY when agent has moved on

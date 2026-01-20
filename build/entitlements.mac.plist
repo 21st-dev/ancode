@@ -12,6 +12,8 @@
     <true/>
     <key>com.apple.security.network.server</key>
     <true/>
+    <key>com.apple.developer.usernotifications.filtering</key>
+    <true/>
 </dict>
 </plist>
 
