@@ -941,7 +941,7 @@ export function DataViewerSidebar({
         <button
           onClick={() => setShowQueryPanel((prev) => !prev)}
           className={cn(
-            "w-full px-2 py-1.5 flex items-center justify-between hover:bg-muted transition-[background-color] duration-150",
+            "w-full px-2 py-1.5 flex items-center justify-between hover:bg-muted/50 transition-[background-color] duration-150",
             showQueryPanel && "border-b border-border/50"
           )}
         >
