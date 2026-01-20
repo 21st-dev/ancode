@@ -34,6 +34,7 @@ export type BuiltinCommandAction =
   | { type: "plan" }
   | { type: "agent" }
   | { type: "compact" }
+  | { type: "context" }
   // Prompt-based commands (send to agent)
   | { type: "review" }
   | { type: "pr-comments" }

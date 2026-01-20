@@ -64,6 +64,13 @@ export const BUILTIN_SLASH_COMMANDS: SlashCommandOption[] = [
     description: "Compact conversation context to reduce token usage",
     category: "builtin",
   },
+  {
+    id: "builtin:context",
+    name: "context",
+    command: "/context",
+    description: "Show context window usage breakdown",
+    category: "builtin",
+  },
   // Prompt-based commands
   {
     id: "builtin:review",

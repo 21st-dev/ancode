@@ -404,9 +404,11 @@ class SoundManager {
         release: 0.25,
       })
       synth.volume.value = VOL.PROMINENT
-      synth.triggerAttackRelease("E4", "16n")
-      setTimeout(() => synth.triggerAttackRelease("G4", "16n"), 80)
-      setTimeout(() => synth.triggerAttackRelease("C5", "8n"), 160)
+      // Use Tone.now() for precise scheduling to avoid timing conflicts
+      const now = Tone.now()
+      synth.triggerAttackRelease("E4", "16n", now)
+      synth.triggerAttackRelease("G4", "16n", now + 0.08)
+      synth.triggerAttackRelease("C5", "8n", now + 0.16)
       this.releaseSynth(synth, 600)
     },
 
@@ -423,10 +425,11 @@ class SoundManager {
         VOL.NORMAL,
         1200,
       )
-      // Pleasant ascending major chord arpeggio
-      synth.triggerAttackRelease("C5", "8n")
-      setTimeout(() => synth.triggerAttackRelease("E5", "8n"), 80)
-      setTimeout(() => synth.triggerAttackRelease("G5", "8n"), 160)
+      // Pleasant ascending major chord arpeggio - use Tone.now() for precise scheduling
+      const now = Tone.now()
+      synth.triggerAttackRelease("C5", "8n", now)
+      synth.triggerAttackRelease("E5", "8n", now + 0.08)
+      synth.triggerAttackRelease("G5", "8n", now + 0.16)
     },
 
     thinking: () => {

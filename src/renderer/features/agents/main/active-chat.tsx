@@ -2437,6 +2437,11 @@ function ChatViewInner({
             // Trigger context compaction
             handleCompact()
             break
+          case "context":
+            // Send /context to Claude Code to get real context breakdown
+            editorRef.current?.setValue("/context")
+            setTimeout(() => handleSend(), 0)
+            break
           // Prompt-based commands - auto-send to agent
           case "review":
           case "pr-comments":

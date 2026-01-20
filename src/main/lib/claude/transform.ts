@@ -73,7 +73,7 @@ export function createTransformer() {
   }
 
   return function* transform(msg: any): Generator<UIMessageChunk> {
-    // Debug: log all message types to understand what SDK sends
+    // Debug: log system messages
     if (msg.type === "system") {
       console.log("[transform] SYSTEM message:", msg.subtype, msg)
     }
@@ -381,6 +381,28 @@ export function createTransformer() {
           preTokens,
         }
         lastCompactId = null // Clear for next compacting cycle
+      }
+    }
+
+    // ===== USER MESSAGE WITH SLASH COMMAND OUTPUT =====
+    // Claude Code wraps /context (and other slash commands) output in user messages
+    // with <local-command-stdout> tags - extract and display as assistant text
+    if (msg.type === "user" && msg.message?.content) {
+      const content = msg.message.content
+      const stdoutMatch = content.match(/<local-command-stdout>([\s\S]*?)<\/local-command-stdout>/)
+      if (stdoutMatch) {
+        const commandOutput = stdoutMatch[1].trim()
+        console.log("[transform] SLASH COMMAND OUTPUT detected, length:", commandOutput.length)
+        // Emit as text so it shows in the UI
+        yield* endTextBlock()
+        yield* endToolInput()
+        textId = genId()
+        yield { type: "text-start", id: textId }
+        yield { type: "text-delta", id: textId, delta: commandOutput }
+        yield { type: "text-end", id: textId }
+        lastTextId = textId
+        textStarted = false
+        textId = null
       }
     }
 
