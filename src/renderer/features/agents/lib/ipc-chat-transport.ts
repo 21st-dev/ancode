@@ -131,9 +131,15 @@ export class IPCChatTransport implements ChatTransport<UIMessage> {
     const thinkingEnabled = appStore.get(extendedThinkingEnabledAtom)
     const maxThinkingTokens = thinkingEnabled ? 128_000 : undefined
 
-    // Use model from config (per-chat) or fall back to global atom
-    // Config model takes priority to avoid race conditions when switching chats
-    const modelId = this.config.model || appStore.get(lastSelectedModelIdAtom)
+    // Use per-sub-chat model from store, fall back to config (seed), then global atom
+    // This lets model switches apply to the next send without recreating the Chat instance.
+    const subChatModelId =
+      useAgentSubChatStore
+        .getState()
+        .allSubChats.find((subChat) => subChat.id === this.config.subChatId)
+        ?.modelId
+    const modelId =
+      subChatModelId || this.config.model || appStore.get(lastSelectedModelIdAtom)
     const modelString = MODEL_ID_MAP[modelId]
 
     const currentMode =

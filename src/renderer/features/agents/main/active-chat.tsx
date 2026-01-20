@@ -3719,15 +3719,12 @@ export function ChatView({
     (modelId: "opus" | "sonnet" | "haiku") => {
       if (!activeSubChatId) return
 
-      // Optimistically update local store so transport recreation uses the new model
+      // Optimistically update local store so the next send uses the new model
       useAgentSubChatStore.getState().updateSubChatModel(activeSubChatId, modelId)
 
       updateSubChatModelMutation.mutate({ id: activeSubChatId, modelId })
-      // Invalidate cached chat so transport gets recreated with new model
-      agentChatStore.delete(activeSubChatId)
-      forceUpdate({})
     },
-    [chatId, activeSubChatId, updateSubChatModelMutation, forceUpdate],
+    [activeSubChatId, updateSubChatModelMutation],
   )
 
   // Check if this workspace is archived
