@@ -235,6 +235,15 @@ export const analyticsOptOutAtom = atomWithStorage<boolean>(
   { getOnInit: true },
 )
 
+// Preferences - Disable Co-Authored-By Attribution
+// When true, Claude will not add "Co-authored-by: Claude" to git commits
+export const disableCoAuthoredByAtom = atomWithStorage<boolean>(
+  "preferences:disable-coauthored-by",
+  false, // Default to false (keep co-authored-by attribution)
+  undefined,
+  { getOnInit: true },
+)
+
 // Beta: Enable git features in diff sidebar (commit, staging, file selection)
 // When enabled, shows checkboxes for file selection and commit UI in diff sidebar
 // When disabled, shows simple file list with "Create PR" button
