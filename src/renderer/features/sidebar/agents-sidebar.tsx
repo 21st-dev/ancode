@@ -26,9 +26,9 @@ import { ArchivePopover } from "../agents/ui/archive-popover"
 import { ChevronDown, MoreHorizontal } from "lucide-react"
 // import { useRouter } from "next/navigation" // Desktop doesn't use next/navigation
 // import { useCombinedAuth } from "@/lib/hooks/use-combined-auth"
-const useCombinedAuth = () => ({ userId: null })
+const useCombinedAuth = () => ({ userId: null, isLoaded: true })
 // import { AuthDialog } from "@/components/auth/auth-dialog"
-const AuthDialog = () => null
+const AuthDialog = (_props: { open?: boolean; onOpenChange?: (open: boolean) => void }) => null
 // Desktop: archive is handled inline, not via hook
 // import { DiscordIcon } from "@/components/icons"
 import { DiscordIcon } from "../../icons"
@@ -789,7 +789,7 @@ const ChatListSection = React.memo(function ChatListSection({
 interface AgentsSidebarProps {
   userId?: string | null | undefined
   clerkUser?: any
-  desktopUser?: { id: string; email: string; name?: string } | null
+  desktopUser?: { id: string; email: string; name?: string | null; imageUrl?: string | null; username?: string | null } | null
   onSignOut?: () => void
   onToggleSidebar?: () => void
   isMobileFullscreen?: boolean
@@ -862,16 +862,16 @@ interface SidebarHeaderProps {
   isFullscreen: boolean | null
   isMobileFullscreen: boolean
   userId: string | null | undefined
-  desktopUser: { id: string; email: string; name?: string } | null
+  desktopUser: { id: string; email: string; name?: string | null; imageUrl?: string | null; username?: string | null } | null
   onSignOut: () => void
   onToggleSidebar?: () => void
   setSettingsDialogOpen: (open: boolean) => void
-  setSettingsActiveTab: (tab: string) => void
+  setSettingsActiveTab: (tab: any) => void // Accepts SetAtom from jotai
   setShortcutsDialogOpen: (open: boolean) => void
   setShowAuthDialog: (open: boolean) => void
-  handleSidebarMouseEnter: () => void
-  handleSidebarMouseLeave: () => void
-  closeButtonRef: React.RefObject<HTMLDivElement>
+  handleSidebarMouseEnter: (e?: React.MouseEvent) => void
+  handleSidebarMouseLeave: (e?: React.MouseEvent) => void
+  closeButtonRef: React.RefObject<HTMLDivElement | null>
 }
 
 const SidebarHeader = memo(function SidebarHeader({
@@ -1667,7 +1667,7 @@ export function AgentsSidebar({
 
     const filtered = searchQuery.trim()
       ? agentChats.filter((chat) =>
-          chat.name.toLowerCase().includes(searchQuery.toLowerCase()),
+          (chat.name || "").toLowerCase().includes(searchQuery.toLowerCase()),
         )
       : agentChats
 
@@ -2044,7 +2044,9 @@ export function AgentsSidebar({
     updateSidebarHoverUI(true)
   }, [updateSidebarHoverUI])
 
-  const handleSidebarMouseLeave = useCallback((e: React.MouseEvent) => {
+  const handleSidebarMouseLeave = useCallback((e?: React.MouseEvent) => {
+    // Handle case when called without event (e.g., from prop type requiring optional)
+    if (!e) return
     // Electron's drag region (WebkitAppRegion: "drag") returns a non-HTMLElement
     // object as relatedTarget. We preserve hover state in this case so the
     // traffic lights remain visible when hovering over the drag area.

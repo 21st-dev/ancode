@@ -228,3 +228,64 @@ npm version major  # 0.1.0 → 1.0.0
 - Git worktree per chat (isolation)
 - Claude Code execution in worktree path
 - Full feature parity with web app
+
+---
+
+## Code Marking Convention (MANDATORY) #P
+
+All AI-generated code MUST include approval markers. This enables tracking changes and protecting critical code.
+
+### Approval Markers
+
+| Marker | Meaning | AI Behavior |
+|--------|---------|-------------|
+| `#P` | **Phenix Approved** | MUST ask user before modifying this line/block |
+| `#NP` | **Not Phenix Approved** | Can be modified without explicit approval |
+
+### Language Syntax
+
+Always use the appropriate comment syntax for the language:
+
+| Language | Syntax |
+|----------|--------|
+| TypeScript/JavaScript | `// #P` or `/* #NP */` |
+| Python | `# #P` |
+| SQL | `-- #P` |
+| CSS/SCSS | `/* #P */` |
+| HTML | `<!-- #P -->` |
+| Rust | `// #P` |
+| Go | `// #P` |
+
+### Rules for AI Assistants
+
+1. **When generating new code**: Mark with `#NP` (Not Phenix Approved)
+2. **When modifying `#P` marked code**: STOP and ask user for explicit approval
+3. **When user explicitly approves**: Change `#NP` to `#P`
+4. **Block-level markers**: Place at the start of the block (function, class, etc.)
+5. **Line-level markers**: Place at the end of the line
+
+### Examples
+
+```typescript
+// #P - Critical authentication - DO NOT MODIFY without user approval
+export function authenticateUser(token: string): boolean {
+  // ... implementation
+}
+
+// #NP - Auto-generated helper function
+function formatDate(date: Date): string {
+  return date.toISOString()
+}
+```
+
+### Provider/Model Status Markers
+
+For multi-provider model configurations in the database:
+
+| Marker | Meaning |
+|--------|---------|
+| `A` | Active - Enabled and working |
+| `D` | Deactivated - Disabled by user |
+| `X` | Rejected - Wrong configuration or error |
+
+Used in comma-separated columns: `"A,D,X"` means Provider1 active, Provider2 deactivated, Provider3 rejected.

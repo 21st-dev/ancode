@@ -30,3 +30,4 @@ electron.vite.config.*.mjs
 
 # Claude binary (downloaded at build time)
 resources/bin/
+resources/cc-bin/win32-x64/claude.exe

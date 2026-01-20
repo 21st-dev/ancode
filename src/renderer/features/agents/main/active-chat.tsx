@@ -1353,7 +1353,7 @@ function ChatViewInner({
 
   // Memoize the last assistant message to avoid unnecessary recalculations
   const lastAssistantMessage = useMemo(
-    () => messages.findLast((m) => m.role === "assistant"),
+    () => [...messages].reverse().find((m: { role: string }) => m.role === "assistant"),
     [messages],
   )
 
@@ -3060,13 +3060,16 @@ export function ChatView({
       // Desktop: use IPCChatTransport for local Claude Code execution
       // Note: Extended thinking setting is read dynamically inside the transport
       // projectPath: original project path for MCP config lookup (worktreePath is the cwd)
+      // projectId: database ID for per-project model preference resolution
       const projectPath = (agentChat as any)?.project?.path as string | undefined
+      const projectId = (agentChat as any)?.projectId as string | undefined
       const transport = worktreePath
         ? new IPCChatTransport({
             chatId,
             subChatId,
             cwd: worktreePath,
             projectPath,
+            projectId,
             mode: subChatMode,
           })
         : null // Web transport not supported in desktop app
@@ -3176,7 +3179,7 @@ export function ChatView({
     const newId = newSubChat.id
 
     // Track this subchat as just created for typewriter effect
-    setJustCreatedIds((prev) => new Set([...prev, newId]))
+    setJustCreatedIds((prev: Set<string>) => new Set([...prev, newId]))
 
     // Add to allSubChats with placeholder name
     store.addToAllSubChats({
@@ -3195,12 +3198,15 @@ export function ChatView({
       // Desktop: use IPCChatTransport for local Claude Code execution
       // Note: Extended thinking setting is read dynamically inside the transport
       // projectPath: original project path for MCP config lookup (worktreePath is the cwd)
+      // projectId: database ID for per-project model preference resolution
       const projectPath = (agentChat as any)?.project?.path as string | undefined
+      const projectId = (agentChat as any)?.projectId as string | undefined
       const transport = new IPCChatTransport({
         chatId,
         subChatId: newId,
         cwd: worktreePath,
         projectPath,
+        projectId,
         mode: subChatMode,
       })
 
@@ -3596,10 +3602,10 @@ export function ChatView({
             .getState()
             .updateSubChatName(subChatIdToUpdate, name)
           // Also update query cache so init effect doesn't overwrite
-          utils.agents.getAgentChat.setData({ chatId }, (old) => {
+          utils.agents.getAgentChat.setData({ chatId }, (old: any) => {
             if (!old) return old
             const existsInCache = old.subChats.some(
-              (sc) => sc.id === subChatIdToUpdate,
+              (sc: { id: string }) => sc.id === subChatIdToUpdate,
             )
             if (!existsInCache) {
               // Sub-chat not in cache yet (DB save still in flight) - add it
@@ -3622,7 +3628,7 @@ export function ChatView({
             }
             return {
               ...old,
-              subChats: old.subChats.map((sc) =>
+              subChats: old.subChats.map((sc: { id: string }) =>
                 sc.id === subChatIdToUpdate ? { ...sc, name } : sc,
               ),
             }
@@ -3633,9 +3639,9 @@ export function ChatView({
           // On desktop, selectedTeamId is always null, so we update unconditionally
           utils.agents.getAgentChats.setData(
             { teamId: selectedTeamId },
-            (old) => {
+            (old: any) => {
               if (!old) return old
-              return old.map((c) =>
+              return old.map((c: { id: string }) =>
                 c.id === chatIdToUpdate ? { ...c, name } : c,
               )
             },
@@ -4240,7 +4246,7 @@ export function ChatView({
                   <AgentDiffView
                     ref={diffViewRef}
                     chatId={chatId}
-                    sandboxId={sandboxId}
+                    sandboxId={sandboxId ?? ""}
                     worktreePath={worktreePath || undefined}
                     repository={repository}
                     onStatsChange={setDiffStats}

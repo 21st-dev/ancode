@@ -1,0 +1,12 @@
+[submodule "external-tools/claude-code-router"]
+	path = external-tools/claude-code-router
+	url = https://github.com/musistudio/claude-code-router.git
+[submodule "external-tools/ccs"]
+	path = external-tools/ccs
+	url = https://github.com/kaitranntt/ccs.git
+[submodule "external-tools/claude-mem"]
+	path = external-tools/claude-mem
+	url = https://github.com/thedotmack/claude-mem.git
+[submodule "external-tools/cli-proxy-api-plus"]
+	path = external-tools/cli-proxy-api-plus
+	url = https://github.com/router-for-me/CLIProxyAPIplus.git

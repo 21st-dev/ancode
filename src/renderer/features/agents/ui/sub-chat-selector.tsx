@@ -206,6 +206,9 @@ export function SubChatSelector({
     return set
   }, [pendingPlanApprovalsData])
 
+  // State for controlling history popover from SubChatSelector
+  const [isHistoryOpen, setIsHistoryOpen] = useState(false)
+
   const tabsContainerRef = useRef<HTMLDivElement>(null)
   const tabRefs = useRef<Map<string, HTMLButtonElement>>(new Map())
   const textRefs = useRef<Map<string, HTMLSpanElement>>(new Map())

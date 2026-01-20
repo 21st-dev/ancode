@@ -26,7 +26,7 @@ import {
   PromptInputContextItems,
 } from "../../../components/ui/prompt-input"
 import { cn } from "../../../lib/utils"
-import { isPlanModeAtom, lastSelectedModelIdAtom } from "../atoms"
+import { isPlanModeAtom } from "../atoms"
 import { AgentsSlashCommand, COMMAND_PROMPTS, type SlashCommandOption } from "../commands"
 import { AgentSendButton } from "../components/agent-send-button"
 import {
@@ -44,12 +44,7 @@ import {
   clearSubChatDraft,
 } from "../lib/drafts"
 import { type SubChatFileChange } from "../atoms"
-
-// Claude models (same as in active-chat.tsx)
-const claudeModels = [
-  { id: "sonnet", name: "Sonnet" },
-  { id: "opus", name: "Opus" },
-]
+import { ModelSelector } from "../components/model-selector"
 
 export interface ChatInputAreaProps {
   // Editor ref - passed from parent for external access
@@ -246,12 +241,8 @@ export const ChatInputArea = memo(function ChatInputArea({
   const tooltipTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const hasShownTooltipRef = useRef(false)
 
-  // Model dropdown state
-  const [isModelDropdownOpen, setIsModelDropdownOpen] = useState(false)
-  const [lastSelectedModelId, setLastSelectedModelId] = useAtom(lastSelectedModelIdAtom)
-  const [selectedModel, setSelectedModel] = useState(
-    () => claudeModels.find((m) => m.id === lastSelectedModelId) || claudeModels[1],
-  )
+  // Model selection state (legacy - kept for keyboard shortcut compat)
+  const [isModelSelectorOpen, setIsModelSelectorOpen] = useState(false)
 
   // Plan mode - global atom
   const [isPlanMode, setIsPlanMode] = useAtom(isPlanModeAtom)
@@ -269,7 +260,7 @@ export const ChatInputArea = memo(function ChatInputArea({
       if (e.metaKey && e.key === "/") {
         e.preventDefault()
         e.stopPropagation()
-        setIsModelDropdownOpen(true)
+        setIsModelSelectorOpen(true)
       }
     }
 
@@ -707,50 +698,8 @@ export const ChatInputArea = memo(function ChatInputArea({
                       )}
                   </DropdownMenu>
 
-                  {/* Model selector */}
-                  <DropdownMenu
-                    open={isModelDropdownOpen}
-                    onOpenChange={setIsModelDropdownOpen}
-                  >
-                    <DropdownMenuTrigger asChild>
-                      <button className="flex items-center gap-1.5 px-2 py-1 text-sm text-muted-foreground hover:text-foreground transition-colors rounded-md hover:bg-muted/50 outline-offset-2 focus-visible:outline focus-visible:outline-2 focus-visible:outline-ring/70">
-                        <ClaudeCodeIcon className="h-3.5 w-3.5" />
-                        <span>
-                          {selectedModel?.name}{" "}
-                          <span className="text-muted-foreground">4.5</span>
-                        </span>
-                        <ChevronDown className="h-3 w-3 shrink-0 opacity-50" />
-                      </button>
-                    </DropdownMenuTrigger>
-                    <DropdownMenuContent align="start" className="w-[150px]">
-                      {claudeModels.map((model) => {
-                        const isSelected = selectedModel?.id === model.id
-                        return (
-                          <DropdownMenuItem
-                            key={model.id}
-                            onClick={() => {
-                              setSelectedModel(model)
-                              setLastSelectedModelId(model.id)
-                            }}
-                            className="gap-2 justify-between"
-                          >
-                            <div className="flex items-center gap-1.5">
-                              <ClaudeCodeIcon className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
-                              <span>
-                                {model.name}{" "}
-                                <span className="text-muted-foreground">
-                                  4.5
-                                </span>
-                              </span>
-                            </div>
-                            {isSelected && (
-                              <CheckIcon className="h-3.5 w-3.5 shrink-0" />
-                            )}
-                          </DropdownMenuItem>
-                        )
-                      })}
-                    </DropdownMenuContent>
-                  </DropdownMenu>
+                  {/* Model selector - per-project provider/model selection */}
+                  <ModelSelector disabled={isStreaming} />
                 </div>
 
                 <div className="flex items-center gap-0.5 ml-auto flex-shrink-0">

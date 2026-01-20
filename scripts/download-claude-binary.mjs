@@ -16,13 +16,14 @@ import { fileURLToPath } from "node:url"
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const ROOT_DIR = path.join(__dirname, "..")
-const BIN_DIR = path.join(ROOT_DIR, "resources", "bin")
+const BIN_DIR = path.join(ROOT_DIR, "resources", "cc-bin")
 
 // Claude Code distribution base URL
 const DIST_BASE =
   "https://storage.googleapis.com/claude-code-dist-86c565f3-f756-42ad-8dfa-d59b1c096819/claude-code-releases"
 
 // Platform mappings
+// binary = name on distribution server and local (kept as original claude/claude.exe)
 const PLATFORMS = {
   "darwin-arm64": { dir: "darwin-arm64", binary: "claude" },
   "darwin-x64": { dir: "darwin-x64", binary: "claude" },

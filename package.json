@@ -28,6 +28,9 @@
     "db:push": "drizzle-kit push",
     "db:studio": "drizzle-kit studio",
     "ts:check": "tsgo --noEmit",
+    "tools:init": "git submodule update --init --recursive",
+    "tools:update": "git submodule update --remote --merge",
+    "tools:status": "git submodule status",
     "postinstall": "node -e \"if(!process.env.VERCEL){require('child_process').execSync('electron-rebuild -f -o better-sqlite3',{stdio:'inherit'})}\""
   },
   "overrides": {
@@ -78,6 +81,8 @@
     "electron-updater": "^6.7.3",
     "gray-matter": "^4.0.3",
     "jotai": "^2.11.1",
+    "js-yaml": "^4.1.1",
+    "json5": "^2.2.3",
     "lucide-react": "^0.468.0",
     "marked": "^17.0.1",
     "motion": "^11.15.0",
@@ -110,6 +115,7 @@
     "@electron-toolkit/preload": "^3.0.1",
     "@electron-toolkit/utils": "^4.0.0",
     "@types/better-sqlite3": "^7.6.13",
+    "@types/js-yaml": "^4.0.9",
     "@types/node": "^20.17.50",
     "@types/react": "^19.0.7",
     "@types/react-dom": "^19.0.3",
@@ -158,15 +164,15 @@
         "to": "migrations"
       },
       {
-        "from": "resources/bin/${platform}-${arch}",
-        "to": "bin",
+        "from": "resources/cc-bin/${platform}-${arch}",
+        "to": "cc-bin",
         "filter": [
           "**/*"
         ]
       },
       {
-        "from": "resources/bin/VERSION",
-        "to": "bin/VERSION"
+        "from": "resources/cc-bin/VERSION",
+        "to": "cc-bin/VERSION"
       }
     ],
     "asar": true,

@@ -528,7 +528,9 @@ const FileDiffCard = memo(function FileDiffCard({
                   diffViewMode={diffMode}
                   diffViewHighlight={!!shikiHighlighter}
                   diffViewWrap={false}
-                  registerHighlighter={shikiHighlighter ?? undefined}
+                  // Type assertion: our DiffHighlighter.getAST returns Root | undefined,
+                  // but library expects Root. In practice, getAST always returns Root.
+                  registerHighlighter={shikiHighlighter as Parameters<typeof DiffView>[0]["registerHighlighter"]}
                 />
               </DiffErrorBoundary>
             </div>

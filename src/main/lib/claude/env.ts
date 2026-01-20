@@ -34,11 +34,11 @@ export function getBundledClaudeBinaryPath(): string {
   console.log("[claude-binary] arch:", arch)
   console.log("[claude-binary] appPath:", app.getAppPath())
 
-  // In dev: apps/desktop/resources/bin/{platform}-{arch}/claude
-  // In production: {resourcesPath}/bin/claude
+  // In dev: apps/desktop/resources/cc-bin/{platform}-{arch}/claude
+  // In production: {resourcesPath}/cc-bin/claude
   const resourcesPath = isDev
-    ? path.join(app.getAppPath(), "resources/bin", `${platform}-${arch}`)
-    : path.join(process.resourcesPath, "bin")
+    ? path.join(app.getAppPath(), "resources/cc-bin", `${platform}-${arch}`)
+    : path.join(process.resourcesPath, "cc-bin")
 
   console.log("[claude-binary] resourcesPath:", resourcesPath)
 

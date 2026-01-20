@@ -18,6 +18,13 @@ import { AgentsDebugTab } from "./settings-tabs/agents-debug-tab"
 import { AgentsSkillsTab } from "./settings-tabs/agents-skills-tab"
 import { AgentsCustomAgentsTab } from "./settings-tabs/agents-custom-agents-tab"
 import { AgentsMcpTab } from "./settings-tabs/agents-mcp-tab"
+import { AgentsProviderTab } from "./settings-tabs/agents-provider-tab"
+import { AgentsRoutingTab } from "./settings-tabs/agents-routing-tab"
+import { AgentsIntegrationsTab } from "./settings-tabs/agents-integrations-tab"
+import { AgentsCCSTab } from "./settings-tabs/agents-ccs-tab"
+import { AgentsCCRProvidersTab } from "./settings-tabs/agents-ccr-providers-tab"
+import { AgentsCCRRoutingTab } from "./settings-tabs/agents-ccr-routing-tab"
+import { Cpu, GitBranch, Plug, Server, Router } from "lucide-react"
 
 // Hook to detect narrow screen
 function useIsNarrowScreen(): boolean {
@@ -64,6 +71,18 @@ const ALL_TABS = [
     description: "Claude behavior settings",
   },
   {
+    id: "providers" as SettingsTab,
+    label: "Providers",
+    icon: Cpu,
+    description: "AI provider configuration",
+  },
+  {
+    id: "routing" as SettingsTab,
+    label: "Task Routing",
+    icon: GitBranch,
+    description: "Route tasks to providers",
+  },
+  {
     id: "skills" as SettingsTab,
     label: "Skills",
     icon: SkillIconFilled,
@@ -82,6 +101,33 @@ const ALL_TABS = [
     label: "MCP Servers",
     icon: OriginalMCPIcon,
     description: "Model Context Protocol servers",
+  },
+  {
+    id: "integrations" as SettingsTab,
+    label: "Integrations",
+    icon: Plug,
+    description: "External tool integrations",
+  },
+  {
+    id: "ccs" as SettingsTab,
+    label: "CCS Profiles",
+    icon: Server,
+    description: "Claude Code Switch profiles",
+    beta: true,
+  },
+  {
+    id: "ccrProviders" as SettingsTab,
+    label: "CCR Providers",
+    icon: Router,
+    description: "Claude Code Router providers",
+    beta: true,
+  },
+  {
+    id: "ccrRouting" as SettingsTab,
+    label: "CCR Routing",
+    icon: GitBranch,
+    description: "CCR task routing configuration",
+    beta: true,
   },
   // Debug tab - always shown in desktop for development
   ...(isDevelopment
@@ -206,12 +252,24 @@ export function AgentsSettingsDialog({
         return <AgentsAppearanceTab />
       case "preferences":
         return <AgentsPreferencesTab />
+      case "providers":
+        return <AgentsProviderTab />
+      case "routing":
+        return <AgentsRoutingTab />
       case "skills":
         return <AgentsSkillsTab />
       case "agents":
         return <AgentsCustomAgentsTab />
       case "mcp":
         return <AgentsMcpTab />
+      case "integrations":
+        return <AgentsIntegrationsTab />
+      case "ccs":
+        return <AgentsCCSTab />
+      case "ccrProviders":
+        return <AgentsCCRProvidersTab />
+      case "ccrRouting":
+        return <AgentsCCRRoutingTab />
       case "debug":
         return isDevelopment ? <AgentsDebugTab /> : null
       default:

@@ -173,7 +173,9 @@ export const AgentTodoTool = memo(function AgentTodoTool({
     () => currentTodosAtomFamily(subChatId || "default"),
     [subChatId],
   )
-  const [syncedTodos, setSyncedTodos] = useAtom(todosAtom)
+  const [todoState, setTodoState] = useAtom(todosAtom)
+  // Extract todos array from TodoState object
+  const syncedTodos = todoState.todos
 
   // Get todos from input or output.newTodos
   const oldTodos = part.output?.oldTodos || []
@@ -193,9 +195,9 @@ export const AgentTodoTool = memo(function AgentTodoTool({
   // This keeps the creation tool in sync with all updates
   useEffect(() => {
     if (newTodos.length > 0) {
-      setSyncedTodos(newTodos)
+      setTodoState({ todos: newTodos, creationToolCallId: part.toolCallId })
     }
-  }, [newTodos, setSyncedTodos])
+  }, [newTodos, setTodoState, part.toolCallId])
 
   // Auto-expand on creation
   useEffect(() => {

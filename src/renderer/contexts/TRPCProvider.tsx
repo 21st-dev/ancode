@@ -1,11 +1,19 @@
 import { useState } from "react"
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import { ipcLink } from "trpc-electron/renderer"
+import { httpBatchLink } from "@trpc/client"
 import { trpc } from "../lib/trpc"
 import superjson from "superjson"
 
 interface TRPCProviderProps {
   children: React.ReactNode
+}
+
+/**
+ * Check if running in Electron environment
+ */
+const isElectron = () => {
+  return !!(window && (window as any).electronTRPC)
 }
 
 // Global query client instance for use outside React components
@@ -36,9 +44,15 @@ export function TRPCProvider({ children }: TRPCProviderProps) {
   })
 
   const [trpcClient] = useState(() => {
-    const client = trpc.createClient({
-      links: [ipcLink({ transformer: superjson })],
-    })
+    // Use IPC link in Electron, HTTP link in web dev
+    const link = isElectron()
+      ? ipcLink({ transformer: superjson })
+      : httpBatchLink({
+          url: "/trpc",
+          transformer: superjson,
+        })
+
+    const client = trpc.createClient({ links: [link] })
     return client
   })
 

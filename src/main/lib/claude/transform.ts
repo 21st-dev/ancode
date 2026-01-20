@@ -162,7 +162,7 @@ export function createTransformer() {
         yield {
           type: "tool-input-start",
           toolCallId: currentToolCallId,
-          toolName: currentToolName,
+          toolName: currentToolName || "unknown",
         }
       }
 

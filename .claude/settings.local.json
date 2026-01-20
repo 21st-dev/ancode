@@ -1,0 +1,15 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(sqlite3:*)",
+      "Bash(bunx tsc:*)",
+      "Bash(bun run build:*)",
+      "Bash(bun add:*)",
+      "Bash(bun run dev)",
+      "Bash(timeout /t 15 /nobreak)",
+      "Bash(npx tsc:*)",
+      "Bash(./node_modules/.bin/tsc:*)",
+      "Bash(bun run:*)"
+    ]
+  }
+}

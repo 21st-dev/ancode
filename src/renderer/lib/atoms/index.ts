@@ -163,7 +163,7 @@ export const clearSubChatSelectionAtom = atom(null, (_get, set) => {
 // ============================================
 
 // Settings dialog
-export type SettingsTab = "profile" | "appearance" | "preferences" | "skills" | "agents" | "mcp" | "debug"
+export type SettingsTab = "profile" | "appearance" | "preferences" | "providers" | "routing" | "skills" | "agents" | "mcp" | "integrations" | "ccs" | "ccrProviders" | "ccrRouting" | "debug"
 export const agentsSettingsDialogActiveTabAtom = atom<SettingsTab>("profile")
 export const agentsSettingsDialogOpenAtom = atom<boolean>(false)
 

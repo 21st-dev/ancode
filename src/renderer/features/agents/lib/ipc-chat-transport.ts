@@ -92,6 +92,7 @@ type IPCChatTransportConfig = {
   subChatId: string
   cwd: string
   projectPath?: string // Original project path for MCP config lookup (when using worktrees)
+  projectId?: string // Project DB ID for model preference resolution
   mode: "plan" | "agent"
   model?: string
 }
@@ -152,6 +153,7 @@ export class IPCChatTransport implements ChatTransport<UIMessage> {
             prompt,
             cwd: this.config.cwd,
             projectPath: this.config.projectPath, // Original project path for MCP config lookup
+            projectId: this.config.projectId, // Project DB ID for model preference resolution
             mode: currentMode,
             sessionId,
             ...(maxThinkingTokens && { maxThinkingTokens }),

@@ -4,6 +4,8 @@ import { createServer } from "http"
 import { readFileSync, existsSync, unlinkSync, readlinkSync } from "fs"
 import * as Sentry from "@sentry/electron/main"
 import { initDatabase, closeDatabase } from "./lib/db"
+import { migrateProviders } from "./lib/db/migrate-providers"
+import { initializeIntegrations, cleanupIntegrations } from "./lib/integrations"
 import { createMainWindow, getWindow, showLoginPage } from "./windows/main"
 import { AuthManager } from "./auth-manager"
 import {
@@ -428,8 +430,8 @@ if (gotTheLock) {
     try {
       const isDev = !app.isPackaged
       const versionPath = isDev
-        ? join(app.getAppPath(), "resources/bin/VERSION")
-        : join(process.resourcesPath, "bin/VERSION")
+        ? join(app.getAppPath(), "resources/cc-bin/VERSION")
+        : join(process.resourcesPath, "cc-bin/VERSION")
 
       if (existsSync(versionPath)) {
         const versionContent = readFileSync(versionPath, "utf-8")
@@ -614,6 +616,10 @@ if (gotTheLock) {
     try {
       initDatabase()
       console.log("[App] Database initialized")
+      // Migrate existing OAuth to providers system
+      migrateProviders()
+      // Initialize external tool integrations (CCS, etc.)
+      await initializeIntegrations()
     } catch (error) {
       console.error("[App] Failed to initialize database:", error)
     }
@@ -658,6 +664,7 @@ if (gotTheLock) {
   // Cleanup before quit
   app.on("before-quit", async () => {
     console.log("[App] Shutting down...")
+    await cleanupIntegrations()
     await shutdownAnalytics()
     await closeDatabase()
   })

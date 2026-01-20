@@ -13,7 +13,7 @@ import {
   logRawClaudeMessage,
   type UIMessageChunk,
 } from "../../claude"
-import { chats, claudeCodeCredentials, getDatabase, subChats } from "../../db"
+import { chats, claudeCodeCredentials, aiProviders, taskRouting, getDatabase, subChats, projects } from "../../db"
 import { publicProcedure, router } from "../index"
 import { buildAgentsOption } from "./agent-utils"
 
@@ -120,6 +120,192 @@ function getClaudeCodeToken(): string | null {
   }
 }
 
+/**
+ * Get the primary provider credentials
+ * Returns environment variables to set for the Claude SDK
+ * NOTE: Claude SDK only works with Anthropic-compatible providers
+ */
+function getPrimaryProviderEnv(): Record<string, string> {
+  try {
+    const db = getDatabase()
+    const provider = db
+      .select()
+      .from(aiProviders)
+      .where(eq(aiProviders.role, "primary"))
+      .get()
+
+    if (!provider) {
+      // No provider configured, fall back to OAuth token if available
+      const oauthToken = getClaudeCodeToken()
+      if (oauthToken) {
+        return { CLAUDE_CODE_OAUTH_TOKEN: oauthToken }
+      }
+      console.log("[claude] No primary provider configured")
+      return {}
+    }
+
+    if (provider.type === "anthropic_oauth") {
+      // OAuth provider - get token from credentials table
+      const oauthToken = getClaudeCodeToken()
+      if (oauthToken) {
+        return { CLAUDE_CODE_OAUTH_TOKEN: oauthToken }
+      }
+      console.log("[claude] OAuth provider configured but no token found")
+      return {}
+    }
+
+    // API key provider - check if it's Anthropic-compatible
+    // Claude SDK only works with Anthropic API format, not OpenAI format
+    if (provider.apiFormat && provider.apiFormat !== "anthropic") {
+      console.log(`[claude] Primary provider ${provider.name} uses ${provider.apiFormat} format (not compatible with Claude SDK)`)
+      // Fall back to OAuth token if available
+      const oauthToken = getClaudeCodeToken()
+      if (oauthToken) {
+        console.log("[claude] Falling back to OAuth token")
+        return { CLAUDE_CODE_OAUTH_TOKEN: oauthToken }
+      }
+      console.log("[claude] No fallback OAuth token available")
+      return {}
+    }
+
+    if (!provider.apiKey) {
+      console.log("[claude] API key provider configured but no key found")
+      return {}
+    }
+
+    const apiKey = decryptToken(provider.apiKey)
+    const env: Record<string, string> = {
+      ANTHROPIC_AUTH_TOKEN: apiKey,
+    }
+
+    if (provider.baseUrl) {
+      env.ANTHROPIC_BASE_URL = provider.baseUrl
+    }
+
+    console.log(`[claude] Using provider: ${provider.name} (${provider.type})`)
+    return env
+  } catch (error) {
+    console.error("[claude] Error getting provider credentials:", error)
+    return {}
+  }
+}
+
+/**
+ * Get provider credentials for a specific agent type (for orchestrator routing)
+ * Falls back to primary provider if no routing is configured
+ */
+function getProviderEnvForAgent(agentType: string): Record<string, string> {
+  try {
+    const db = getDatabase()
+
+    // Check if there's a routing config for this agent type
+    const routing = db
+      .select()
+      .from(taskRouting)
+      .where(eq(taskRouting.agentType, agentType))
+      .get()
+
+    if (!routing?.providerId || !routing.isEnabled) {
+      // No routing configured, use primary provider
+      return getPrimaryProviderEnv()
+    }
+
+    // Get the mapped provider
+    const provider = db
+      .select()
+      .from(aiProviders)
+      .where(eq(aiProviders.id, routing.providerId))
+      .get()
+
+    if (!provider) {
+      console.log(`[claude] Routed provider not found for ${agentType}, using primary`)
+      return getPrimaryProviderEnv()
+    }
+
+    if (provider.type === "anthropic_oauth") {
+      const oauthToken = getClaudeCodeToken()
+      if (oauthToken) {
+        return { CLAUDE_CODE_OAUTH_TOKEN: oauthToken }
+      }
+      return getPrimaryProviderEnv()
+    }
+
+    if (!provider.apiKey) {
+      console.log(`[claude] No API key for routed provider ${provider.name}`)
+      return getPrimaryProviderEnv()
+    }
+
+    const apiKey = decryptToken(provider.apiKey)
+    const env: Record<string, string> = {
+      ANTHROPIC_AUTH_TOKEN: apiKey,
+    }
+
+    if (provider.baseUrl) {
+      env.ANTHROPIC_BASE_URL = provider.baseUrl
+    }
+
+    console.log(`[claude] Using routed provider for ${agentType}: ${provider.name}`)
+    return env
+  } catch (error) {
+    console.error(`[claude] Error getting provider for ${agentType}:`, error)
+    return getPrimaryProviderEnv()
+  }
+}
+
+/**
+ * Get the preferred model for a project
+ * Returns modelId string if project has a preference AND the provider is Claude-compatible
+ * (Claude SDK only works with Anthropic models)
+ */
+function getProjectPreferredModel(projectId: string | undefined): string | null {
+  if (!projectId) return null
+
+  try {
+    const db = getDatabase()
+    const project = db
+      .select()
+      .from(projects)
+      .where(eq(projects.id, projectId))
+      .get()
+
+    if (!project?.preferredModelId || !project?.preferredProviderId) {
+      return null
+    }
+
+    // Check if the provider is Claude-compatible
+    const provider = db
+      .select()
+      .from(aiProviders)
+      .where(eq(aiProviders.id, project.preferredProviderId))
+      .get()
+
+    if (!provider) {
+      console.log(`[claude] Provider ${project.preferredProviderId} not found, using default model`)
+      return null
+    }
+
+    // Only use the model if provider is Anthropic OAuth or uses Anthropic API format
+    // Non-Anthropic providers (like GLM with OpenAI format) won't work with Claude SDK
+    if (provider.type === "anthropic_oauth") {
+      console.log(`[claude] Using project preferred model: ${project.preferredModelId}`)
+      return project.preferredModelId
+    }
+
+    // For API key providers, check if they use Anthropic API format
+    if (provider.type === "api_key" && provider.apiFormat === "anthropic") {
+      console.log(`[claude] Using project preferred model: ${project.preferredModelId} (Anthropic API)`)
+      return project.preferredModelId
+    }
+
+    // Non-Claude provider selected - can't use with Claude SDK
+    console.log(`[claude] Provider ${provider.name} uses ${provider.apiFormat || 'openai'} format, using default Claude model`)
+    return null
+  } catch (error) {
+    console.error(`[claude] Error getting project preferred model:`, error)
+    return null
+  }
+}
+
 // Dynamic import for ESM module
 const getClaudeQuery = async () => {
   const sdk = await import("@anthropic-ai/claude-agent-sdk")
@@ -169,9 +355,10 @@ export const claudeRouter = router({
         prompt: z.string(),
         cwd: z.string(),
         projectPath: z.string().optional(), // Original project path for MCP config lookup
+        projectId: z.string().optional(), // Project ID for model preferences
         mode: z.enum(["plan", "agent"]).default("agent"),
         sessionId: z.string().optional(),
-        model: z.string().optional(),
+        model: z.string().optional(), // Explicit model override
         maxThinkingTokens: z.number().optional(), // Enable extended thinking
         images: z.array(imageAttachmentSchema).optional(), // Image attachments
       }),
@@ -387,8 +574,8 @@ export const claudeRouter = router({
               logClaudeEnv(claudeEnv, `[${input.subChatId}] `)
             }
 
-            // Get Claude Code OAuth token from local storage (optional)
-            const claudeCodeToken = getClaudeCodeToken()
+            // Get provider credentials (from primary provider)
+            const providerEnv = getPrimaryProviderEnv()
 
             // Create isolated config directory per subChat to prevent session contamination
             // The Claude binary stores sessions in ~/.claude/ based on cwd, which causes
@@ -471,12 +658,10 @@ export const claudeRouter = router({
               console.error(`[claude] Failed to setup isolated config dir:`, mkdirErr)
             }
 
-            // Build final env - only add OAuth token if we have one
+            // Build final env with provider credentials
             const finalEnv = {
               ...claudeEnv,
-              ...(claudeCodeToken && {
-                CLAUDE_CODE_OAUTH_TOKEN: claudeCodeToken,
-              }),
+              ...providerEnv,
               // Re-enable CLAUDE_CONFIG_DIR now that we properly map MCP configs
               CLAUDE_CONFIG_DIR: isolatedConfigDir,
             }
@@ -484,8 +669,11 @@ export const claudeRouter = router({
             // Get bundled Claude binary path
             const claudeBinaryPath = getBundledClaudeBinaryPath()
 
+            // Resolve model: explicit override > project preference > default (SDK decides)
+            const resolvedModel = input.model || getProjectPreferredModel(input.projectId) || undefined
+
             const resumeSessionId = input.sessionId || existingSessionId || undefined
-            console.log(`[SD] Query options - cwd: ${input.cwd}, projectPath: ${input.projectPath || "(not set)"}, mcpServers: ${mcpServersForSdk ? Object.keys(mcpServersForSdk).join(", ") : "(none)"}`)
+            console.log(`[SD] Query options - cwd: ${input.cwd}, projectPath: ${input.projectPath || "(not set)"}, model: ${resolvedModel || "(default)"}, mcpServers: ${mcpServersForSdk ? Object.keys(mcpServersForSdk).join(", ") : "(none)"}`)
 
             const queryOptions = {
               prompt,
@@ -570,7 +758,7 @@ export const claudeRouter = router({
                         result: errorMessage,
                       } as UIMessageChunk)
                       return {
-                        behavior: "deny",
+                        behavior: "deny" as const,
                         message: errorMessage,
                       }
                     }
@@ -589,13 +777,13 @@ export const claudeRouter = router({
                       result: answerResult,
                     } as UIMessageChunk)
                     return {
-                      behavior: "allow",
-                      updatedInput: response.updatedInput,
+                      behavior: "allow" as const,
+                      updatedInput: response.updatedInput as Record<string, unknown>,
                     }
                   }
                   return {
-                    behavior: "allow",
-                    updatedInput: toolInput,
+                    behavior: "allow" as const,
+                    updatedInput: toolInput as Record<string, unknown>,
                   }
                 },
                 stderr: (data: string) => {
@@ -608,7 +796,7 @@ export const claudeRouter = router({
                   resume: resumeSessionId,
                   continue: true,
                 }),
-                ...(input.model && { model: input.model }),
+                ...(resolvedModel && { model: resolvedModel }),
                 // fallbackModel: "claude-opus-4-5-20251101",
                 ...(input.maxThinkingTokens && {
                   maxThinkingTokens: input.maxThinkingTokens,

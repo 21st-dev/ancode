@@ -364,8 +364,8 @@ export const api = {
   },
   // Stubs for features not needed in desktop
   teams: {
-    getUserTeams: { useQuery: () => ({ data: [], isLoading: false }) },
-    getTeam: { useQuery: () => ({ data: null, isLoading: false }) },
+    getUserTeams: { useQuery: (_input?: unknown, _opts?: unknown) => ({ data: [], isLoading: false }) },
+    getTeam: { useQuery: (_input?: unknown, _opts?: unknown) => ({ data: null, isLoading: false }) },
     updateTeam: {
       useMutation: () => ({
         mutate: () => {},
@@ -453,8 +453,8 @@ export const api = {
         }
       },
     },
-    getSlashCommands: { useQuery: () => ({ data: [], isLoading: false }) },
-    getUserInstallations: { useQuery: () => ({ data: [], isLoading: false }) },
+    getSlashCommands: { useQuery: (_input?: unknown, _options?: unknown) => ({ data: [] as Array<{ id: string; name: string; description: string; category: "repository"; command: string; prompt?: string; path?: string; repository?: string }>, isLoading: false }) },
+    getUserInstallations: { useQuery: (_input?: unknown, _options?: unknown) => ({ data: [], isLoading: false }) },
     getGithubConnection: {
       useQuery: () => ({ data: { isConnected: false }, isLoading: false }),
     },

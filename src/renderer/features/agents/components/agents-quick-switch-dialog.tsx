@@ -11,10 +11,11 @@ interface AgentsQuickSwitchDialogProps {
   isOpen: boolean
   chats: Array<{
     id: string
-    name: string
-    meta: any
-    sandbox_id: string | null
-    updated_at: Date
+    name: string | null
+    meta?: any
+    sandbox_id?: string | null
+    updated_at?: Date | null
+    updatedAt?: Date | null
     projectId: string
   }>
   selectedIndex: number
@@ -70,7 +71,12 @@ export function AgentsQuickSwitchDialog({
                       return (
                         <AgentChatCard
                           key={chat.id}
-                          chat={chat}
+                          chat={{
+                            id: chat.id,
+                            name: chat.name ?? "Untitled",
+                            meta: chat.meta ?? {},
+                            sandbox_id: chat.sandbox_id ?? null,
+                          }}
                           isSelected={isSelected}
                           isLoading={isLoading}
                           variant="quick-switch"

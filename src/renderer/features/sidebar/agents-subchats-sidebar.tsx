@@ -211,6 +211,9 @@ export function AgentsSubChatsSidebar({
   const [selectedChatId, setSelectedChatId] = useAtom(selectedAgentChatIdAtom)
   const previousChatId = useAtomValue(previousAgentChatIdAtom)
 
+  // State for controlling history popover from parent component
+  const [isHistoryOpen, setIsHistoryOpen] = useState(false)
+
   // Fetch agent chats for navigation after archive
   const { data: agentChats } = api.agents.getAgentChats.useQuery(
     { teamId: selectedTeamId! },

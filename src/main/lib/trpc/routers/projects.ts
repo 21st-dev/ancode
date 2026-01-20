@@ -341,4 +341,29 @@ export const projectsRouter = router({
 
       return newProject
     }),
+
+  /**
+   * Set AI provider/model preferences for a project
+   */
+  setPreferences: publicProcedure
+    .input(
+      z.object({
+        id: z.string(),
+        preferredProviderId: z.string().nullable(),
+        preferredModelId: z.string().nullable(),
+      }),
+    )
+    .mutation(({ input }) => {
+      const db = getDatabase()
+      return db
+        .update(projects)
+        .set({
+          preferredProviderId: input.preferredProviderId,
+          preferredModelId: input.preferredModelId,
+          updatedAt: new Date(),
+        })
+        .where(eq(projects.id, input.id))
+        .returning()
+        .get()
+    }),
 })

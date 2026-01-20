@@ -36,6 +36,83 @@
       "when": 1768199613729,
       "tag": "0004_melted_prism",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "6",
+      "when": 1768810000000,
+      "tag": "0005_ai_providers",
+      "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "6",
+      "when": 1768810000001,
+      "tag": "0006_task_routing",
+      "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "6",
+      "when": 1768810000002,
+      "tag": "0007_provider_models",
+      "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "6",
+      "when": 1768810000003,
+      "tag": "0008_project_provider_preferences",
+      "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "6",
+      "when": 1768900000000,
+      "tag": "0009_enhanced_ai_providers",
+      "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "6",
+      "when": 1768900000001,
+      "tag": "0010_provider_credentials",
+      "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "6",
+      "when": 1768900000002,
+      "tag": "0011_universal_models",
+      "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "6",
+      "when": 1768900000003,
+      "tag": "0012_switching_rules",
+      "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "6",
+      "when": 1768900000004,
+      "tag": "0013_usage_logs",
+      "breakpoints": true
+    },
+    {
+      "idx": 14,
+      "version": "6",
+      "when": 1768900000005,
+      "tag": "0014_seed_builtin_providers",
+      "breakpoints": true
+    },
+    {
+      "idx": 15,
+      "version": "6",
+      "when": 1768900000006,
+      "tag": "0015_integration_settings",
+      "breakpoints": true
     }
   ]
 }
