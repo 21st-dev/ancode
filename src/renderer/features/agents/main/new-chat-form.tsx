@@ -305,7 +305,7 @@ export function NewChatForm({
     } else {
       setSelectedBranchType(undefined)
     }
-  }, [validatedProject?.id, selectedBranch])
+  }, [validatedProject?.id, lastSelectedBranches])
 
   // Image upload hook
   const {
@@ -552,9 +552,11 @@ export function NewChatForm({
       ) || branches.find(
         (b) => b.name === branchesQuery.data.defaultBranch && b.isDefault && b.type === "remote",
       )
+      // Fallback to "local" if branch not found in list (shouldn't happen but prevents empty selector)
+      const branchType = defaultBranchObj?.type || "local"
       setSelectedBranch(
         branchesQuery.data.defaultBranch,
-        defaultBranchObj?.type,
+        branchType,
       )
     }
   }, [
