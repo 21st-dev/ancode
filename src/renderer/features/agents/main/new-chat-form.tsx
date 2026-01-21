@@ -302,8 +302,10 @@ export function NewChatForm({
       } else {
         setSelectedBranchType(undefined)
       }
+    } else {
+      setSelectedBranchType(undefined)
     }
-  }, [validatedProject?.id, lastSelectedBranches])
+  }, [validatedProject?.id, selectedBranch])
 
   // Image upload hook
   const {
