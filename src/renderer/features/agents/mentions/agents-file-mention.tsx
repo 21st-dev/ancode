@@ -85,6 +85,18 @@ import {
   SvelteIcon,
   AstroIcon,
   SwiftIcon,
+  CSVIcon,
+  SQLiteIcon,
+  ParquetIcon,
+  ExcelIcon,
+  ArrowDataIcon,
+  PDFIcon,
+  ImageFileIcon,
+  WordIcon,
+  PowerPointIcon,
+  GitIcon,
+  LockFileIcon,
+  LicenseIcon,
 } from "../../../icons/framework-icons"
 
 interface ChangedFile {
@@ -170,6 +182,34 @@ const KNOWN_FILE_ICON_EXTENSIONS = new Set([
   "svelte",
   "astro",
   "swift",
+  // Data file extensions
+  "csv",
+  "tsv",
+  "db",
+  "sqlite",
+  "sqlite3",
+  "parquet",
+  "pq",
+  "xlsx",
+  "xls",
+  "arrow",
+  "feather",
+  "ipc",
+  // Document file extensions
+  "pdf",
+  "doc",
+  "docx",
+  "ppt",
+  "pptx",
+  // Image file extensions
+  "png",
+  "jpg",
+  "jpeg",
+  "gif",
+  "svg",
+  "webp",
+  "ico",
+  "bmp",
 ])
 
 // Get file icon component based on file extension
@@ -180,14 +220,53 @@ export function getFileIconByExtension(
 ) {
   const filenameLower = filename.toLowerCase()
 
+  // Get the base filename (without path)
+  const baseFilename = filenameLower.split("/").pop() || filenameLower
+
   // Special handling for files without extensions (like Dockerfile)
   if (filenameLower === "dockerfile" || filenameLower.endsWith("/dockerfile")) {
     return DockerIcon
   }
 
+  // Special handling for .gitignore and other git-related files
+  if (
+    baseFilename === ".gitignore" ||
+    baseFilename === ".gitattributes" ||
+    baseFilename === ".gitmodules" ||
+    baseFilename === ".gitkeep"
+  ) {
+    return GitIcon
+  }
+
+  // Special handling for LICENSE files (with or without extension)
+  if (
+    baseFilename === "license" ||
+    baseFilename === "license.md" ||
+    baseFilename === "license.txt" ||
+    baseFilename === "copying" ||
+    baseFilename === "copying.md" ||
+    baseFilename === "copying.txt"
+  ) {
+    return LicenseIcon
+  }
+
+  // Special handling for lock files
+  if (
+    baseFilename === "package-lock.json" ||
+    baseFilename === "yarn.lock" ||
+    baseFilename === "pnpm-lock.yaml" ||
+    baseFilename === "bun.lockb" ||
+    baseFilename === "composer.lock" ||
+    baseFilename === "gemfile.lock" ||
+    baseFilename === "cargo.lock" ||
+    baseFilename === "poetry.lock" ||
+    baseFilename === "pipfile.lock" ||
+    baseFilename.endsWith(".lock")
+  ) {
+    return LockFileIcon
+  }
+
   // Special handling for .env files
-  // Get the base filename (without path)
-  const baseFilename = filenameLower.split("/").pop() || filenameLower
   // .env (without suffix) -> TOML icon
   // .env.local, .env.example, .env.development, etc. -> Shell icon
   if (baseFilename === ".env") {
@@ -202,7 +281,7 @@ export function getFileIconByExtension(
   // README files -> MarkdownInfoIcon (with exclamation mark)
   // Other .md/.mdx files -> MarkdownIcon (standard markdown icon)
   if (filenameLower.endsWith(".md") || filenameLower.endsWith(".mdx")) {
-    const nameWithoutExt = filenameLower.replace(/\.(md|mdx)$/, "")
+    const nameWithoutExt = baseFilename.replace(/\.(md|mdx)$/, "")
     if (nameWithoutExt === "readme") {
       return MarkdownInfoIcon
     }
@@ -308,6 +387,45 @@ export function getFileIconByExtension(
       return AstroIcon
     case "swift":
       return SwiftIcon
+    // Data file types
+    case "csv":
+    case "tsv":
+      return CSVIcon
+    case "db":
+    case "sqlite":
+    case "sqlite3":
+      return SQLiteIcon
+    case "parquet":
+    case "pq":
+      return ParquetIcon
+    case "xlsx":
+    case "xls":
+      return ExcelIcon
+    case "arrow":
+    case "feather":
+    case "ipc":
+      return ArrowDataIcon
+    // Document file types
+    case "pdf":
+      return PDFIcon
+    case "doc":
+    case "docx":
+      return WordIcon
+    case "ppt":
+    case "pptx":
+      return PowerPointIcon
+    // Image file types
+    case "png":
+    case "jpg":
+    case "jpeg":
+    case "gif":
+    case "webp":
+    case "ico":
+    case "bmp":
+      return ImageFileIcon
+    case "svg":
+      // SVG already returns HTMLIcon (XML-like), keep it or use ImageFileIcon
+      return ImageFileIcon
     default:
       return returnNullForUnknown ? null : FilesIcon
   }

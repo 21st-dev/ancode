@@ -1184,6 +1184,119 @@ export function GitHubIcon({ className }: FrameworkIconProps) {
   )
 }
 
+// CSV/TSV - Green spreadsheet icon #22c55e
+export function CSVIcon({ className }: FrameworkIconProps) {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      className={cn("w-4 h-4", className)}
+      fill="none"
+      xmlns="http://www.w3.org/2000/svg"
+    >
+      <path
+        d="M14 2H6C5.46957 2 4.96086 2.21071 4.58579 2.58579C4.21071 2.96086 4 3.46957 4 4V20C4 20.5304 4.21071 21.0391 4.58579 21.4142C4.96086 21.7893 5.46957 22 6 22H18C18.5304 22 19.0391 21.7893 19.4142 21.4142C19.7893 21.0391 20 20.5304 20 20V8L14 2Z"
+        stroke="#22c55e"
+        strokeWidth="2"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+      <path d="M14 2V8H20" stroke="#22c55e" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+      <path d="M8 13H16" stroke="#22c55e" strokeWidth="2" strokeLinecap="round" />
+      <path d="M8 17H16" stroke="#22c55e" strokeWidth="2" strokeLinecap="round" />
+      <path d="M12 13V17" stroke="#22c55e" strokeWidth="2" strokeLinecap="round" />
+    </svg>
+  )
+}
+
+// SQLite/Database - Blue database icon #3b82f6
+export function SQLiteIcon({ className }: FrameworkIconProps) {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      className={cn("w-4 h-4", className)}
+      fill="none"
+      xmlns="http://www.w3.org/2000/svg"
+    >
+      <ellipse cx="12" cy="5" rx="8" ry="3" stroke="#3b82f6" strokeWidth="2" />
+      <path d="M4 5V19C4 20.6569 7.58172 22 12 22C16.4183 22 20 20.6569 20 19V5" stroke="#3b82f6" strokeWidth="2" />
+      <path d="M4 12C4 13.6569 7.58172 15 12 15C16.4183 15 20 13.6569 20 12" stroke="#3b82f6" strokeWidth="2" />
+    </svg>
+  )
+}
+
+// Parquet - Purple columnar data icon #a855f7
+export function ParquetIcon({ className }: FrameworkIconProps) {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      className={cn("w-4 h-4", className)}
+      fill="none"
+      xmlns="http://www.w3.org/2000/svg"
+    >
+      <rect x="3" y="3" width="5" height="18" rx="1" stroke="#a855f7" strokeWidth="2" />
+      <rect x="10" y="3" width="5" height="18" rx="1" stroke="#a855f7" strokeWidth="2" />
+      <rect x="17" y="3" width="4" height="18" rx="1" stroke="#a855f7" strokeWidth="2" />
+    </svg>
+  )
+}
+
+// Excel - Emerald spreadsheet icon #059669
+export function ExcelIcon({ className }: FrameworkIconProps) {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      className={cn("w-4 h-4", className)}
+      fill="none"
+      xmlns="http://www.w3.org/2000/svg"
+    >
+      <path
+        d="M14 2H6C5.46957 2 4.96086 2.21071 4.58579 2.58579C4.21071 2.96086 4 3.46957 4 4V20C4 20.5304 4.21071 21.0391 4.58579 21.4142C4.96086 21.7893 5.46957 22 6 22H18C18.5304 22 19.0391 21.7893 19.4142 21.4142C19.7893 21.0391 20 20.5304 20 20V8L14 2Z"
+        stroke="#059669"
+        strokeWidth="2"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+      <path d="M14 2V8H20" stroke="#059669" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+      <path d="M9 15L15 15" stroke="#059669" strokeWidth="2" strokeLinecap="round" />
+      <path d="M9 12L15 18" stroke="#059669" strokeWidth="2" strokeLinecap="round" />
+      <path d="M15 12L9 18" stroke="#059669" strokeWidth="2" strokeLinecap="round" />
+    </svg>
+  )
+}
+
+// Apache Arrow - Orange arrow icon #f97316
+export function ArrowDataIcon({ className }: FrameworkIconProps) {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      className={cn("w-4 h-4", className)}
+      fill="none"
+      xmlns="http://www.w3.org/2000/svg"
+    >
+      <path
+        d="M5 12H19"
+        stroke="#f97316"
+        strokeWidth="2"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+      <path
+        d="M12 5L19 12L12 19"
+        stroke="#f97316"
+        strokeWidth="2"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+      <path
+        d="M5 5V19"
+        stroke="#f97316"
+        strokeWidth="2"
+        strokeLinecap="round"
+      />
+    </svg>
+  )
+}
+
 // Map language/framework to icon component
 export function getFrameworkIcon(
   language?: string | null,
@@ -1398,6 +1511,185 @@ export function CodeIcon({ className }: FrameworkIconProps) {
         fillRule="evenodd"
         clipRule="evenodd"
         d="M358.333 0C381.345 0 400 18.6548 400 41.6667V295.833C400 298.135 398.134 300 395.833 300H270.833C268.532 300 266.667 301.865 266.667 304.167V395.833C266.667 398.134 264.801 400 262.5 400H41.6667C18.6548 400 0 381.345 0 358.333V304.72C0 301.793 1.54269 299.081 4.05273 297.575L153.76 207.747C157.159 205.708 156.02 200.679 152.376 200.065L151.628 200H4.16667C1.86548 200 6.71103e-08 198.135 0 195.833V104.167C1.07376e-06 101.865 1.86548 100 4.16667 100H162.5C164.801 100 166.667 98.1345 166.667 95.8333V4.16667C166.667 1.86548 168.532 1.00666e-07 170.833 0H358.333ZM170.833 100C168.532 100 166.667 101.865 166.667 104.167V295.833C166.667 298.135 168.532 300 170.833 300H262.5C264.801 300 266.667 298.135 266.667 295.833V104.167C266.667 101.865 264.801 100 262.5 100H170.833Z"
+      />
+    </svg>
+  )
+}
+
+// PDF Icon - Red document with PDF text
+export function PDFIcon({ className }: FrameworkIconProps) {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      className={cn("w-4 h-4", className)}
+      fill="none"
+      xmlns="http://www.w3.org/2000/svg"
+    >
+      <path
+        d="M7 2H17C18.1046 2 19 2.89543 19 4V20C19 21.1046 18.1046 22 17 22H7C5.89543 22 5 21.1046 5 20V4C5 2.89543 5.89543 2 7 2Z"
+        fill="#E53935"
+      />
+      <path
+        d="M8 13H16M8 16H14"
+        stroke="white"
+        strokeWidth="1.5"
+        strokeLinecap="round"
+      />
+      <rect x="7" y="6" width="10" height="4" rx="1" fill="white" />
+      <text x="12" y="9.5" textAnchor="middle" fill="#E53935" fontSize="3" fontWeight="bold">PDF</text>
+    </svg>
+  )
+}
+
+// Image Icon - Picture/photo icon
+export function ImageFileIcon({ className }: FrameworkIconProps) {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      className={cn("w-4 h-4", className)}
+      fill="none"
+      xmlns="http://www.w3.org/2000/svg"
+    >
+      <rect x="3" y="3" width="18" height="18" rx="2" fill="#4CAF50" />
+      <circle cx="8.5" cy="8.5" r="2" fill="#FFF59D" />
+      <path
+        d="M21 15L16.5 10.5C16.1 10.1 15.5 10.1 15.1 10.5L10 15.6L8.4 14C8 13.6 7.4 13.6 7 14L3 18V19C3 20.1 3.9 21 5 21H19C20.1 21 21 20.1 21 19V15Z"
+        fill="#81C784"
+      />
+    </svg>
+  )
+}
+
+// Word Icon - Blue document with W
+export function WordIcon({ className }: FrameworkIconProps) {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      className={cn("w-4 h-4", className)}
+      fill="none"
+      xmlns="http://www.w3.org/2000/svg"
+    >
+      <path
+        d="M7 2H17C18.1046 2 19 2.89543 19 4V20C19 21.1046 18.1046 22 17 22H7C5.89543 22 5 21.1046 5 20V4C5 2.89543 5.89543 2 7 2Z"
+        fill="#2196F3"
+      />
+      <path
+        d="M8 8L10 16L12 10L14 16L16 8"
+        stroke="white"
+        strokeWidth="1.5"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  )
+}
+
+// PowerPoint Icon - Orange/red document with P
+export function PowerPointIcon({ className }: FrameworkIconProps) {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      className={cn("w-4 h-4", className)}
+      fill="none"
+      xmlns="http://www.w3.org/2000/svg"
+    >
+      <path
+        d="M7 2H17C18.1046 2 19 2.89543 19 4V20C19 21.1046 18.1046 22 17 22H7C5.89543 22 5 21.1046 5 20V4C5 2.89543 5.89543 2 7 2Z"
+        fill="#FF5722"
+      />
+      <path
+        d="M9 7V17M9 7H13C14.6569 7 16 8.34315 16 10C16 11.6569 14.6569 13 13 13H9"
+        stroke="white"
+        strokeWidth="1.5"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  )
+}
+
+// Git Icon - Orange Git logo for .gitignore and git-related files
+export function GitIcon({ className }: FrameworkIconProps) {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      className={cn("w-4 h-4", className)}
+      fill="none"
+      xmlns="http://www.w3.org/2000/svg"
+    >
+      <path
+        d="M21.635 11.455L12.545 2.365C12.0625 1.8825 11.2825 1.8825 10.8 2.365L8.6775 4.4875L11.4 7.21C11.935 7.0325 12.5475 7.1425 12.975 7.57C13.405 8 13.5125 8.6175 13.33 9.155L15.945 11.77C16.4825 11.5875 17.1 11.695 17.53 12.125C18.1475 12.7425 18.1475 13.745 17.53 14.3625C16.9125 14.98 15.91 14.98 15.2925 14.3625C14.8375 13.9075 14.74 13.24 14.97 12.68L12.525 10.235L12.525 15.51C12.68 15.5875 12.8275 15.69 12.9625 15.825C13.58 16.4425 13.58 17.445 12.9625 18.0625C12.345 18.68 11.3425 18.68 10.725 18.0625C10.1075 17.445 10.1075 16.4425 10.725 15.825C10.89 15.66 11.08 15.535 11.285 15.45V10.1275C11.08 10.0425 10.89 9.9175 10.725 9.7525C10.265 9.2925 10.17 8.6175 10.41 8.0525L7.74 5.3825L2.365 10.7575C1.8825 11.24 1.8825 12.02 2.365 12.5025L11.455 21.5925C11.9375 22.075 12.7175 22.075 13.2 21.5925L21.635 13.1575C22.1175 12.675 22.1175 11.9375 21.635 11.455Z"
+        fill="#F05032"
+      />
+    </svg>
+  )
+}
+
+// Lock Icon - For lock files (package-lock.json, yarn.lock, etc.)
+export function LockFileIcon({ className }: FrameworkIconProps) {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      className={cn("w-4 h-4", className)}
+      fill="none"
+      xmlns="http://www.w3.org/2000/svg"
+    >
+      <rect
+        x="5"
+        y="10"
+        width="14"
+        height="11"
+        rx="2"
+        stroke="currentColor"
+        strokeWidth="1.5"
+        className="text-amber-500"
+      />
+      <path
+        d="M8 10V7C8 4.79086 9.79086 3 12 3C14.2091 3 16 4.79086 16 7V10"
+        stroke="currentColor"
+        strokeWidth="1.5"
+        strokeLinecap="round"
+        className="text-amber-500"
+      />
+      <circle cx="12" cy="15" r="1.5" fill="currentColor" className="text-amber-500" />
+      <path d="M12 16.5V18" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" className="text-amber-500" />
+    </svg>
+  )
+}
+
+// License Icon - Document with seal/checkmark for LICENSE files
+export function LicenseIcon({ className }: FrameworkIconProps) {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      className={cn("w-4 h-4", className)}
+      fill="none"
+      xmlns="http://www.w3.org/2000/svg"
+    >
+      <path
+        d="M14 2H6C4.89543 2 4 2.89543 4 4V20C4 21.1046 4.89543 22 6 22H18C19.1046 22 20 21.1046 20 20V8L14 2Z"
+        stroke="currentColor"
+        strokeWidth="1.5"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        className="text-purple-500"
+      />
+      <path
+        d="M14 2V8H20"
+        stroke="currentColor"
+        strokeWidth="1.5"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        className="text-purple-500"
+      />
+      <circle cx="12" cy="14" r="3" stroke="currentColor" strokeWidth="1.5" className="text-purple-500" />
+      <path
+        d="M10.5 14L11.5 15L13.5 13"
+        stroke="currentColor"
+        strokeWidth="1.5"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        className="text-purple-500"
       />
     </svg>
   )

@@ -540,6 +540,23 @@ export const expandedFoldersAtomFamily = atomFamily((projectId: string) =>
   ),
 )
 
+// Selected file path (focused item for keyboard navigation)
+export const selectedFilePathAtomFamily = atomFamily((projectId: string) =>
+  atom<string | null>(null),
+)
+
+// Multi-selection: set of selected file paths
+export const selectedFilePathsAtomFamily = atomFamily((projectId: string) =>
+  atom<Set<string>>(new Set()),
+)
+
+// File clipboard state for cut/copy operations
+export const fileClipboardAtom = atom<{
+  paths: string[]
+  operation: "copy" | "cut"
+  projectPath: string
+} | null>(null)
+
 // ============================================================================
 // Data Viewer Sidebar
 // ============================================================================

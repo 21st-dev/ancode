@@ -16,9 +16,6 @@ import {
   X,
   Loader2,
   Database,
-  FileSpreadsheet,
-  FileJson,
-  FileBox,
   Search,
   Pin,
   Hash,
@@ -31,9 +28,7 @@ import {
   ChevronsRight,
   Copy,
   Expand,
-  CornerDownRight,
   Table2,
-  ArrowRight,
   Play,
   ChevronUp,
   ChevronDown,
@@ -42,6 +37,8 @@ import {
   History,
   Trash2,
 } from "lucide-react"
+import { getFileIconByExtension } from "../../agents/mentions/agents-file-mention"
+import { IconCloseSidebarRight } from "@/components/ui/icons"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import {
@@ -75,9 +72,11 @@ import { cn } from "@/lib/utils"
 import { trpc } from "@/lib/trpc"
 import { selectedSqliteTableAtomFamily } from "../../agents/atoms"
 import { useTheme } from "next-themes"
+import { toast } from "sonner"
+import { ViewerErrorBoundary } from "@/components/ui/error-boundary"
+import { getFileName, getFileExtension } from "../../file-viewer/utils/file-utils"
 
 interface DataViewerSidebarProps {
-  chatId: string
   filePath: string
   projectPath: string
   onClose: () => void
@@ -153,14 +152,6 @@ function clearQueryHistory(filePath: string): void {
 }
 
 /**
- * Get the file extension
- */
-function getFileExtension(filePath: string): string {
-  const parts = filePath.split(".")
-  return parts.length > 1 ? `.${parts[parts.length - 1].toLowerCase()}` : ""
-}
-
-/**
  * Get file type from extension
  */
 function getFileType(filePath: string): "csv" | "json" | "sqlite" | "parquet" | "excel" | "arrow" | "unknown" {
@@ -192,35 +183,11 @@ function getFileType(filePath: string): "csv" | "json" | "sqlite" | "parquet" | 
 }
 
 /**
- * Get file icon based on type
+ * Get file icon based on type - uses centralized icon function for consistency
  */
 function FileIcon({ filePath }: { filePath: string }) {
-  const fileType = getFileType(filePath)
-
-  switch (fileType) {
-    case "csv":
-      return <FileSpreadsheet className="h-4 w-4 text-green-500" />
-    case "json":
-      return <FileJson className="h-4 w-4 text-yellow-500" />
-    case "sqlite":
-      return <Database className="h-4 w-4 text-blue-500" />
-    case "parquet":
-      return <FileBox className="h-4 w-4 text-purple-500" />
-    case "excel":
-      return <Table2 className="h-4 w-4 text-emerald-600" />
-    case "arrow":
-      return <ArrowRight className="h-4 w-4 text-orange-500" />
-    default:
-      return <FileSpreadsheet className="h-4 w-4" />
-  }
-}
-
-/**
- * Get file name from path
- */
-function getFileName(filePath: string): string {
-  const parts = filePath.split("/")
-  return parts[parts.length - 1] || filePath
+  const Icon = getFileIconByExtension(filePath)
+  return Icon ? <Icon className="h-4 w-4" /> : null
 }
 
 /**
@@ -264,8 +231,21 @@ function isJsonLike(value: unknown): boolean {
   return false
 }
 
-export function DataViewerSidebar({
-  chatId,
+/**
+ * DataViewerSidebar with error boundary wrapper
+ */
+export function DataViewerSidebar(props: DataViewerSidebarProps) {
+  return (
+    <ViewerErrorBoundary viewerType="data" onReset={props.onClose}>
+      <DataViewerSidebarInner {...props} />
+    </ViewerErrorBoundary>
+  )
+}
+
+/**
+ * Inner DataViewerSidebar component
+ */
+function DataViewerSidebarInner({
   filePath,
   projectPath,
   onClose,
@@ -274,13 +254,11 @@ export function DataViewerSidebar({
   const fileName = getFileName(filePath)
   const { resolvedTheme } = useTheme()
   const isDark = resolvedTheme === "dark"
-  const gridRef = useRef<any>(null)
+  const gridRef = useRef<ReturnType<typeof DataEditor> | null>(null)
 
   // ============ Pagination State ============
   const [pageSize, setPageSize] = useState<PageSize>(1000)
   const [currentPage, setCurrentPage] = useState(0)
-  const [jumpToRowInput, setJumpToRowInput] = useState("")
-  const [showJumpDialog, setShowJumpDialog] = useState(false)
 
   // ============ Column State ============
   const [columnWidths, setColumnWidths] = useState<Record<string, number>>({})
@@ -295,7 +273,7 @@ export function DataViewerSidebar({
 
   // ============ Feature State ============
   const [freezeColumns, setFreezeColumns] = useState(0)
-  const [showRowMarkers, setShowRowMarkers] = useState(true)
+  const [showRowMarkers, setShowRowMarkers] = useState(false)
   const [showSearch, setShowSearch] = useState(false)
   const [searchValue, setSearchValue] = useState("")
   const [searchResults, setSearchResults] = useState<readonly Item[]>([])
@@ -334,7 +312,6 @@ export function DataViewerSidebar({
   const [showHistory, setShowHistory] = useState(false)
   const [queryHistory, setQueryHistory] = useState<QueryHistoryEntry[]>([])
   const textareaRef = useRef<HTMLTextAreaElement>(null)
-  const historyRef = useRef<HTMLDivElement>(null)
 
   // Build absolute path - must be defined before useEffects that depend on it
   const absolutePath = filePath.startsWith("/")
@@ -423,15 +400,17 @@ export function DataViewerSidebar({
   // Use the appropriate tables/sheets based on file type
   const tables = fileType === "sqlite" ? sqliteTables : fileType === "excel" ? excelSheets : undefined
 
-  // Auto-select first table/sheet if none selected
+  // Auto-select first table/sheet if none selected or if current selection is invalid
   useEffect(() => {
     if (
       (fileType === "sqlite" || fileType === "excel") &&
       tables &&
-      tables.length > 0 &&
-      !selectedTable
+      tables.length > 0
     ) {
-      setSelectedTable(tables[0])
+      // If no selection or current selection doesn't exist in available tables
+      if (!selectedTable || !tables.includes(selectedTable)) {
+        setSelectedTable(tables[0])
+      }
     }
   }, [fileType, tables, selectedTable, setSelectedTable])
 
@@ -451,6 +430,10 @@ export function DataViewerSidebar({
   }, [selectedTable])
 
   // Fetch data with pagination (normal mode)
+  // For Excel files: if sheets were found, wait for selection; if no sheets found, try loading anyway (DuckDB uses first sheet)
+  const excelSheetsLoaded = fileType === "excel" && excelSheets !== undefined
+  const excelCanLoad = fileType !== "excel" || (excelSheetsLoaded && (excelSheets.length === 0 || !!selectedTable))
+
   const { data: fileData, isLoading: isFileLoading, error: fileError } = trpc.files.previewDataFile.useQuery(
     {
       filePath: absolutePath,
@@ -463,7 +446,7 @@ export function DataViewerSidebar({
         !isQueryMode &&
         fileType !== "unknown" &&
         (fileType !== "sqlite" || (!!selectedTable && selectedTable !== "")) &&
-        (fileType !== "excel" || (!!selectedTable && selectedTable !== "")),
+        excelCanLoad,
     }
   )
 
@@ -471,40 +454,54 @@ export function DataViewerSidebar({
   const [queryData, setQueryData] = useState<typeof fileData | null>(null)
   const [isQueryLoading, setIsQueryLoading] = useState(false)
 
-  // Query mutation for SQL queries
-  const queryMutation = trpc.files.queryDataFile.useMutation({
-    onSuccess: (result) => {
-      setQueryData(result)
-      setQueryError(null)
-      setIsQueryLoading(false)
-      // Reset column state for new query results
-      if (result.columns) {
-        setColumnOrder(result.columns.map((_, i) => i))
-        setHiddenColumns(new Set())
-        setSortColumn(null)
-      }
-    },
-    onError: (err) => {
-      setQueryError(err.message)
-      setIsQueryLoading(false)
-    },
-  })
+  // Track query request ID to prevent race conditions
+  const queryRequestIdRef = useRef(0)
 
-  // Execute SQL query
-  const executeQuery = useCallback(() => {
+  // Query mutation for SQL queries
+  const queryMutation = trpc.files.queryDataFile.useMutation()
+
+  // Execute SQL query with race condition protection
+  const executeQuery = useCallback(async () => {
     if (!sqlQuery.trim()) return
+
+    // Increment request ID to track this specific request
+    const requestId = ++queryRequestIdRef.current
+
     setIsQueryLoading(true)
     setQueryError(null)
     setIsQueryMode(true)
     setShowHistory(false)
+
     // Save to history
     const newHistory = saveQueryToHistory(absolutePath, sqlQuery)
     setQueryHistory(newHistory)
-    queryMutation.mutate({
-      filePath: absolutePath,
-      sql: sqlQuery,
-      sheetName: (fileType === "sqlite" || fileType === "excel") ? selectedTable || undefined : undefined,
-    })
+
+    try {
+      const result = await queryMutation.mutateAsync({
+        filePath: absolutePath,
+        sql: sqlQuery,
+        sheetName: (fileType === "sqlite" || fileType === "excel") ? selectedTable || undefined : undefined,
+      })
+
+      // Only update state if this is still the latest request
+      if (requestId === queryRequestIdRef.current) {
+        setQueryData(result)
+        setQueryError(null)
+        setIsQueryLoading(false)
+        // Reset column state for new query results
+        if (result.columns) {
+          setColumnOrder(result.columns.map((_, i) => i))
+          setHiddenColumns(new Set())
+          setSortColumn(null)
+        }
+      }
+    } catch (err) {
+      // Only update error state if this is still the latest request
+      if (requestId === queryRequestIdRef.current) {
+        setQueryError(err instanceof Error ? err.message : "Query failed")
+        setIsQueryLoading(false)
+      }
+    }
   }, [sqlQuery, absolutePath, fileType, selectedTable, queryMutation])
 
   // Load query from history
@@ -520,19 +517,6 @@ export function DataViewerSidebar({
     setQueryHistory([])
     setShowHistory(false)
   }, [absolutePath])
-
-  // Close history dropdown when clicking outside
-  useEffect(() => {
-    const handleClickOutside = (e: MouseEvent) => {
-      if (historyRef.current && !historyRef.current.contains(e.target as Node)) {
-        setShowHistory(false)
-      }
-    }
-    if (showHistory) {
-      document.addEventListener("mousedown", handleClickOutside)
-      return () => document.removeEventListener("mousedown", handleClickOutside)
-    }
-  }, [showHistory])
 
   // Reset to file view
   const resetToFileView = useCallback(() => {
@@ -716,12 +700,12 @@ export function DataViewerSidebar({
 
   // Cell context menu handler
   const onCellContextMenu = useCallback(
-    (cell: Item, event: any) => {
+    (cell: Item, event: { preventDefault?: () => void; bounds?: Rectangle; clientX?: number; clientY?: number }) => {
       event.preventDefault?.()
-      const bounds = event.bounds || { x: event.clientX, y: event.clientY }
+      const bounds = event.bounds || { x: event.clientX ?? 0, y: event.clientY ?? 0 }
       setCellMenuPosition({
-        x: bounds.x ?? event.clientX ?? 0,
-        y: bounds.y ?? event.clientY ?? 0,
+        x: bounds.x ?? 0,
+        y: bounds.y ?? 0,
         cell,
       })
     },
@@ -763,7 +747,7 @@ export function DataViewerSidebar({
   }, [])
 
   // Copy cell value to clipboard
-  const handleCopyCellValue = useCallback(() => {
+  const handleCopyCellValue = useCallback(async () => {
     if (!cellMenuPosition) return
     const [col, row] = cellMenuPosition.cell
     const column = orderedColumns[col]
@@ -774,7 +758,13 @@ export function DataViewerSidebar({
     const value = rowData?.[colName]
     const stringValue = formatCellValue(value)
 
-    navigator.clipboard.writeText(stringValue)
+    try {
+      await navigator.clipboard.writeText(stringValue)
+      toast.success("Copied to clipboard")
+    } catch (err) {
+      console.error("Failed to copy:", err)
+      toast.error("Failed to copy to clipboard")
+    }
     setCellMenuPosition(null)
   }, [cellMenuPosition, orderedColumns, sortedRows])
 
@@ -797,29 +787,6 @@ export function DataViewerSidebar({
     setCellDetailsOpen(true)
     setCellMenuPosition(null)
   }, [cellMenuPosition, orderedColumns, sortedRows, currentPage, pageSize])
-
-  // Jump to row handler
-  const handleJumpToRow = useCallback(() => {
-    const rowNum = parseInt(jumpToRowInput, 10)
-    if (isNaN(rowNum) || rowNum < 1 || rowNum > totalRows) return
-
-    // Calculate which page contains this row
-    const targetPage = Math.floor((rowNum - 1) / pageSize)
-    setCurrentPage(targetPage)
-
-    // Calculate row index within the page
-    const rowIndexInPage = (rowNum - 1) % pageSize
-
-    // Scroll to the row after data loads
-    setTimeout(() => {
-      if (gridRef.current) {
-        gridRef.current.scrollTo?.(0, rowIndexInPage)
-      }
-    }, 100)
-
-    setShowJumpDialog(false)
-    setJumpToRowInput("")
-  }, [jumpToRowInput, totalRows, pageSize])
 
   // Get cell content with proper cell types
   const getCellContent = useCallback(
@@ -911,15 +878,19 @@ export function DataViewerSidebar({
 
   // Error state
   if (error) {
+    // Check if it's a file not found error
+    const isNotFound = error.message?.toLowerCase().includes("enoent") ||
+                       error.message?.toLowerCase().includes("not found") ||
+                       error.message?.toLowerCase().includes("no such file")
+    const errorMessage = isNotFound ? "File not found" : "Failed to load file"
+
     return (
       <div className="flex flex-col h-full">
         <Header fileName={fileName} filePath={filePath} onClose={onClose} />
         <div className="flex-1 flex items-center justify-center p-4">
-          <div className="text-center text-destructive">
-            <p className="font-medium">Failed to load file</p>
-            <p className="text-sm text-muted-foreground mt-1">
-              {error.message}
-            </p>
+          <div className="flex flex-col items-center gap-3 text-center max-w-[300px]">
+            <AlertCircle className="h-10 w-10 text-muted-foreground" />
+            <p className="font-medium text-foreground">{errorMessage}</p>
           </div>
         </div>
       </div>
@@ -928,11 +899,11 @@ export function DataViewerSidebar({
 
   return (
     <div className="flex flex-col h-full bg-background">
-      {/* Header */}
-      <Header fileName={fileName} filePath={filePath} onClose={onClose} />
-
-      {/* Toolbar */}
-      <Toolbar
+      {/* Header with toolbar actions */}
+      <Header
+        fileName={fileName}
+        filePath={filePath}
+        onClose={onClose}
         onSearch={() => setShowSearch((prev) => !prev)}
         onFreeze={() => setFreezeColumns((prev) => (prev === 0 ? 1 : 0))}
         freezeCount={freezeColumns}
@@ -941,14 +912,12 @@ export function DataViewerSidebar({
         hiddenColumnCount={hiddenColumns.size}
         onShowAllColumns={handleShowAllColumns}
         sortColumn={sortColumn}
-        sortDirection={sortDirection}
         onClearSort={() => setSortColumn(null)}
-        onJumpToRow={() => setShowJumpDialog(true)}
       />
 
       {/* Table/Sheet selector for SQLite and Excel */}
       {(fileType === "sqlite" || fileType === "excel") && tables && tables.length > 0 && (
-        <div className="px-3 py-2 border-b">
+        <div className="px-2 py-2 border-b border-border/50">
           <Select value={selectedTable} onValueChange={setSelectedTable}>
             <SelectTrigger className="w-full h-8 text-sm">
               {fileType === "sqlite" ? (
@@ -970,11 +939,14 @@ export function DataViewerSidebar({
       )}
 
       {/* SQL Query Panel */}
-      <div className="border-b flex-shrink-0">
+      <div className="border-b border-border/50 flex-shrink-0">
         {/* Query Panel Header */}
         <button
           onClick={() => setShowQueryPanel((prev) => !prev)}
-          className="w-full px-2 py-1 flex items-center justify-between hover:bg-muted/50 transition-colors"
+          className={cn(
+            "w-full px-2 py-1.5 flex items-center justify-between hover:bg-muted/50 transition-[background-color] duration-150",
+            showQueryPanel && "border-b border-border/50"
+          )}
         >
           <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
             <Terminal className="h-3.5 w-3.5" />
@@ -994,7 +966,7 @@ export function DataViewerSidebar({
 
         {/* Query Panel Content */}
         {showQueryPanel && (
-          <div className="px-2 pb-2 space-y-2">
+          <div className="px-2 py-2 space-y-2">
             {/* Textarea with inline buttons */}
             <div className="relative">
               <textarea
@@ -1020,51 +992,47 @@ export function DataViewerSidebar({
               <div className="absolute right-1.5 bottom-1.5 flex items-center gap-0.5">
                 {/* History button */}
                 {queryHistory.length > 0 && (
-                  <div className="relative" ref={historyRef}>
+                  <DropdownMenu open={showHistory} onOpenChange={setShowHistory}>
                     <TooltipProvider delayDuration={300}>
                       <Tooltip>
                         <TooltipTrigger asChild>
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            className={cn("h-6 w-6", showHistory && "bg-accent")}
-                            onClick={() => setShowHistory((prev) => !prev)}
-                          >
-                            <History className="h-3.5 w-3.5" />
-                          </Button>
+                          <DropdownMenuTrigger asChild>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className={cn("h-6 w-6", showHistory ? "bg-accent" : "hover:bg-foreground/10")}
+                            >
+                              <History className="h-3.5 w-3.5" />
+                            </Button>
+                          </DropdownMenuTrigger>
                         </TooltipTrigger>
                         <TooltipContent side="top">Query history</TooltipContent>
                       </Tooltip>
                     </TooltipProvider>
-
-                    {/* History dropdown */}
-                    {showHistory && (
-                      <div className="absolute bottom-full right-0 mb-1 w-64 max-h-48 overflow-y-auto rounded-md border bg-popover shadow-md z-50">
-                        <div className="flex items-center justify-between px-2 py-1.5 border-b">
-                          <span className="text-[10px] font-medium text-muted-foreground">Recent queries</span>
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            className="h-5 w-5"
-                            onClick={handleClearHistory}
-                          >
-                            <Trash2 className="h-3 w-3 text-muted-foreground" />
-                          </Button>
-                        </div>
-                        {queryHistory.map((entry, idx) => (
-                          <button
-                            key={idx}
-                            className="w-full px-2 py-1.5 text-left hover:bg-accent transition-colors border-b last:border-b-0"
-                            onClick={() => loadQueryFromHistory(entry.query)}
-                          >
-                            <div className="text-[10px] font-mono text-foreground truncate">
-                              {entry.query}
-                            </div>
-                          </button>
-                        ))}
+                    <DropdownMenuContent align="end" side="top" className="w-64 max-h-48 overflow-y-auto">
+                      <div className="flex items-center justify-between px-2 py-1.5">
+                        <span className="text-[10px] font-medium text-muted-foreground">Recent queries</span>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-5 w-5 hover:bg-foreground/10"
+                          onClick={handleClearHistory}
+                        >
+                          <Trash2 className="h-3 w-3 text-muted-foreground" />
+                        </Button>
                       </div>
-                    )}
-                  </div>
+                      <DropdownMenuSeparator />
+                      {queryHistory.map((entry, idx) => (
+                        <DropdownMenuItem
+                          key={idx}
+                          className="px-2 py-1.5"
+                          onClick={() => loadQueryFromHistory(entry.query)}
+                        >
+                          <span className="text-[10px] font-mono truncate">{entry.query}</span>
+                        </DropdownMenuItem>
+                      ))}
+                    </DropdownMenuContent>
+                  </DropdownMenu>
                 )}
                 {isQueryMode && (
                   <TooltipProvider delayDuration={300}>
@@ -1073,7 +1041,7 @@ export function DataViewerSidebar({
                         <Button
                           variant="ghost"
                           size="icon"
-                          className="h-6 w-6"
+                          className="h-6 w-6 hover:bg-foreground/10"
                           onClick={resetToFileView}
                         >
                           <X className="h-3.5 w-3.5" />
@@ -1114,13 +1082,6 @@ export function DataViewerSidebar({
               <div className="flex items-start gap-1.5 p-1.5 rounded bg-destructive/10 text-destructive text-[10px]">
                 <AlertCircle className="h-3 w-3 flex-shrink-0 mt-0.5" />
                 <span className="font-mono break-all leading-tight">{queryError}</span>
-              </div>
-            )}
-
-            {/* Query result info */}
-            {isQueryMode && queryData && !queryError && (
-              <div className="text-[10px] text-muted-foreground">
-                {queryData.totalRows.toLocaleString()} row{queryData.totalRows !== 1 ? "s" : ""}
               </div>
             )}
           </div>
@@ -1275,7 +1236,7 @@ export function DataViewerSidebar({
 
       {/* Pagination Footer */}
       {data && (
-        <div className="px-3 py-2 border-t text-xs flex items-center justify-between gap-2">
+        <div className="px-2 py-2 border-t border-border/50 text-xs flex items-center justify-between gap-2">
           <div className="flex items-center gap-2 text-muted-foreground">
             <span>
               {totalRows > 0
@@ -1298,7 +1259,7 @@ export function DataViewerSidebar({
                     <Button
                       variant="ghost"
                       size="icon"
-                      className="h-6 w-6"
+                      className="h-6 w-6 hover:bg-foreground/10"
                       disabled={currentPage === 0}
                       onClick={() => setCurrentPage(0)}
                     >
@@ -1313,7 +1274,7 @@ export function DataViewerSidebar({
                     <Button
                       variant="ghost"
                       size="icon"
-                      className="h-6 w-6"
+                      className="h-6 w-6 hover:bg-foreground/10"
                       disabled={currentPage === 0}
                       onClick={() => setCurrentPage((p) => Math.max(0, p - 1))}
                     >
@@ -1334,7 +1295,7 @@ export function DataViewerSidebar({
                     <Button
                       variant="ghost"
                       size="icon"
-                      className="h-6 w-6"
+                      className="h-6 w-6 hover:bg-foreground/10"
                       disabled={currentPage >= totalPages - 1}
                       onClick={() =>
                         setCurrentPage((p) => Math.min(totalPages - 1, p + 1))
@@ -1351,7 +1312,7 @@ export function DataViewerSidebar({
                     <Button
                       variant="ghost"
                       size="icon"
-                      className="h-6 w-6"
+                      className="h-6 w-6 hover:bg-foreground/10"
                       disabled={currentPage >= totalPages - 1}
                       onClick={() => setCurrentPage(totalPages - 1)}
                     >
@@ -1386,49 +1347,6 @@ export function DataViewerSidebar({
         </div>
       )}
 
-      {/* Jump to Row Dialog */}
-      <Dialog open={showJumpDialog} onOpenChange={setShowJumpDialog}>
-        <CanvasDialogContent className="w-[320px]" showCloseButton={false}>
-          <CanvasDialogHeader className="pb-2">
-            <DialogTitle className="text-sm font-medium">Jump to Row</DialogTitle>
-            <p className="text-xs text-muted-foreground mt-1">
-              Enter a row number between 1 and {totalRows.toLocaleString()}
-            </p>
-          </CanvasDialogHeader>
-          <CanvasDialogBody className="pt-0">
-            <div className="flex gap-2">
-              <Input
-                type="number"
-                min={1}
-                max={totalRows}
-                placeholder={`Row number`}
-                value={jumpToRowInput}
-                onChange={(e) => setJumpToRowInput(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter") {
-                    handleJumpToRow()
-                  }
-                  if (e.key === "Escape") {
-                    setShowJumpDialog(false)
-                  }
-                }}
-                className="h-9 text-sm"
-                autoFocus
-              />
-              <Button
-                onClick={handleJumpToRow}
-                disabled={!jumpToRowInput}
-                size="sm"
-                className="h-9 px-4"
-              >
-                <CornerDownRight className="h-3.5 w-3.5 mr-1.5" />
-                Go
-              </Button>
-            </div>
-          </CanvasDialogBody>
-        </CanvasDialogContent>
-      </Dialog>
-
       {/* Cell Details Dialog */}
       <Dialog open={cellDetailsOpen} onOpenChange={setCellDetailsOpen}>
         <CanvasDialogContent className="w-[560px] max-h-[80vh]">
@@ -1446,10 +1364,7 @@ export function DataViewerSidebar({
             {cellDetailsContent && (
               <div className="relative">
                 <pre
-                  className={cn(
-                    "p-3 rounded-lg text-xs font-mono whitespace-pre-wrap break-all max-h-[50vh] overflow-auto",
-                    isDark ? "bg-zinc-900/50 border border-zinc-800" : "bg-zinc-100 border border-zinc-200"
-                  )}
+                  className="p-3 rounded-lg text-xs font-mono whitespace-pre-wrap break-all max-h-[50vh] overflow-auto bg-muted border border-border"
                 >
                   {isJsonLike(cellDetailsContent.value)
                     ? formatJsonForDisplay(cellDetailsContent.value)
@@ -1461,12 +1376,18 @@ export function DataViewerSidebar({
                       <Button
                         variant="ghost"
                         size="icon"
-                        className="absolute top-2 right-2 h-7 w-7"
-                        onClick={() => {
+                        className="absolute top-2 right-2 h-7 w-7 hover:bg-foreground/10"
+                        onClick={async () => {
                           const text = isJsonLike(cellDetailsContent.value)
                             ? formatJsonForDisplay(cellDetailsContent.value)
                             : formatCellValue(cellDetailsContent.value)
-                          navigator.clipboard.writeText(text)
+                          try {
+                            await navigator.clipboard.writeText(text)
+                            toast.success("Copied to clipboard")
+                          } catch (err) {
+                            console.error("Failed to copy:", err)
+                            toast.error("Failed to copy to clipboard")
+                          }
                         }}
                       >
                         <Copy className="h-3.5 w-3.5" />
@@ -1485,41 +1406,12 @@ export function DataViewerSidebar({
 }
 
 /**
- * Header component for the sidebar
+ * Header component with integrated toolbar actions
  */
-function Header({
-  fileName,
-  filePath,
-  onClose,
-}: {
+interface HeaderProps {
   fileName: string
   filePath: string
   onClose: () => void
-}) {
-  return (
-    <div className="flex items-center justify-between px-3 h-10 border-b bg-background flex-shrink-0">
-      <div className="flex items-center gap-2 min-w-0">
-        <FileIcon filePath={filePath} />
-        <span className="text-sm font-medium truncate" title={filePath}>
-          {fileName}
-        </span>
-      </div>
-      <Button
-        variant="ghost"
-        size="icon"
-        className="h-7 w-7 flex-shrink-0"
-        onClick={onClose}
-      >
-        <X className="h-4 w-4" />
-      </Button>
-    </div>
-  )
-}
-
-/**
- * Toolbar component with feature controls
- */
-interface ToolbarProps {
   onSearch: () => void
   onFreeze: () => void
   freezeCount: number
@@ -1528,12 +1420,13 @@ interface ToolbarProps {
   hiddenColumnCount: number
   onShowAllColumns: () => void
   sortColumn: string | null
-  sortDirection: "asc" | "desc"
   onClearSort: () => void
-  onJumpToRow: () => void
 }
 
-function Toolbar({
+function Header({
+  fileName,
+  filePath,
+  onClose,
   onSearch,
   onFreeze,
   freezeCount,
@@ -1543,104 +1436,109 @@ function Toolbar({
   onShowAllColumns,
   sortColumn,
   onClearSort,
-  onJumpToRow,
-}: ToolbarProps) {
+}: HeaderProps) {
   return (
-    <div className="flex items-center gap-1 px-2 py-1 border-b bg-muted/30">
-      <TooltipProvider delayDuration={300}>
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <Button
-              variant="ghost"
-              size="icon"
-              className="h-7 w-7"
-              onClick={onSearch}
-            >
-              <Search className="h-4 w-4" />
-            </Button>
-          </TooltipTrigger>
-          <TooltipContent side="bottom">Search (Ctrl+F)</TooltipContent>
-        </Tooltip>
+    <div className="flex items-center justify-between px-2 h-10 border-b border-border/50 bg-background flex-shrink-0">
+      {/* Left: File info */}
+      <div className="flex items-center gap-2 min-w-0 flex-shrink">
+        <FileIcon filePath={filePath} />
+        <span className="text-sm font-medium truncate" title={filePath}>
+          {fileName}
+        </span>
+      </div>
 
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <Button
-              variant="ghost"
-              size="icon"
-              className={cn("h-7 w-7", freezeCount > 0 && "bg-accent")}
-              onClick={onFreeze}
-            >
-              <Pin className="h-4 w-4" />
-            </Button>
-          </TooltipTrigger>
-          <TooltipContent side="bottom">
-            {freezeCount > 0 ? "Unfreeze columns" : "Freeze first column"}
-          </TooltipContent>
-        </Tooltip>
-
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <Button
-              variant="ghost"
-              size="icon"
-              className={cn("h-7 w-7", showRowMarkers && "bg-accent")}
-              onClick={onToggleRowMarkers}
-            >
-              <Hash className="h-4 w-4" />
-            </Button>
-          </TooltipTrigger>
-          <TooltipContent side="bottom">Toggle row numbers</TooltipContent>
-        </Tooltip>
-
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <Button
-              variant="ghost"
-              size="icon"
-              className="h-7 w-7"
-              onClick={onJumpToRow}
-            >
-              <CornerDownRight className="h-4 w-4" />
-            </Button>
-          </TooltipTrigger>
-          <TooltipContent side="bottom">Jump to row</TooltipContent>
-        </Tooltip>
-
-        {hiddenColumnCount > 0 && (
+      {/* Right: Toolbar actions + close button */}
+      <div className="flex items-center gap-0.5 flex-shrink-0">
+        <TooltipProvider delayDuration={300}>
           <Tooltip>
             <TooltipTrigger asChild>
               <Button
                 variant="ghost"
-                size="sm"
-                className="h-7 px-2 text-xs"
-                onClick={onShowAllColumns}
+                size="icon"
+                className="h-6 w-6 hover:bg-muted"
+                onClick={onSearch}
               >
-                <EyeOff className="h-3 w-3 mr-1" />
-                {hiddenColumnCount} hidden
+                <Search className="h-3.5 w-3.5" />
               </Button>
             </TooltipTrigger>
-            <TooltipContent side="bottom">Show all columns</TooltipContent>
+            <TooltipContent side="bottom">Search (Ctrl+F)</TooltipContent>
           </Tooltip>
-        )}
 
-        {sortColumn && (
           <Tooltip>
             <TooltipTrigger asChild>
               <Button
                 variant="ghost"
-                size="sm"
-                className="h-7 px-2 text-xs"
-                onClick={onClearSort}
+                size="icon"
+                className={cn("h-6 w-6", freezeCount > 0 ? "bg-accent" : "hover:bg-muted")}
+                onClick={onFreeze}
               >
-                <ArrowUpAZ className="h-3 w-3 mr-1" />
-                {sortColumn}
-                <X className="h-3 w-3 ml-1" />
+                <Pin className="h-3.5 w-3.5" />
               </Button>
             </TooltipTrigger>
-            <TooltipContent side="bottom">Clear sort</TooltipContent>
+            <TooltipContent side="bottom">
+              {freezeCount > 0 ? "Unfreeze columns" : "Freeze first column"}
+            </TooltipContent>
           </Tooltip>
-        )}
-      </TooltipProvider>
+
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                variant="ghost"
+                size="icon"
+                className={cn("h-6 w-6", showRowMarkers ? "bg-accent" : "hover:bg-muted")}
+                onClick={onToggleRowMarkers}
+              >
+                <Hash className="h-3.5 w-3.5" />
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent side="bottom">Toggle row numbers</TooltipContent>
+          </Tooltip>
+
+          {hiddenColumnCount > 0 && (
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="h-6 px-1.5 text-[10px] hover:bg-muted"
+                  onClick={onShowAllColumns}
+                >
+                  <EyeOff className="h-3 w-3 mr-0.5" />
+                  {hiddenColumnCount}
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent side="bottom">Show {hiddenColumnCount} hidden columns</TooltipContent>
+            </Tooltip>
+          )}
+
+          {sortColumn && (
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="h-6 px-1.5 text-[10px] hover:bg-muted max-w-[80px]"
+                  onClick={onClearSort}
+                >
+                  <ArrowUpAZ className="h-3 w-3 mr-0.5 flex-shrink-0" />
+                  <span className="truncate">{sortColumn}</span>
+                  <X className="h-3 w-3 ml-0.5 flex-shrink-0" />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent side="bottom">Clear sort on {sortColumn}</TooltipContent>
+            </Tooltip>
+          )}
+        </TooltipProvider>
+
+        {/* Close button */}
+        <Button
+          variant="ghost"
+          className="h-6 w-6 p-0 hover:bg-muted transition-[background-color,transform] duration-150 ease-out active:scale-[0.97] rounded-md ml-1"
+          onClick={onClose}
+        >
+          <IconCloseSidebarRight className="h-3.5 w-3.5 text-muted-foreground" />
+        </Button>
+      </div>
     </div>
   )
 }

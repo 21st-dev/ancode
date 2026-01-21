@@ -2,7 +2,7 @@ import { z } from "zod"
 import { router, publicProcedure } from "../index"
 import { readdir, stat, readFile, rm, rename, copyFile, mkdir } from "node:fs/promises"
 import { watch, type FSWatcher } from "node:fs"
-import { join, relative, basename } from "node:path"
+import { join, relative, basename, resolve, isAbsolute, sep } from "node:path"
 import { observable } from "@trpc/server/observable"
 import { EventEmitter } from "node:events"
 import { exec } from "node:child_process"
@@ -19,6 +19,74 @@ import {
 } from "../../parsers"
 
 const execAsync = promisify(exec)
+
+/**
+ * Validate that a file path is within a base directory
+ * Prevents path traversal attacks (e.g., ../../etc/passwd)
+ */
+function validatePathWithinDirectory(basePath: string, filePath: string): string {
+  const resolvedBase = resolve(basePath)
+  const resolvedPath = isAbsolute(filePath) ? resolve(filePath) : resolve(basePath, filePath)
+
+  // Check if the resolved path starts with the base path
+  // Use path.sep to handle both Unix (/) and Windows (\) separators
+  if (!resolvedPath.startsWith(resolvedBase + sep) && resolvedPath !== resolvedBase) {
+    throw new Error("Path traversal attempt detected: file path must be within project directory")
+  }
+
+  return resolvedPath
+}
+
+/**
+ * Check if a path is a symlink pointing outside the given directory
+ * Used to prevent symlink-based attacks on destructive operations
+ */
+async function isSymlinkOutsideDirectory(basePath: string, targetPath: string): Promise<boolean> {
+  const { lstat, realpath } = await import("node:fs/promises")
+
+  try {
+    const stats = await lstat(targetPath)
+    if (!stats.isSymbolicLink()) {
+      return false
+    }
+
+    // It's a symlink - check where it points
+    const resolvedBase = resolve(basePath)
+    const realTarget = await realpath(targetPath)
+
+    // If the real target is outside the base directory, it's dangerous
+    // Use path.sep to handle both Unix (/) and Windows (\) separators
+    return !realTarget.startsWith(resolvedBase + sep) && realTarget !== resolvedBase
+  } catch {
+    // If we can't check, assume it's safe (file might not exist yet)
+    return false
+  }
+}
+
+// Helper to recursively copy a directory
+// basePath is optional - when provided, validates symlinks don't point outside
+async function copyDir(src: string, dest: string, basePath?: string): Promise<void> {
+  await mkdir(dest, { recursive: true })
+  const entries = await readdir(src, { withFileTypes: true })
+
+  for (const entry of entries) {
+    const srcPath = join(src, entry.name)
+    const destPath = join(dest, entry.name)
+
+    // Validate nested symlinks if basePath is provided
+    if (basePath && entry.isSymbolicLink()) {
+      if (await isSymlinkOutsideDirectory(basePath, srcPath)) {
+        throw new Error(`Cannot copy symlink pointing outside the project directory: ${srcPath}`)
+      }
+    }
+
+    if (entry.isDirectory()) {
+      await copyDir(srcPath, destPath, basePath)
+    } else {
+      await copyFile(srcPath, destPath)
+    }
+  }
+}
 
 // Git status codes
 export type GitStatusCode =
@@ -114,7 +182,7 @@ interface FileEntry {
 
 // Cache for file and folder listings
 const fileListCache = new Map<string, { entries: FileEntry[]; timestamp: number }>()
-const CACHE_TTL = 1000 // 1 second (short TTL since we have real-time watching)
+const CACHE_TTL = 30000 // 30 seconds (watchers invalidate cache on changes)
 
 // Debounce timers for file change events
 const debounceTimers = new Map<string, NodeJS.Timeout>()
@@ -207,7 +275,7 @@ async function getGitStatus(projectPath: string): Promise<Map<string, GitFileSta
     // Check if this is a git repository
     // --ignored shows gitignored files (marked with !)
     // -uall shows all untracked files
-    const { stdout } = await execAsync("git status --porcelain --ignored -uall", {
+    const { stdout } = await execAsync("git status --porcelain --ignored -unormal", {
       cwd: projectPath,
       maxBuffer: 10 * 1024 * 1024, // 10MB buffer for large repos
     })
@@ -387,8 +455,8 @@ async function scanDirectory(
       const relativePath = relative(rootPath, fullPath)
 
       if (entry.isDirectory()) {
-        // Skip .git directory (internal git data, not useful to show)
-        if (entry.name === ".git") continue
+        // Skip ignored directories (node_modules, .git, dist, build, etc.)
+        if (IGNORED_DIRS.has(entry.name)) continue
 
         // Add the folder itself to results
         entries.push({ path: relativePath, type: "folder" })
@@ -528,15 +596,8 @@ export const filesRouter = router({
         // Get entry list (cached or fresh scan)
         const entries = await getEntryList(projectPath)
         
-        // Debug: log folder count
-        const folderCount = entries.filter(e => e.type === "folder").length
-        const fileCount = entries.filter(e => e.type === "file").length
-        console.log(`[files] Scanned ${projectPath}: ${folderCount} folders, ${fileCount} files`)
-
         // Filter and sort by query
-        const results = filterEntries(entries, query, limit)
-        console.log(`[files] Query "${query}": returning ${results.length} results, folders: ${results.filter(r => r.type === "folder").length}`)
-        return results
+        return filterEntries(entries, query, limit)
       } catch (error) {
         console.error(`[files] Error searching files:`, error)
         return []
@@ -599,7 +660,8 @@ export const filesRouter = router({
       }
 
       try {
-        const fullPath = join(projectPath, folderPath)
+        // Validate path is within project directory (prevents path traversal)
+        const fullPath = validatePathWithinDirectory(projectPath, folderPath)
 
         // Verify the path exists and is a directory
         const pathStat = await stat(fullPath)
@@ -925,13 +987,33 @@ export const filesRouter = router({
     }),
 
   /**
-   * Delete a file or folder
+   * Delete a file or folder (moves to OS trash for safety)
    */
   deleteFile: publicProcedure
-    .input(z.object({ filePath: z.string() }))
+    .input(z.object({
+      filePath: z.string(),
+      projectPath: z.string().optional(), // For path validation
+      permanent: z.boolean().optional().default(false), // Skip trash
+    }))
     .mutation(async ({ input }) => {
       try {
-        await rm(input.filePath, { recursive: true })
+        // Validate path if projectPath is provided
+        if (input.projectPath) {
+          validatePathWithinDirectory(input.projectPath, input.filePath)
+
+          // Check for symlinks pointing outside the project
+          if (await isSymlinkOutsideDirectory(input.projectPath, input.filePath)) {
+            throw new Error("Cannot delete symlinks pointing outside the project directory")
+          }
+        }
+
+        if (input.permanent) {
+          // Permanent delete (skips trash)
+          await rm(input.filePath, { recursive: true })
+        } else {
+          // Move to OS trash (safer - can be recovered)
+          await shell.trashItem(input.filePath)
+        }
         return { success: true }
       } catch (error) {
         console.error("[files.deleteFile] Error:", error)
@@ -943,9 +1025,19 @@ export const filesRouter = router({
    * Rename a file or folder
    */
   renameFile: publicProcedure
-    .input(z.object({ oldPath: z.string(), newPath: z.string() }))
+    .input(z.object({
+      oldPath: z.string(),
+      newPath: z.string(),
+      projectPath: z.string().optional(), // For path validation
+    }))
     .mutation(async ({ input }) => {
       try {
+        // Validate both paths if projectPath is provided
+        if (input.projectPath) {
+          validatePathWithinDirectory(input.projectPath, input.oldPath)
+          validatePathWithinDirectory(input.projectPath, input.newPath)
+        }
+
         await rename(input.oldPath, input.newPath)
         return { success: true }
       } catch (error) {
@@ -960,12 +1052,19 @@ export const filesRouter = router({
   moveFile: publicProcedure
     .input(z.object({
       sourcePath: z.string(),
-      targetDir: z.string()
+      targetDir: z.string(),
+      projectPath: z.string().optional(), // For path validation
     }))
     .mutation(async ({ input }) => {
       try {
         const fileName = basename(input.sourcePath)
         const destPath = join(input.targetDir, fileName)
+
+        // Validate paths if projectPath is provided
+        if (input.projectPath) {
+          validatePathWithinDirectory(input.projectPath, input.sourcePath)
+          validatePathWithinDirectory(input.projectPath, destPath)
+        }
 
         // Check if destination already exists
         try {
@@ -1012,11 +1111,18 @@ export const filesRouter = router({
         sourcePaths: z.array(z.string()),
         /** Target directory within the project (absolute path) */
         targetDir: z.string(),
+        /** Project path for validation */
+        projectPath: z.string().optional(),
       })
     )
     .mutation(async ({ input }) => {
-      const { sourcePaths, targetDir } = input
+      const { sourcePaths, targetDir, projectPath } = input
       const results: { source: string; dest: string; success: boolean; error?: string }[] = []
+
+      // Validate target directory if projectPath is provided
+      if (projectPath) {
+        validatePathWithinDirectory(projectPath, targetDir)
+      }
 
       // Ensure target directory exists
       try {
@@ -1076,6 +1182,234 @@ export const filesRouter = router({
         total: sourcePaths.length,
         imported: successCount,
         results,
+      }
+    }),
+
+  /**
+   * Copy files to a destination directory
+   * Handles name conflicts by appending " copy" or " copy 2", etc.
+   */
+  copyFiles: publicProcedure
+    .input(
+      z.object({
+        sourcePaths: z.array(z.string()),
+        targetDir: z.string(),
+        projectPath: z.string().optional(), // For path validation
+      })
+    )
+    .mutation(async ({ input }) => {
+      const { sourcePaths, targetDir, projectPath } = input
+      const results: { source: string; dest: string; success: boolean; error?: string }[] = []
+
+      // Validate target directory if projectPath is provided
+      if (projectPath) {
+        validatePathWithinDirectory(projectPath, targetDir)
+      }
+
+      // Ensure target directory exists
+      try {
+        await mkdir(targetDir, { recursive: true })
+      } catch {
+        // Directory might already exist
+      }
+
+      for (const sourcePath of sourcePaths) {
+        const fileName = basename(sourcePath)
+        let destPath = join(targetDir, fileName)
+
+        try {
+          // Validate source path if projectPath is provided
+          if (projectPath) {
+            validatePathWithinDirectory(projectPath, sourcePath)
+
+            // Check for symlinks pointing outside the project
+            if (await isSymlinkOutsideDirectory(projectPath, sourcePath)) {
+              throw new Error("Cannot copy symlinks pointing outside the project directory")
+            }
+          }
+
+          // Check source exists
+          const sourceStats = await stat(sourcePath)
+
+          // Handle name conflicts
+          let copyNumber = 0
+          const nameWithoutExt = fileName.includes(".")
+            ? fileName.slice(0, fileName.lastIndexOf("."))
+            : fileName
+          const ext = fileName.includes(".")
+            ? fileName.slice(fileName.lastIndexOf("."))
+            : ""
+
+          while (true) {
+            try {
+              await stat(destPath)
+              // File exists, try next name
+              copyNumber++
+              const suffix = copyNumber === 1 ? " copy" : ` copy ${copyNumber}`
+              destPath = join(targetDir, `${nameWithoutExt}${suffix}${ext}`)
+            } catch {
+              // File doesn't exist, we can use this name
+              break
+            }
+          }
+
+          if (sourceStats.isDirectory()) {
+            // Recursively copy directory, passing projectPath to validate nested symlinks
+            await copyDir(sourcePath, destPath, projectPath)
+          } else {
+            await copyFile(sourcePath, destPath)
+          }
+          results.push({ source: sourcePath, dest: destPath, success: true })
+        } catch (error) {
+          console.error(`[files.copyFiles] Failed to copy ${sourcePath}:`, error)
+          results.push({
+            source: sourcePath,
+            dest: destPath,
+            success: false,
+            error: error instanceof Error ? error.message : "Unknown error",
+          })
+        }
+      }
+
+      const successCount = results.filter((r) => r.success).length
+      return {
+        success: successCount > 0,
+        total: sourcePaths.length,
+        copied: successCount,
+        results,
+      }
+    }),
+
+  /**
+   * Delete multiple files or folders (moves to OS trash for safety)
+   */
+  deleteFiles: publicProcedure
+    .input(
+      z.object({
+        paths: z.array(z.string()),
+        projectPath: z.string().optional(), // For path validation
+        permanent: z.boolean().optional().default(false), // Skip trash
+      })
+    )
+    .mutation(async ({ input }) => {
+      const { paths, projectPath, permanent } = input
+      const results: { path: string; success: boolean; error?: string }[] = []
+
+      for (const filePath of paths) {
+        try {
+          // Validate path if projectPath is provided
+          if (projectPath) {
+            validatePathWithinDirectory(projectPath, filePath)
+
+            // Check for symlinks pointing outside the project
+            if (await isSymlinkOutsideDirectory(projectPath, filePath)) {
+              throw new Error("Cannot delete symlinks pointing outside the project directory")
+            }
+          }
+
+          if (permanent) {
+            await rm(filePath, { recursive: true, force: true })
+          } else {
+            await shell.trashItem(filePath)
+          }
+          results.push({ path: filePath, success: true })
+        } catch (error) {
+          console.error(`[files.deleteFiles] Failed to delete ${filePath}:`, error)
+          results.push({
+            path: filePath,
+            success: false,
+            error: error instanceof Error ? error.message : "Unknown error",
+          })
+        }
+      }
+
+      const successCount = results.filter((r) => r.success).length
+      return {
+        success: successCount > 0,
+        total: paths.length,
+        deleted: successCount,
+        results,
+      }
+    }),
+
+  /**
+   * Create a new empty file
+   */
+  createFile: publicProcedure
+    .input(
+      z.object({
+        filePath: z.string(),
+        content: z.string().optional().default(""),
+        projectPath: z.string().optional(), // For path validation
+      })
+    )
+    .mutation(async ({ input }) => {
+      const { filePath, content, projectPath } = input
+      try {
+        // Validate path if projectPath is provided
+        if (projectPath) {
+          validatePathWithinDirectory(projectPath, filePath)
+        }
+
+        // Ensure parent directory exists
+        const parentDir = filePath.substring(0, filePath.lastIndexOf("/"))
+        if (parentDir) {
+          await mkdir(parentDir, { recursive: true })
+        }
+
+        // Check if file already exists
+        try {
+          await stat(filePath)
+          throw new Error("File already exists")
+        } catch (err: any) {
+          if (err.code !== "ENOENT") {
+            throw err
+          }
+        }
+
+        // Create the file
+        const { writeFile } = await import("node:fs/promises")
+        await writeFile(filePath, content, "utf-8")
+        return { success: true, path: filePath }
+      } catch (error) {
+        console.error("[files.createFile] Error:", error)
+        throw new Error(`Failed to create file: ${error instanceof Error ? error.message : "Unknown error"}`)
+      }
+    }),
+
+  /**
+   * Create a new folder
+   */
+  createFolder: publicProcedure
+    .input(
+      z.object({
+        folderPath: z.string(),
+        projectPath: z.string().optional(), // For path validation
+      })
+    )
+    .mutation(async ({ input }) => {
+      const { folderPath, projectPath } = input
+      try {
+        // Validate path if projectPath is provided
+        if (projectPath) {
+          validatePathWithinDirectory(projectPath, folderPath)
+        }
+
+        // Check if folder already exists
+        try {
+          await stat(folderPath)
+          throw new Error("Folder already exists")
+        } catch (err: any) {
+          if (err.code !== "ENOENT") {
+            throw err
+          }
+        }
+
+        await mkdir(folderPath, { recursive: true })
+        return { success: true, path: folderPath }
+      } catch (error) {
+        console.error("[files.createFolder] Error:", error)
+        throw new Error(`Failed to create folder: ${error instanceof Error ? error.message : "Unknown error"}`)
       }
     }),
 })

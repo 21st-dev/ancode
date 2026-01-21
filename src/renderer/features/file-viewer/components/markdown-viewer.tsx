@@ -1,4 +1,4 @@
-import { useState, useMemo, useCallback, useEffect } from "react"
+import { useState, useMemo, useCallback, useEffect, useRef } from "react"
 import Editor from "@monaco-editor/react"
 import ReactMarkdown from "react-markdown"
 import remarkGfm from "remark-gfm"
@@ -7,14 +7,16 @@ import { oneDark, oneLight } from "react-syntax-highlighter/dist/esm/styles/pris
 import { useTheme } from "next-themes"
 import { useAtom } from "jotai"
 import {
-  X,
   Loader2,
   AlertCircle,
-  FileText,
   Eye,
   Code,
+  Copy,
+  Check,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
+import { IconCloseSidebarRight } from "@/components/ui/icons"
+import { getFileIconByExtension } from "../../agents/mentions/agents-file-mention"
 import {
   Tooltip,
   TooltipContent,
@@ -24,28 +26,12 @@ import { cn } from "@/lib/utils"
 import { trpc } from "@/lib/trpc"
 import { fileViewerWordWrapAtom } from "../../agents/atoms"
 import { defaultEditorOptions, getMonacoTheme } from "./monaco-config"
+import { getFileName, formatFileSize } from "../utils/file-utils"
 
 interface MarkdownViewerProps {
   filePath: string
   projectPath: string
   onClose: () => void
-}
-
-/**
- * Get file name from path
- */
-function getFileName(filePath: string): string {
-  const parts = filePath.split("/")
-  return parts[parts.length - 1] || filePath
-}
-
-/**
- * Format file size for display
- */
-function formatFileSize(bytes: number): string {
-  if (bytes < 1024) return `${bytes} B`
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`
-  return `${(bytes / (1024 * 1024)).toFixed(2)} MB`
 }
 
 /**
@@ -73,9 +59,37 @@ export function MarkdownViewer({
   }, [filePath, projectPath])
 
   // Fetch file content
-  const { data, isLoading, error } = trpc.files.readTextFile.useQuery(
+  const { data, isLoading, error, refetch } = trpc.files.readTextFile.useQuery(
     { filePath: absolutePath },
     { staleTime: 30000 }
+  )
+
+  // Store refetch in a ref so subscription callback always has current refetch
+  const refetchRef = useRef(refetch)
+  useEffect(() => {
+    refetchRef.current = refetch
+  }, [refetch])
+
+  // Compute relative path for matching against file change events
+  const relativePath = useMemo(() => {
+    if (!filePath.startsWith("/")) return filePath
+    if (filePath.startsWith(projectPath)) {
+      return filePath.slice(projectPath.length + 1)
+    }
+    return filePath
+  }, [projectPath, filePath])
+
+  // Subscribe to file changes and refetch when the viewed file changes
+  trpc.files.watchChanges.useSubscription(
+    { projectPath },
+    {
+      enabled: !!projectPath && !!relativePath,
+      onData: (change) => {
+        if (change.filename === relativePath) {
+          refetchRef.current()
+        }
+      },
+    },
   )
 
   // Editor options
@@ -101,11 +115,15 @@ export function MarkdownViewer({
 
   // Code block renderer for syntax highlighting
   const codeComponent = useCallback(
-    ({ className, children, ...props }: any) => {
+    ({ className, children, node, ...props }: { className?: string; children?: React.ReactNode; node?: { position?: unknown; tagName?: string } } & React.HTMLAttributes<HTMLElement>) => {
       const match = /language-(\w+)/.exec(className || "")
-      const isInline = !match && !className?.includes("language-")
+      // Check if this is inside a <pre> tag (code block) vs inline
+      const isCodeBlock = node?.position && node?.tagName === "code" &&
+        (className?.includes("language-") ||
+         (typeof children === "string" && children.includes("\n")))
 
-      if (isInline) {
+      // Inline code (not in a pre block)
+      if (!isCodeBlock && !match) {
         return (
           <code
             className={cn(
@@ -119,6 +137,7 @@ export function MarkdownViewer({
         )
       }
 
+      // Code block - use syntax highlighter
       return (
         <SyntaxHighlighter
           style={isDark ? oneDark : oneLight}
@@ -128,6 +147,7 @@ export function MarkdownViewer({
             margin: 0,
             borderRadius: "0.375rem",
             fontSize: "0.875rem",
+            padding: "1rem",
           }}
           {...props}
         >
@@ -138,12 +158,22 @@ export function MarkdownViewer({
     [isDark]
   )
 
+  // Pre block wrapper for code blocks without language
+  const preComponent = useCallback(
+    ({ children }: { children?: React.ReactNode }) => {
+      // Just pass through - the code component handles styling
+      return <>{children}</>
+    },
+    []
+  )
+
   // Loading state
   if (isLoading) {
     return (
       <div className="flex flex-col h-full bg-background">
         <Header
           fileName={fileName}
+          filePath={filePath}
           byteLength={null}
           showPreview={showPreview}
           onToggleView={setShowPreview}
@@ -161,19 +191,26 @@ export function MarkdownViewer({
 
   // Error state
   if (error || (data && !data.ok)) {
-    const errorMessage =
-      data && !data.ok
-        ? data.reason === "too-large"
-          ? "File too large"
-          : data.reason === "binary"
-          ? "Binary file"
-          : "File not found"
-        : "Failed to load file"
+    let errorMessage = "Failed to load file"
+    if (data && !data.ok) {
+      errorMessage = data.reason === "too-large"
+        ? "File too large"
+        : data.reason === "binary"
+        ? "Binary file"
+        : "File not found"
+    } else if (error) {
+      const errMsg = error.message?.toLowerCase() || ""
+      const isNotFound = errMsg.includes("enoent") ||
+                         errMsg.includes("not found") ||
+                         errMsg.includes("no such file")
+      errorMessage = isNotFound ? "File not found" : "Failed to load file"
+    }
 
     return (
       <div className="flex flex-col h-full bg-background">
         <Header
           fileName={fileName}
+          filePath={filePath}
           byteLength={null}
           showPreview={showPreview}
           onToggleView={setShowPreview}
@@ -182,12 +219,7 @@ export function MarkdownViewer({
         <div className="flex-1 flex items-center justify-center p-4">
           <div className="flex flex-col items-center gap-3 text-center max-w-[300px]">
             <AlertCircle className="h-10 w-10 text-muted-foreground" />
-            <div>
-              <p className="font-medium text-foreground">{errorMessage}</p>
-              <p className="text-sm text-muted-foreground mt-1">
-                The file cannot be displayed.
-              </p>
-            </div>
+            <p className="font-medium text-foreground">{errorMessage}</p>
           </div>
         </div>
       </div>
@@ -201,10 +233,12 @@ export function MarkdownViewer({
     <div className="flex flex-col h-full bg-background">
       <Header
         fileName={fileName}
+        filePath={filePath}
         byteLength={byteLength}
         showPreview={showPreview}
         onToggleView={setShowPreview}
         onClose={onClose}
+        content={content}
       />
 
       {/* Content */}
@@ -236,6 +270,7 @@ export function MarkdownViewer({
               remarkPlugins={[remarkGfm]}
               components={{
                 code: codeComponent,
+                pre: preComponent,
               }}
             >
               {content}
@@ -265,21 +300,39 @@ export function MarkdownViewer({
  */
 function Header({
   fileName,
+  filePath,
   byteLength,
   showPreview,
   onToggleView,
   onClose,
+  content,
 }: {
   fileName: string
+  filePath: string
   byteLength: number | null
   showPreview: boolean
   onToggleView: (show: boolean) => void
   onClose: () => void
+  content?: string
 }) {
+  const Icon = getFileIconByExtension(filePath)
+  const [copied, setCopied] = useState(false)
+
+  const handleCopy = useCallback(async () => {
+    if (!content) return
+    try {
+      await navigator.clipboard.writeText(content)
+      setCopied(true)
+      setTimeout(() => setCopied(false), 2000)
+    } catch (err) {
+      console.error("Failed to copy:", err)
+    }
+  }, [content])
+
   return (
     <div className="flex items-center justify-between px-3 h-10 border-b bg-background flex-shrink-0">
       <div className="flex items-center gap-2 min-w-0 flex-1">
-        <FileText className="h-4 w-4 text-muted-foreground flex-shrink-0" />
+        {Icon && <Icon className="h-4 w-4 flex-shrink-0" />}
         <span className="text-sm font-medium truncate">{fileName}</span>
         {byteLength !== null && (
           <span className="text-xs text-muted-foreground flex-shrink-0">
@@ -288,6 +341,28 @@ function Header({
         )}
       </div>
       <div className="flex items-center gap-1 flex-shrink-0">
+        {/* Copy file content */}
+        {content && (
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-7 w-7"
+                onClick={handleCopy}
+              >
+                {copied ? (
+                  <Check className="h-4 w-4 text-green-500" />
+                ) : (
+                  <Copy className="h-4 w-4" />
+                )}
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent side="bottom">
+              {copied ? "Copied!" : "Copy file content"}
+            </TooltipContent>
+          </Tooltip>
+        )}
         {/* View toggle */}
         <div className="flex items-center rounded-md border bg-muted/50 p-0.5">
           <Tooltip>
@@ -326,11 +401,10 @@ function Header({
         {/* Close button */}
         <Button
           variant="ghost"
-          size="icon"
-          className="h-7 w-7 ml-1"
+          className="h-6 w-6 p-0 hover:bg-muted transition-[background-color,transform] duration-150 ease-out active:scale-[0.97] rounded-md ml-1"
           onClick={onClose}
         >
-          <X className="h-4 w-4" />
+          <IconCloseSidebarRight className="h-3.5 w-3.5 text-muted-foreground" />
         </Button>
       </div>
     </div>

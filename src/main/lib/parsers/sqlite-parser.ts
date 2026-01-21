@@ -70,14 +70,40 @@ export function listSqliteTables(filePath: string): string[] {
 }
 
 /**
+ * Validate that a table name exists in the database
+ * Prevents SQL injection by ensuring we only use valid table names
+ */
+function validateTableName(db: Database.Database, tableName: string): void {
+  const result = db
+    .prepare(
+      `SELECT name FROM sqlite_master
+       WHERE type='table' AND name = ?`
+    )
+    .get(tableName) as { name: string } | undefined
+
+  if (!result) {
+    throw new Error(`Table not found: ${tableName}`)
+  }
+}
+
+/**
+ * Escape a table name for use in SQL by wrapping in double quotes
+ * and escaping any embedded double quotes
+ */
+function escapeTableName(tableName: string): string {
+  return `"${tableName.replace(/"/g, '""')}"`
+}
+
+/**
  * Get column information for a table
+ * Note: tableName must be validated before calling this function
  */
 function getTableColumns(
   db: Database.Database,
   tableName: string
 ): ParsedColumn[] {
-  // Use PRAGMA to get column info
-  const columns = db.prepare(`PRAGMA table_info("${tableName}")`).all() as {
+  // Use PRAGMA to get column info - table name is already validated
+  const columns = db.prepare(`PRAGMA table_info(${escapeTableName(tableName)})`).all() as {
     cid: number
     name: string
     type: string
@@ -93,6 +119,42 @@ function getTableColumns(
 }
 
 /**
+ * Validate SQL query to prevent dangerous operations
+ * Only allows SELECT statements for security
+ */
+function validateSqlQuery(sql: string): void {
+  const trimmedSql = sql.trim().toUpperCase()
+
+  // Only allow SELECT statements
+  if (!trimmedSql.startsWith("SELECT")) {
+    throw new Error("Only SELECT queries are allowed")
+  }
+
+  // Block dangerous keywords that could modify data or schema
+  const dangerousKeywords = [
+    "INSERT",
+    "UPDATE",
+    "DELETE",
+    "DROP",
+    "CREATE",
+    "ALTER",
+    "TRUNCATE",
+    "REPLACE",
+    "ATTACH",
+    "DETACH",
+    "PRAGMA",
+  ]
+
+  for (const keyword of dangerousKeywords) {
+    // Check for keyword as a separate word (not part of column name)
+    const regex = new RegExp(`\\b${keyword}\\b`, "i")
+    if (regex.test(sql)) {
+      throw new Error(`Query contains forbidden keyword: ${keyword}`)
+    }
+  }
+}
+
+/**
  * Query a SQLite database and return parsed data
  */
 export function querySqlite(
@@ -104,6 +166,9 @@ export function querySqlite(
   const db = new Database(filePath, { readonly: true })
 
   try {
+    // Validate SQL query for security
+    validateSqlQuery(sql)
+
     // Add LIMIT if not present (safety measure)
     let querySql = sql.trim()
     if (
@@ -155,18 +220,24 @@ export function previewSqliteTable(
   const db = new Database(filePath, { readonly: true })
 
   try {
-    // Get column info
+    // Validate table name exists to prevent SQL injection
+    validateTableName(db, tableName)
+
+    // Get column info (table name is now validated)
     const columns = getTableColumns(db, tableName)
+
+    // Escape table name for SQL query
+    const escapedTable = escapeTableName(tableName)
 
     // Get total row count
     const countResult = db
-      .prepare(`SELECT COUNT(*) as count FROM "${tableName}"`)
+      .prepare(`SELECT COUNT(*) as count FROM ${escapedTable}`)
       .get() as { count: number }
     const totalRows = countResult.count
 
     // Get rows with pagination
     const rows = db
-      .prepare(`SELECT * FROM "${tableName}" LIMIT ? OFFSET ?`)
+      .prepare(`SELECT * FROM ${escapedTable} LIMIT ? OFFSET ?`)
       .all(limit, offset) as Record<string, unknown>[]
 
     const truncated = offset + limit < totalRows

@@ -5664,7 +5664,6 @@ export function ChatView({
             style={{ borderLeftWidth: "0.5px", overflow: "hidden" }}
           >
             <DataViewerSidebar
-              chatId={chatId}
               filePath={viewedDataFile}
               projectPath={(worktreePath || originalProjectPath) as string}
               onClose={() => {
@@ -5694,7 +5693,6 @@ export function ChatView({
             style={{ borderLeftWidth: "0.5px", overflow: "hidden" }}
           >
             <FileViewerSidebar
-              chatId={chatId}
               filePath={viewedSourceFile}
               projectPath={(worktreePath || originalProjectPath) as string}
               onClose={() => {

@@ -143,9 +143,9 @@ async function installExtensions(
   fileType: DuckDBFileType
 ): Promise<void> {
   if (fileType === "excel") {
-    // Excel support requires the spatial extension (for xlsx)
-    await queryDuckDB(db, "INSTALL spatial")
-    await queryDuckDB(db, "LOAD spatial")
+    // DuckDB 1.2+ has native excel extension for xlsx files
+    await queryDuckDB(db, "INSTALL excel")
+    await queryDuckDB(db, "LOAD excel")
   }
 }
 
@@ -285,6 +285,49 @@ export async function getDuckDBColumns(
 }
 
 /**
+ * Validate SQL query to prevent dangerous operations
+ * Only allows SELECT statements for security
+ */
+function validateSqlQuery(sql: string): void {
+  const trimmedSql = sql.trim().toUpperCase()
+
+  // Only allow SELECT statements
+  if (!trimmedSql.startsWith("SELECT")) {
+    throw new Error("Only SELECT queries are allowed")
+  }
+
+  // Block dangerous keywords that could modify data or execute system commands
+  const dangerousKeywords = [
+    "INSERT",
+    "UPDATE",
+    "DELETE",
+    "DROP",
+    "CREATE",
+    "ALTER",
+    "TRUNCATE",
+    "COPY",
+    "EXPORT",
+    "IMPORT",
+    "INSTALL",
+    "LOAD",
+    "ATTACH",
+    "DETACH",
+    "CALL",
+    "EXECUTE",
+    "SET",
+    "PRAGMA",
+  ]
+
+  for (const keyword of dangerousKeywords) {
+    // Check for keyword as a separate word (not part of column name)
+    const regex = new RegExp(`\\b${keyword}\\b`, "i")
+    if (regex.test(sql)) {
+      throw new Error(`Query contains forbidden keyword: ${keyword}`)
+    }
+  }
+}
+
+/**
  * Execute an arbitrary SQL query against a data file
  * The file is available as the 'data' table in the query
  */
@@ -294,6 +337,9 @@ export async function queryDataFile(
   options: { sheetName?: string } = {}
 ): Promise<ParsedData> {
   const { sheetName } = options
+
+  // Validate SQL query for security - only SELECT allowed
+  validateSqlQuery(sql)
 
   // Detect file type - support CSV in addition to DuckDB native types
   const ext = path.extname(filePath).toLowerCase()
@@ -327,7 +373,7 @@ export async function queryDataFile(
     // Create a view named 'data' for the file
     await queryDuckDB(db, `CREATE VIEW data AS SELECT * FROM ${readFn}`)
 
-    // Execute the user's SQL query
+    // Execute the user's SQL query (already validated above)
     const dataResult = await queryDuckDB(db, sql)
 
     if (dataResult.length === 0) {
@@ -366,29 +412,3 @@ export async function queryDataFile(
   }
 }
 
-/**
- * List sheets in an Excel file
- */
-export async function listExcelSheets(filePath: string): Promise<string[]> {
-  const db = new duckdb.Database(":memory:")
-
-  try {
-    await installExtensions(db, "excel")
-
-    const escapedPath = filePath.replace(/'/g, "''")
-    // Use st_read_meta to get sheet names
-    const result = await queryDuckDB(
-      db,
-      `SELECT DISTINCT sheet_name FROM read_xlsx_metadata('${escapedPath}')`
-    )
-
-    const sheets = result.map((row) => String(row.sheet_name || ""))
-    db.close()
-    return sheets
-  } catch (error) {
-    db.close()
-    // If metadata reading fails, return a default sheet
-    console.warn("[duckdb-parser] Failed to list Excel sheets:", error)
-    return ["Sheet1"]
-  }
-}

@@ -1,4 +1,4 @@
-import { useMemo } from "react"
+import { useMemo, useEffect, useRef } from "react"
 import { trpc } from "../../../lib/trpc"
 
 /**
@@ -67,6 +67,44 @@ export function useFileContent(
     },
   )
 
+  // Store refetch in a ref so subscription callback always has current refetch
+  const refetchRef = useRef(refetch)
+  useEffect(() => {
+    refetchRef.current = refetch
+  }, [refetch])
+
+  // Compute relative path for matching against file change events
+  const relativePath = useMemo(() => {
+    if (!projectPath || !filePath) return null
+    // If filePath is already relative, return it
+    if (!filePath.startsWith("/")) return filePath
+    // If filePath starts with projectPath, extract the relative part
+    // Ensure we match the full directory path by checking for trailing separator
+    const projectPathWithSep = projectPath.endsWith("/") ? projectPath : `${projectPath}/`
+    if (filePath.startsWith(projectPathWithSep)) {
+      return filePath.slice(projectPathWithSep.length)
+    }
+    // Handle exact match (filePath equals projectPath)
+    if (filePath === projectPath) {
+      return ""
+    }
+    return filePath
+  }, [projectPath, filePath])
+
+  // Subscribe to file changes and refetch when the viewed file changes
+  trpc.files.watchChanges.useSubscription(
+    { projectPath: projectPath || "" },
+    {
+      enabled: !!projectPath && !!relativePath,
+      onData: (change) => {
+        // Check if the changed file matches the one we're viewing
+        if (change.filename === relativePath) {
+          refetchRef.current()
+        }
+      },
+    },
+  )
+
   // Return result based on query state
   return useMemo((): FileContentResult => {
     // console.log("[useFileContent] Computing result:", { enabled, isLoading, error, data })
@@ -93,10 +131,15 @@ export function useFileContent(
 
     if (error) {
       console.error("[useFileContent] Query error:", error)
+      // Check if it's a file not found error
+      const errorMessage = error.message?.toLowerCase() || ""
+      const isNotFound = errorMessage.includes("enoent") ||
+                         errorMessage.includes("not found") ||
+                         errorMessage.includes("no such file")
       return {
         content: null,
         isLoading: false,
-        error: "unknown",
+        error: isNotFound ? "not-found" : "unknown",
         byteLength: null,
         refetch,
       }

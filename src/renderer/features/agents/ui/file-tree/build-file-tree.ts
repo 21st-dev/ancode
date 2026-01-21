@@ -111,6 +111,25 @@ export function countFolders(nodes: TreeNode[]): number {
 }
 
 /**
+ * Flatten visible tree nodes for virtualization
+ * Only includes nodes whose parent folders are expanded
+ */
+export function flattenVisibleTree(
+  nodes: TreeNode[],
+  expandedFolders: Set<string>,
+  level = 0
+): Array<{ node: TreeNode; level: number }> {
+  const result: Array<{ node: TreeNode; level: number }> = []
+  for (const node of nodes) {
+    result.push({ node, level })
+    if (node.type === "folder" && expandedFolders.has(node.path)) {
+      result.push(...flattenVisibleTree(node.children, expandedFolders, level + 1))
+    }
+  }
+  return result
+}
+
+/**
  * Filter tree nodes by search query
  * Returns nodes that match the query or have children that match
  */

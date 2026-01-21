@@ -1,12 +1,23 @@
 "use client"
 
 import { useState } from "react"
-import { Copy, Trash2, Edit2, FolderOpen } from "lucide-react"
+import {
+  Copy,
+  Trash2,
+  Edit2,
+  FolderOpen,
+  Scissors,
+  Clipboard,
+  FilePlus,
+  FolderPlus,
+  CopyPlus,
+} from "lucide-react"
 import { toast } from "sonner"
 import {
   ContextMenuContent,
   ContextMenuItem,
   ContextMenuSeparator,
+  ContextMenuShortcut,
 } from "../../../../components/ui/context-menu"
 import {
   AlertDialog,
@@ -42,6 +53,20 @@ interface FileTreeContextMenuProps {
   onDeleted?: () => void
   /** Callback after successful rename */
   onRenamed?: () => void
+  /** Whether clipboard has items to paste */
+  hasClipboard?: boolean
+  /** Cut files to clipboard */
+  onCut?: () => void
+  /** Copy files to clipboard */
+  onCopy?: () => void
+  /** Paste files from clipboard */
+  onPaste?: () => void
+  /** Duplicate file */
+  onDuplicate?: () => void
+  /** Create new file in directory */
+  onNewFile?: () => void
+  /** Create new folder in directory */
+  onNewFolder?: () => void
 }
 
 export function FileTreeContextMenu({
@@ -50,6 +75,13 @@ export function FileTreeContextMenu({
   projectPath,
   onDeleted,
   onRenamed,
+  hasClipboard,
+  onCut,
+  onCopy,
+  onPaste,
+  onDuplicate,
+  onNewFile,
+  onNewFolder,
 }: FileTreeContextMenuProps) {
   const [showDeleteDialog, setShowDeleteDialog] = useState(false)
   const [showRenameDialog, setShowRenameDialog] = useState(false)
@@ -146,20 +178,64 @@ export function FileTreeContextMenu({
 
   return (
     <>
-      <ContextMenuContent className="w-52">
-        {/* Copy actions */}
+      <ContextMenuContent className="w-56">
+        {/* New File/Folder - only for folders or when targeting parent dir */}
+        {(type === "folder" || onNewFile || onNewFolder) && (
+          <>
+            {onNewFile && (
+              <ContextMenuItem onClick={onNewFile}>
+                <FilePlus className="mr-2 h-4 w-4" />
+                New File
+              </ContextMenuItem>
+            )}
+            {onNewFolder && (
+              <ContextMenuItem onClick={onNewFolder}>
+                <FolderPlus className="mr-2 h-4 w-4" />
+                New Folder
+              </ContextMenuItem>
+            )}
+            <ContextMenuSeparator />
+          </>
+        )}
+
+        {/* Clipboard operations */}
+        {onCut && (
+          <ContextMenuItem onClick={onCut}>
+            <Scissors className="mr-2 h-4 w-4" />
+            Cut
+            <ContextMenuShortcut>⌘X</ContextMenuShortcut>
+          </ContextMenuItem>
+        )}
+        {onCopy && (
+          <ContextMenuItem onClick={onCopy}>
+            <Copy className="mr-2 h-4 w-4" />
+            Copy
+            <ContextMenuShortcut>⌘C</ContextMenuShortcut>
+          </ContextMenuItem>
+        )}
+        {onPaste && (
+          <ContextMenuItem onClick={onPaste} disabled={!hasClipboard}>
+            <Clipboard className="mr-2 h-4 w-4" />
+            Paste
+            <ContextMenuShortcut>⌘V</ContextMenuShortcut>
+          </ContextMenuItem>
+        )}
+
+        <ContextMenuSeparator />
+
+        {/* Path copy actions */}
         <ContextMenuItem onClick={handleCopyPath}>
-          <Copy className="mr-2 h-4 w-4" />
+          <Copy className="mr-2 h-4 w-4 opacity-60" />
           Copy Path
         </ContextMenuItem>
         <ContextMenuItem onClick={handleCopyRelativePath}>
-          <Copy className="mr-2 h-4 w-4" />
+          <Copy className="mr-2 h-4 w-4 opacity-60" />
           Copy Relative Path
         </ContextMenuItem>
         {type === "file" && (
           <ContextMenuItem onClick={handleCopyName}>
-            <Copy className="mr-2 h-4 w-4" />
-            Copy File Name
+            <Copy className="mr-2 h-4 w-4 opacity-60" />
+            Copy Name
           </ContextMenuItem>
         )}
 
@@ -171,14 +247,23 @@ export function FileTreeContextMenu({
           setShowRenameDialog(true)
         }}>
           <Edit2 className="mr-2 h-4 w-4" />
-          Rename...
+          Rename
+          <ContextMenuShortcut>Enter</ContextMenuShortcut>
         </ContextMenuItem>
+        {onDuplicate && (
+          <ContextMenuItem onClick={onDuplicate}>
+            <CopyPlus className="mr-2 h-4 w-4" />
+            Duplicate
+            <ContextMenuShortcut>⌘D</ContextMenuShortcut>
+          </ContextMenuItem>
+        )}
         <ContextMenuItem
           onClick={() => setShowDeleteDialog(true)}
           className="text-red-500 focus:text-red-500"
         >
           <Trash2 className="mr-2 h-4 w-4" />
           Delete
+          <ContextMenuShortcut>⌘⌫</ContextMenuShortcut>
         </ContextMenuItem>
 
         <ContextMenuSeparator />

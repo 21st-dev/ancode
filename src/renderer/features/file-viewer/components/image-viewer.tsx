@@ -1,34 +1,15 @@
 import { useMemo } from "react"
-import { X, Loader2, AlertCircle, ExternalLink, ImageIcon } from "lucide-react"
+import { Loader2, AlertCircle } from "lucide-react"
 import { Button } from "@/components/ui/button"
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipTrigger,
-} from "@/components/ui/tooltip"
+import { IconCloseSidebarRight } from "@/components/ui/icons"
 import { trpc } from "@/lib/trpc"
+import { getFileIconByExtension } from "../../agents/mentions/agents-file-mention"
+import { getFileName, formatFileSize } from "../utils/file-utils"
 
 interface ImageViewerProps {
   filePath: string
   projectPath: string
   onClose: () => void
-}
-
-/**
- * Get file name from path
- */
-function getFileName(filePath: string): string {
-  const parts = filePath.split("/")
-  return parts[parts.length - 1] || filePath
-}
-
-/**
- * Format file size for display
- */
-function formatFileSize(bytes: number): string {
-  if (bytes < 1024) return `${bytes} B`
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`
-  return `${(bytes / (1024 * 1024)).toFixed(2)} MB`
 }
 
 /**
@@ -52,17 +33,15 @@ export function ImageViewer({
     { staleTime: 60000 } // Cache for 1 minute
   )
 
-  // Open in system viewer
-  const handleOpenExternal = () => {
-    window.desktopApi?.openPath(absolutePath)
-  }
-
   return (
     <div className="flex flex-col h-full bg-background">
       {/* Header */}
       <div className="flex items-center justify-between px-3 h-10 border-b bg-background flex-shrink-0">
         <div className="flex items-center gap-2 min-w-0 flex-1">
-          <ImageIcon className="h-4 w-4 text-muted-foreground flex-shrink-0" />
+          {(() => {
+            const Icon = getFileIconByExtension(filePath)
+            return Icon ? <Icon className="h-4 w-4 flex-shrink-0" /> : null
+          })()}
           <span className="text-sm font-medium truncate" title={filePath}>
             {fileName}
           </span>
@@ -73,28 +52,13 @@ export function ImageViewer({
           )}
         </div>
         <div className="flex items-center gap-1 flex-shrink-0">
-          {/* Open externally */}
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Button
-                variant="ghost"
-                size="icon"
-                className="h-7 w-7"
-                onClick={handleOpenExternal}
-              >
-                <ExternalLink className="h-4 w-4" />
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent side="bottom">Open in system viewer</TooltipContent>
-          </Tooltip>
           {/* Close button */}
           <Button
             variant="ghost"
-            size="icon"
-            className="h-7 w-7"
+            className="h-6 w-6 p-0 hover:bg-muted transition-[background-color,transform] duration-150 ease-out active:scale-[0.97] rounded-md ml-1"
             onClick={onClose}
           >
-            <X className="h-4 w-4" />
+            <IconCloseSidebarRight className="h-3.5 w-3.5 text-muted-foreground" />
           </Button>
         </div>
       </div>
@@ -108,17 +72,18 @@ export function ImageViewer({
           </div>
         )}
 
-        {error && (
-          <div className="flex flex-col items-center gap-3 text-center max-w-[300px]">
-            <AlertCircle className="h-10 w-10 text-muted-foreground" />
-            <div>
-              <p className="font-medium text-foreground">Failed to load image</p>
-              <p className="text-sm text-muted-foreground mt-1">
-                {error.message}
-              </p>
+        {error && (() => {
+          const isNotFound = error.message?.toLowerCase().includes("enoent") ||
+                             error.message?.toLowerCase().includes("not found") ||
+                             error.message?.toLowerCase().includes("no such file")
+          const errorMessage = isNotFound ? "File not found" : "Failed to load image"
+          return (
+            <div className="flex flex-col items-center gap-3 text-center max-w-[300px]">
+              <AlertCircle className="h-10 w-10 text-muted-foreground" />
+              <p className="font-medium text-foreground">{errorMessage}</p>
             </div>
-          </div>
-        )}
+          )
+        })()}
 
         {data && !data.ok && (
           <div className="flex flex-col items-center gap-3 text-center max-w-[300px]">
@@ -133,15 +98,6 @@ export function ImageViewer({
                   : "The file could not be found."}
               </p>
             </div>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={handleOpenExternal}
-              className="mt-2 gap-1.5"
-            >
-              <ExternalLink className="h-3.5 w-3.5" />
-              Open externally
-            </Button>
           </div>
         )}
 
