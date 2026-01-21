@@ -103,11 +103,15 @@ export function MarkdownViewer({
 
   // Code block renderer for syntax highlighting
   const codeComponent = useCallback(
-    ({ className, children, ...props }: any) => {
+    ({ className, children, node, ...props }: any) => {
       const match = /language-(\w+)/.exec(className || "")
-      const isInline = !match && !className?.includes("language-")
+      // Check if this is inside a <pre> tag (code block) vs inline
+      const isCodeBlock = node?.position && node?.tagName === "code" &&
+        (className?.includes("language-") ||
+         (typeof children === "string" && children.includes("\n")))
 
-      if (isInline) {
+      // Inline code (not in a pre block)
+      if (!isCodeBlock && !match) {
         return (
           <code
             className={cn(
@@ -121,6 +125,7 @@ export function MarkdownViewer({
         )
       }
 
+      // Code block - use syntax highlighter
       return (
         <SyntaxHighlighter
           style={isDark ? oneDark : oneLight}
@@ -130,6 +135,7 @@ export function MarkdownViewer({
             margin: 0,
             borderRadius: "0.375rem",
             fontSize: "0.875rem",
+            padding: "1rem",
           }}
           {...props}
         >
@@ -138,6 +144,15 @@ export function MarkdownViewer({
       )
     },
     [isDark]
+  )
+
+  // Pre block wrapper for code blocks without language
+  const preComponent = useCallback(
+    ({ children, ...props }: any) => {
+      // Just pass through - the code component handles styling
+      return <>{children}</>
+    },
+    []
   )
 
   // Loading state
@@ -243,6 +258,7 @@ export function MarkdownViewer({
               remarkPlugins={[remarkGfm]}
               components={{
                 code: codeComponent,
+                pre: preComponent,
               }}
             >
               {content}
