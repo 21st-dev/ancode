@@ -1,4 +1,4 @@
-import { useState, useMemo, useCallback, useEffect } from "react"
+import { useState, useMemo, useCallback, useEffect, useRef } from "react"
 import Editor from "@monaco-editor/react"
 import ReactMarkdown from "react-markdown"
 import remarkGfm from "remark-gfm"
@@ -75,9 +75,37 @@ export function MarkdownViewer({
   }, [filePath, projectPath])
 
   // Fetch file content
-  const { data, isLoading, error } = trpc.files.readTextFile.useQuery(
+  const { data, isLoading, error, refetch } = trpc.files.readTextFile.useQuery(
     { filePath: absolutePath },
     { staleTime: 30000 }
+  )
+
+  // Store refetch in a ref so subscription callback always has current refetch
+  const refetchRef = useRef(refetch)
+  useEffect(() => {
+    refetchRef.current = refetch
+  }, [refetch])
+
+  // Compute relative path for matching against file change events
+  const relativePath = useMemo(() => {
+    if (!filePath.startsWith("/")) return filePath
+    if (filePath.startsWith(projectPath)) {
+      return filePath.slice(projectPath.length + 1)
+    }
+    return filePath
+  }, [projectPath, filePath])
+
+  // Subscribe to file changes and refetch when the viewed file changes
+  trpc.files.watchChanges.useSubscription(
+    { projectPath },
+    {
+      enabled: !!projectPath && !!relativePath,
+      onData: (change) => {
+        if (change.filename === relativePath) {
+          refetchRef.current()
+        }
+      },
+    },
   )
 
   // Editor options

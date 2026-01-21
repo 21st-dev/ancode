@@ -1,4 +1,4 @@
-import { useMemo } from "react"
+import { useMemo, useEffect, useRef } from "react"
 import { trpc } from "../../../lib/trpc"
 
 /**
@@ -64,6 +64,38 @@ export function useFileContent(
       enabled,
       staleTime: 30000, // Cache for 30 seconds
       refetchOnWindowFocus: false,
+    },
+  )
+
+  // Store refetch in a ref so subscription callback always has current refetch
+  const refetchRef = useRef(refetch)
+  useEffect(() => {
+    refetchRef.current = refetch
+  }, [refetch])
+
+  // Compute relative path for matching against file change events
+  const relativePath = useMemo(() => {
+    if (!projectPath || !filePath) return null
+    // If filePath is already relative, return it
+    if (!filePath.startsWith("/")) return filePath
+    // If filePath starts with projectPath, extract the relative part
+    if (filePath.startsWith(projectPath)) {
+      return filePath.slice(projectPath.length + 1) // +1 for the slash
+    }
+    return filePath
+  }, [projectPath, filePath])
+
+  // Subscribe to file changes and refetch when the viewed file changes
+  trpc.files.watchChanges.useSubscription(
+    { projectPath: projectPath || "" },
+    {
+      enabled: !!projectPath && !!relativePath,
+      onData: (change) => {
+        // Check if the changed file matches the one we're viewing
+        if (change.filename === relativePath) {
+          refetchRef.current()
+        }
+      },
     },
   )
 
