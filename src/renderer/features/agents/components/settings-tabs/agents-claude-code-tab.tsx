@@ -9,6 +9,7 @@ import { IconSpinner } from "../../../../components/ui/icons"
 import { ExternalLink, Check, X, Copy } from "lucide-react"
 import { toast } from "sonner"
 import { useHaptic } from "../../hooks/use-haptic"
+import { cn } from "../../../../lib/utils"
 
 type AuthFlowState =
   | { step: "idle" }
@@ -33,18 +34,6 @@ export function AgentsClaudeCodeTab() {
   const [flowState, setFlowState] = useState<AuthFlowState>({ step: "idle" })
   const [authCode, setAuthCode] = useState("")
   const [copied, setCopied] = useState(false)
-  // Advanced settings state
-  const [settingsExpanded, setSettingsExpanded] = useState(false)
-  const [customBinaryPath, setCustomBinaryPath] = useState("")
-  const [envVarsText, setEnvVarsText] = useState("")
-  // Config dir and MCP servers state
-  const [customConfigDir, setCustomConfigDir] = useState("")
-  const [mcpServers, setMcpServers] = useState<Array<{
-    id: string
-    name: string
-    description: string
-    enabled: boolean
-  }>>([])
   // Auth mode state
   const [authMode, setAuthMode] = useState<"oauth" | "aws" | "apiKey" | "devyard">("oauth")
   const [apiKey, setApiKey] = useState("")
@@ -70,8 +59,6 @@ export function AgentsClaudeCodeTab() {
   } = trpc.claudeSettings.getSettings.useQuery()
 
   // Query MCP servers
-  const { data: mcpData, refetch: refetchMcp } = trpc.claudeSettings.listMcpServers.useQuery()
-
   // Query Devyard availability
   const { data: devyardStatus } = trpc.claudeSettings.checkDevyard.useQuery()
 
@@ -161,29 +148,15 @@ export function AgentsClaudeCodeTab() {
     }
   }, [authStatus, flowState])
 
-  // Sync form with settings
+  // Sync auth settings from fetched settings
   useEffect(() => {
     if (claudeSettings) {
-      setCustomBinaryPath(claudeSettings.customBinaryPath || "")
-      setCustomConfigDir(claudeSettings.customConfigDir || "")
-      setEnvVarsText(
-        Object.entries(claudeSettings.customEnvVars)
-          .map(([k, v]) => `${k}=${v}`)
-          .join("\n") || ""
-      )
       setAuthMode(claudeSettings.authMode || "oauth")
       setBedrockRegion(claudeSettings.bedrockRegion || "us-east-1")
       setAnthropicBaseUrl(claudeSettings.anthropicBaseUrl || "")
       // Don't set API key from masked value - user needs to enter it
     }
   }, [claudeSettings])
-
-  // Sync MCP servers from query
-  useEffect(() => {
-    if (mcpData?.servers) {
-      setMcpServers(mcpData.servers)
-    }
-  }, [mcpData])
 
   const handleStartAuth = () => {
     setFlowState({ step: "starting" })
@@ -220,24 +193,6 @@ export function AgentsClaudeCodeTab() {
 
   const handleDisconnect = () => {
     disconnect.mutate()
-  }
-
-  // Parse env vars from text format (KEY=VALUE, one per line)
-  const parseEnvVars = (text: string): Record<string, string> => {
-    const result: Record<string, string> = {}
-    for (const line of text.split("\n")) {
-      const trimmed = line.trim()
-      if (!trimmed || trimmed.startsWith("#")) continue
-      const eqIndex = trimmed.indexOf("=")
-      if (eqIndex > 0) {
-        const key = trimmed.slice(0, eqIndex).trim()
-        const value = trimmed.slice(eqIndex + 1).trim()
-        if (key) {
-          result[key] = value
-        }
-      }
-    }
-    return result
   }
 
   if (isLoading) {
@@ -625,161 +580,6 @@ export function AgentsClaudeCodeTab() {
             </div>
           )}
         </div>
-
-        {/* Advanced Settings Section */}
-        {isConnected && (
-          <div className="bg-background rounded-lg border border-border overflow-hidden">
-            <button
-              onClick={() => setSettingsExpanded(!settingsExpanded)}
-              className="w-full p-4 flex items-center justify-between text-left hover:bg-muted/50 transition-colors"
-            >
-              <span className="text-sm font-medium">Advanced Settings</span>
-              <span className="text-muted-foreground">
-                {settingsExpanded ? "▼" : "▶"}
-              </span>
-            </button>
-            {settingsExpanded && (
-              <div className="p-4 pt-0 space-y-4 border-t border-border">
-                {/* Custom Binary Path */}
-                <div className="space-y-2">
-                  <Label className="text-sm">Custom Claude Binary Path</Label>
-                  <Input
-                    value={customBinaryPath}
-                    onChange={(e) => setCustomBinaryPath(e.target.value)}
-                    placeholder="/usr/local/bin/claude or leave empty for bundled"
-                    className="font-mono text-sm"
-                  />
-                  <p className="text-xs text-muted-foreground">
-                    Leave empty to use the bundled Claude binary. Specify an absolute path to use your own build.
-                  </p>
-                </div>
-
-                {/* Custom Environment Variables */}
-                <div className="space-y-2">
-                  <Label className="text-sm">Custom Environment Variables</Label>
-                  <textarea
-                    value={envVarsText}
-                    onChange={(e) => setEnvVarsText(e.target.value)}
-                    placeholder="ANTHROPIC_MODEL=claude-sonnet-4-5-20250514&#10;CLAUDE_DEFAULT_MODEL=claude-sonnet-4-5-20250514"
-                    className="w-full min-h-[100px] p-2 text-sm font-mono bg-muted rounded-md border border-border resize-y focus:outline-none focus:ring-2 focus:ring-ring"
-                  />
-                  <p className="text-xs text-muted-foreground">
-                    One variable per line in KEY=VALUE format. These affect Claude's settings.json behavior.
-                  </p>
-                </div>
-
-                {/* Custom Config Directory */}
-                <div className="space-y-2">
-                  <Label className="text-sm">Claude Config Directory</Label>
-                  <Input
-                    value={customConfigDir}
-                    onChange={(e) => setCustomConfigDir(e.target.value)}
-                    placeholder="Leave empty for per-chat isolation (default)"
-                    className="font-mono text-sm"
-                  />
-                  <p className="text-xs text-muted-foreground">
-                    Controls where Claude stores skills, agents, and settings.
-                    Leave empty for isolated per-chat storage (default).
-                    Use ~/.claude to share with your terminal Claude.
-                  </p>
-                </div>
-
-                {/* MCP Servers */}
-                <div className="space-y-3">
-                  <div className="flex items-center justify-between">
-                    <Label className="text-sm">MCP Servers</Label>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => refetchMcp()}
-                      className="h-6 px-2"
-                    >
-                      Refresh
-                    </Button>
-                  </div>
-                  {mcpServers.length === 0 ? (
-                    <p className="text-xs text-muted-foreground">
-                      No MCP servers found in ~/.claude/
-                    </p>
-                  ) : (
-                    <div className="space-y-2">
-                      {mcpServers.map((server) => (
-                        <div
-                          key={server.id}
-                          className="flex items-center justify-between p-2 bg-muted rounded-md"
-                        >
-                          <div className="flex-1 min-w-0">
-                            <p className="text-sm font-medium truncate">{server.name}</p>
-                            {server.description && (
-                              <p className="text-xs text-muted-foreground truncate">
-                                {server.description}
-                              </p>
-                            )}
-                          </div>
-                          <button
-                            onClick={() => {
-                              const updated = mcpServers.map((s) =>
-                                s.id === server.id
-                                  ? { ...s, enabled: !s.enabled }
-                                  : s
-                              )
-                              setMcpServers(updated)
-                              updateSettings.mutate({
-                                mcpServerSettings: updated.reduce(
-                                  (acc, s) => ({
-                                    ...acc,
-                                    [s.id]: { enabled: s.enabled },
-                                  }),
-                                  {},
-                                ),
-                              })
-                            }}
-                            className={`ml-2 px-2 py-1 text-xs rounded-md transition-colors ${
-                              server.enabled
-                                ? "bg-green-100 text-green-700 hover:bg-green-200 dark:bg-green-900/30 dark:text-green-400"
-                                : "bg-gray-200 text-gray-700 hover:bg-gray-300 dark:bg-gray-700 dark:text-gray-300"
-                            }`}
-                          >
-                            {server.enabled ? "Enabled" : "Disabled"}
-                          </button>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                  <p className="text-xs text-muted-foreground">
-                    MCP servers extend Claude's capabilities. Toggle to enable/disable for this app.
-                  </p>
-                </div>
-
-                {/* Save Button */}
-                <div className="flex justify-end">
-                  <Button
-                    onClick={() => {
-                      updateSettings.mutate({
-                        customBinaryPath: customBinaryPath || null,
-                        customEnvVars: parseEnvVars(envVarsText),
-                        customConfigDir: customConfigDir || null,
-                        mcpServerSettings: mcpServers.reduce(
-                          (acc, s) => ({
-                            ...acc,
-                            [s.id]: { enabled: s.enabled },
-                          }),
-                          {},
-                        ),
-                      })
-                    }}
-                    disabled={updateSettings.isPending}
-                  >
-                    {updateSettings.isPending && (
-                      <IconSpinner className="h-4 w-4 mr-2" />
-                    )}
-                    Save Settings
-                  </Button>
-                </div>
-              </div>
-            )}
-          </div>
-        )}
       </div>
     </div>
   )

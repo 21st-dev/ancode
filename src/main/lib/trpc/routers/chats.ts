@@ -1,6 +1,6 @@
 import { z } from "zod"
 import { router, publicProcedure } from "../index"
-import { getDatabase, chats, subChats, projects } from "../../db"
+import { getDatabase, chats, subChats, projects, claudeCodeSettings } from "../../db"
 import { eq, desc, isNull, isNotNull, inArray, and } from "drizzle-orm"
 import {
   createWorktreeForChat,
@@ -187,15 +187,26 @@ export const chatsRouter = router({
 
       // Only create worktree if useWorktree is true
       if (input.useWorktree) {
+        // Get custom worktree location from settings
+        const settings = db
+          .select()
+          .from(claudeCodeSettings)
+          .where(eq(claudeCodeSettings.id, "default"))
+          .get()
+        const customWorktreeLocation = settings?.customWorktreeLocation || null
+
         console.log(
           "[chats.create] creating worktree with baseBranch:",
           input.baseBranch,
+          "customLocation:",
+          customWorktreeLocation,
         )
         const result = await createWorktreeForChat(
           project.path,
           project.id,
           chat.id,
           input.baseBranch,
+          customWorktreeLocation,
         )
         console.log("[chats.create] worktree result:", result)
 

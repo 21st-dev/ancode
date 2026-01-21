@@ -90,6 +90,7 @@ export const claudeSettingsRouter = router({
         customBinaryPath: null,
         customEnvVars: "{}",
         customConfigDir: null,
+        customWorktreeLocation: null,
         mcpServerSettings: "{}",
         authMode: "oauth",
         apiKey: null,
@@ -106,6 +107,7 @@ export const claudeSettingsRouter = router({
         {}
       ),
       customConfigDir: settings.customConfigDir,
+      customWorktreeLocation: settings.customWorktreeLocation || null,
       mcpServerSettings: parseJsonSafely<Record<string, { enabled: boolean }>>(
         settings.mcpServerSettings ?? "{}",
         {}
@@ -126,6 +128,7 @@ export const claudeSettingsRouter = router({
         customBinaryPath: z.string().nullable().optional(),
         customEnvVars: z.record(z.string(), z.string()).optional(),
         customConfigDir: z.string().nullable().optional(),
+        customWorktreeLocation: z.string().nullable().optional(),
         mcpServerSettings: z.record(z.string(), z.object({ enabled: z.boolean() })).optional(),
         authMode: z.enum(["oauth", "aws", "apiKey", "devyard"]).optional(),
         apiKey: z.string().optional(), // API key for apiKey mode
@@ -134,6 +137,15 @@ export const claudeSettingsRouter = router({
       })
     )
     .mutation(({ input }) => {
+      // Validate customWorktreeLocation if provided
+      if (input.customWorktreeLocation && input.customWorktreeLocation.trim()) {
+        const path = input.customWorktreeLocation.trim()
+        // Reject relative paths - must be absolute or start with ~ or $
+        if (!path.startsWith('/') && !path.startsWith('~') && !path.startsWith('$')) {
+          throw new Error("Worktree location must be an absolute path or start with ~ or $")
+        }
+      }
+
       const db = getDatabase()
 
       // Check if settings exist
@@ -155,6 +167,9 @@ export const claudeSettingsRouter = router({
             }),
             ...(input.customConfigDir !== undefined && {
               customConfigDir: input.customConfigDir,
+            }),
+            ...(input.customWorktreeLocation !== undefined && {
+              customWorktreeLocation: input.customWorktreeLocation,
             }),
             ...(input.mcpServerSettings !== undefined && {
               mcpServerSettings: JSON.stringify(input.mcpServerSettings),

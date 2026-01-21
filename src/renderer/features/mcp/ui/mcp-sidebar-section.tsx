@@ -23,7 +23,7 @@ export function McpSidebarSection({ className }: McpSidebarSectionProps) {
   }
 
   return (
-    <div className={cn("border-t border-border/50 py-2", className)}>
+    <div className={cn("py-2", className)}>
       <button
         type="button"
         onClick={handleClick}

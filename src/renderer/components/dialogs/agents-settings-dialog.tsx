@@ -2,7 +2,7 @@ import { useAtom } from "jotai"
 import { useEffect, useState } from "react"
 import { createPortal } from "react-dom"
 import { AnimatePresence, motion } from "motion/react"
-import { X, Bug, ChevronLeft, ChevronRight } from "lucide-react"
+import { X, Bug, ChevronLeft, ChevronRight, Settings as SettingsIcon } from "lucide-react"
 import { cn } from "../../lib/utils"
 import { agentsSettingsDialogActiveTabAtom, type SettingsTab } from "../../lib/atoms"
 import {
@@ -15,6 +15,7 @@ import { SkillIcon, AgentIcon } from "../ui/icons"
 import { AgentsAppearanceTab } from "./settings-tabs/agents-appearance-tab"
 import { AgentsProfileTab } from "./settings-tabs/agents-profile-tab"
 import { AgentsPreferencesTab } from "./settings-tabs/agents-preferences-tab"
+import { AgentsAdvancedSettingsTab } from "./settings-tabs/agents-advanced-settings-tab"
 import { AgentsDebugTab } from "./settings-tabs/agents-debug-tab"
 import { AgentsSkillsTab } from "./settings-tabs/agents-skills-tab"
 import { AgentsCustomAgentsTab } from "./settings-tabs/agents-custom-agents-tab"
@@ -54,9 +55,9 @@ const ALL_TABS = [
   },
   {
     id: "claude-code" as SettingsTab,
-    label: "Claude Code",
+    label: "Authentication",
     icon: ClaudeCodeIcon,
-    description: "Claude Code integration settings",
+    description: "Claude Code authentication",
   },
   {
     id: "appearance" as SettingsTab,
@@ -69,6 +70,12 @@ const ALL_TABS = [
     label: "Preferences",
     icon: SlidersFilledIcon,
     description: "Claude behavior settings",
+  },
+  {
+    id: "advanced" as SettingsTab,
+    label: "Advanced",
+    icon: SettingsIcon,
+    description: "Advanced configuration",
   },
   {
     id: "skills" as SettingsTab,
@@ -209,6 +216,8 @@ export function AgentsSettingsDialog({
         return <AgentsAppearanceTab />
       case "preferences":
         return <AgentsPreferencesTab />
+      case "advanced":
+        return <AgentsAdvancedSettingsTab />
       case "skills":
         return <AgentsSkillsTab />
       case "agents":

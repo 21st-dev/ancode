@@ -892,6 +892,7 @@ export async function createWorktreeForChat(
 	projectId: string,
 	chatId: string,
 	selectedBaseBranch?: string,
+	customWorktreeLocation?: string | null,
 ): Promise<WorktreeResult> {
 	try {
 		const git = simpleGit(projectPath);
@@ -905,7 +906,19 @@ export async function createWorktreeForChat(
 		const baseBranch = selectedBaseBranch || await getDefaultBranch(projectPath);
 
 		const branch = generateBranchName();
-		const worktreesDir = join(process.env.HOME || "", ".21st", "worktrees");
+
+		// Determine worktrees base directory
+		let worktreesDir: string;
+		if (customWorktreeLocation) {
+			// Use custom location with env var expansion
+			const { expandEnvVars } = await import("../path-utils");
+			worktreesDir = expandEnvVars(customWorktreeLocation);
+			console.log(`[worktree] Using custom location: ${customWorktreeLocation} → ${worktreesDir}`);
+		} else {
+			// Default: ~/.claw/worktrees
+			worktreesDir = join(process.env.HOME || "", ".claw", "worktrees");
+		}
+
 		const worktreePath = join(worktreesDir, projectId, chatId);
 
 		await createWorktree(projectPath, branch, worktreePath, `origin/${baseBranch}`);

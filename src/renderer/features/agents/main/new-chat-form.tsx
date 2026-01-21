@@ -662,11 +662,17 @@ export function NewChatForm({
   // Handle command selection from Commands dropdown
   const handleCommandSelect = useCallback((command: string) => {
     const currentValue = editorRef.current?.getValue() || ""
+    const commandWithSpace = `${command} `
     const newValue = currentValue.trim()
-      ? `${command} ${currentValue}`
-      : command
+      ? `${commandWithSpace}${currentValue}`
+      : commandWithSpace
     editorRef.current?.setValue(newValue)
     editorRef.current?.focus()
+
+    // Position cursor right after the command and space
+    setTimeout(() => {
+      editorRef.current?.setCursorPosition(commandWithSpace.length)
+    }, 0)
   }, [])
 
   // Handle agent selection from Agents dropdown
@@ -678,6 +684,11 @@ export function NewChatForm({
       : command
     editorRef.current?.setValue(newValue)
     editorRef.current?.focus()
+
+    // Position cursor right after the agent command and space
+    setTimeout(() => {
+      editorRef.current?.setCursorPosition(command.length)
+    }, 0)
   }, [])
 
   const handleMentionSelect = useCallback((mention: FileMentionOption) => {

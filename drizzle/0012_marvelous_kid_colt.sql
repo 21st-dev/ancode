@@ -1,0 +1,1 @@
+ALTER TABLE `claude_code_settings` ADD `custom_worktree_location` text;

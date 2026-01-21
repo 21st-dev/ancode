@@ -337,49 +337,81 @@ export const claudeRouter = router({
         }
 
         ;(async () => {
-          try {
-            const db = getDatabase()
+          let retryCount = 0
+          let shouldRetry = false
 
-            // 1. Get existing messages from DB
-            const existing = db
-              .select()
-              .from(subChats)
-              .where(eq(subChats.id, input.subChatId))
-              .get()
-            const existingMessages = JSON.parse(existing?.messages || "[]")
-            const existingSessionId = existing?.sessionId || null
-            const existingModel = existing?.model || null // Get model from sub_chat
+          // State variables shared across retries
+          const parts: any[] = []
+          let currentText = ""
+          let metadata: any = {}
+          const stderrLines: string[] = []
+          let messageCount = 0
+          let lastError: Error | null = null
+          let planCompleted = false
+          let exitPlanModeToolCallId: string | null = null
 
-            // Check if last message is already this user message (avoid duplicate)
-            const lastMsg = existingMessages[existingMessages.length - 1]
-            const isDuplicate =
-              lastMsg?.role === "user" &&
-              lastMsg?.parts?.[0]?.text === input.prompt
+          do {
+            shouldRetry = false
 
-            // 2. Create user message and save BEFORE streaming (skip if duplicate)
-            let userMessage: any
-            let messagesToSave: any[]
-
-            if (isDuplicate) {
-              userMessage = lastMsg
-              messagesToSave = existingMessages
-            } else {
-              userMessage = {
-                id: crypto.randomUUID(),
-                role: "user",
-                parts: [{ type: "text", text: input.prompt }],
-              }
-              messagesToSave = [...existingMessages, userMessage]
-
-              db.update(subChats)
-                .set({
-                  messages: JSON.stringify(messagesToSave),
-                  streamId,
-                  updatedAt: new Date(),
-                })
-                .where(eq(subChats.id, input.subChatId))
-                .run()
+            // Reset accumulation state on retry
+            if (retryCount > 0) {
+              parts.length = 0
+              currentText = ""
+              stderrLines.length = 0
+              messageCount = 0
+              lastError = null
+              planCompleted = false
+              exitPlanModeToolCallId = null
+              metadata = {}
             }
+
+            try {
+              const db = getDatabase()
+
+              // 1. Get existing messages from DB
+              const existing = db
+                .select()
+                .from(subChats)
+                .where(eq(subChats.id, input.subChatId))
+                .get()
+              const existingMessages = JSON.parse(existing?.messages || "[]")
+              const existingSessionId = existing?.sessionId || null
+              const existingModel = existing?.model || null // Get model from sub_chat
+
+              // Check if last message is already this user message (avoid duplicate)
+              const lastMsg = existingMessages[existingMessages.length - 1]
+              const isDuplicate =
+                lastMsg?.role === "user" &&
+                lastMsg?.parts?.[0]?.text === input.prompt
+
+              // 2. Create user message and save BEFORE streaming (skip if duplicate OR if retry)
+              let userMessage: any
+              let messagesToSave: any[]
+
+              if (retryCount > 0) {
+                // Retry: skip user message creation, use existing messages
+                messagesToSave = existingMessages
+                console.log(`[claude] Retry attempt ${retryCount}: using existing messages, count=${messagesToSave.length}`)
+              } else if (isDuplicate) {
+                userMessage = lastMsg
+                messagesToSave = existingMessages
+              } else {
+                userMessage = {
+                  id: crypto.randomUUID(),
+                  role: "user",
+                  parts: [{ type: "text", text: input.prompt }],
+                }
+                messagesToSave = [...existingMessages, userMessage]
+
+                db.update(subChats)
+                  .set({
+                    messages: JSON.stringify(messagesToSave),
+                    streamId,
+                    updatedAt: new Date(),
+                  })
+                  .where(eq(subChats.id, input.subChatId))
+                  .run()
+              }
 
             // 3. Get Claude SDK
             let claudeQuery
@@ -395,13 +427,7 @@ export const claudeRouter = router({
 
             const transform = createTransformer()
 
-            // 4. Setup accumulation state
-            const parts: any[] = []
-            let currentText = ""
-            let metadata: any = {}
-
-            // Capture stderr from Claude process for debugging
-            const stderrLines: string[] = []
+            // 4. Accumulation state (declared outside loop, reset on retry above)
 
             // Parse mentions from prompt (agents, skills, files, folders)
             const { cleanedPrompt, agentMentions, skillMentions } = parseMentions(input.prompt)
@@ -500,8 +526,8 @@ export const claudeRouter = router({
             // Ensure config dir exists
             await fs.mkdir(claudeConfigDir, { recursive: true })
 
-            // If using isolated dir (not custom or devyard), symlink skills/agents from ~/.claude/
-            // This is needed because SDK looks for skills at $CLAUDE_CONFIG_DIR/skills/
+            // If using isolated dir (not custom or devyard), symlink skills/agents/mcp.json from ~/.claude/
+            // This is needed because SDK looks for skills at $CLAUDE_CONFIG_DIR/skills/ and mcp.json for MCP servers
             // Skip symlinking for Devyard mode since it uses the plugin directory directly
             if (!customConfigDir && authMode !== "devyard") {
               const homeClaudeDir = path.join(os.homedir(), ".claude")
@@ -509,6 +535,8 @@ export const claudeRouter = router({
               const skillsTarget = path.join(claudeConfigDir, "skills")
               const agentsSource = path.join(homeClaudeDir, "agents")
               const agentsTarget = path.join(claudeConfigDir, "agents")
+              const mcpConfigSource = path.join(homeClaudeDir, "mcp.json")
+              const mcpConfigTarget = path.join(claudeConfigDir, "mcp.json")
 
               // Symlink skills directory if source exists and target doesn't
               try {
@@ -532,6 +560,19 @@ export const claudeRouter = router({
                 }
               } catch (symlinkErr) {
                 // Ignore symlink errors
+              }
+
+              // Symlink mcp.json file if source exists and target doesn't
+              try {
+                const mcpConfigSourceExists = await fs.stat(mcpConfigSource).then(() => true).catch(() => false)
+                const mcpConfigTargetExists = await fs.lstat(mcpConfigTarget).then(() => true).catch(() => false)
+                if (mcpConfigSourceExists && !mcpConfigTargetExists) {
+                  await fs.symlink(mcpConfigSource, mcpConfigTarget, "file")
+                  console.log(`[claude] Symlinked mcp.json: ${mcpConfigTarget} -> ${mcpConfigSource}`)
+                }
+              } catch (symlinkErr) {
+                // Ignore symlink errors
+                console.log(`[claude] Could not symlink mcp.json (may not exist): ${symlinkErr}`)
               }
             } else if (authMode === "devyard") {
               console.log(`[claude] Devyard mode active - using plugin directory directly (no symlinks needed)`)
@@ -574,7 +615,15 @@ export const claudeRouter = router({
             // Use custom binary path if provided, otherwise use bundled binary
             const claudeBinaryPath = customBinaryPath || getBundledClaudeBinaryPath()
 
-            const resumeSessionId = input.sessionId || existingSessionId || undefined
+            // On retry, force fresh session (no resume)
+            const resumeSessionId = (retryCount === 0)
+              ? (input.sessionId || existingSessionId || undefined)
+              : undefined
+
+            if (retryCount > 0) {
+              console.log(`[claude] Retry attempt ${retryCount}: forcing fresh session (no resume)`)
+            }
+
             const queryOptions = {
               prompt,
               options: {
@@ -720,10 +769,7 @@ export const claudeRouter = router({
               return
             }
 
-            let messageCount = 0
-            let lastError: Error | null = null
-            let planCompleted = false // Flag to stop after ExitPlanMode in plan mode
-            let exitPlanModeToolCallId: string | null = null // Track ExitPlanMode's toolCallId
+            // Note: lastError, planCompleted, exitPlanModeToolCallId declared outside loop (line 349-351)
 
             try {
               for await (const msg of stream) {
@@ -901,13 +947,36 @@ export const claudeRouter = router({
               if (stderrOutput.includes("No conversation found with session ID")) {
                 errorContext = "Session expired - starting fresh conversation"
                 errorCategory = "SESSION_NOT_FOUND"
-                console.log(`[claude] Clearing stale sessionId due to session not found error`)
+                console.log(`[claude] Stale session detected at retry=${retryCount}`)
 
-                // Clear stale sessionId from database so next message starts fresh
+                // Clear stale sessionId from database
                 db.update(subChats)
                   .set({ sessionId: null })
                   .where(eq(subChats.id, input.subChatId))
                   .run()
+
+                // AUTO-RETRY: If first attempt and not aborted, retry with fresh session
+                if (retryCount < 1 && !abortController.signal.aborted) {
+                  console.log(`[claude] SESSION_RETRY sub=${subId} attempt=${retryCount + 1}`)
+
+                  // Reset accumulation state for clean retry
+                  parts.length = 0
+                  currentText = ""
+                  stderrLines.length = 0
+                  messageCount = 0
+
+                  // Set retry flag to restart the loop
+                  retryCount++
+                  shouldRetry = true
+
+                  // Skip the rest of error handling - go directly to retry
+                  console.log(`[SD] M:END sub=${subId} reason=session_retry retry=${retryCount}`)
+                  continue // Restart do-while loop
+                }
+
+                // Retry limit exhausted or aborted - fall through to normal error handling
+                console.log(`[claude] SESSION_RETRY_FAILED sub=${subId} exhausted=true aborted=${abortController.signal.aborted}`)
+                errorContext = "Session expired - could not recover after retry"
               } else if (err.message?.includes("exited with code")) {
                 errorContext = "Claude Code process crashed"
                 errorCategory = "PROCESS_CRASH"
@@ -1091,6 +1160,7 @@ export const claudeRouter = router({
           } finally {
             activeSessions.delete(input.subChatId)
           }
+          } while (shouldRetry && !abortController.signal.aborted)
         })()
 
         // Cleanup on unsubscribe

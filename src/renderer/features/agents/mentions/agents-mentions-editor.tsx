@@ -68,6 +68,7 @@ export type AgentsMentionsEditorHandle = {
   getValue: () => string
   setValue: (value: string) => void
   clear: () => void
+  setCursorPosition: (offset: number) => void
 }
 
 type AgentsMentionsEditorProps = {
@@ -751,6 +752,29 @@ export const AgentsMentionsEditor = memo(
             onContentChange?.(false)
             triggerActive.current = false
             triggerStartIndex.current = null
+          },
+
+          setCursorPosition: (offset: number) => {
+            if (!editorRef.current) return
+
+            const sel = window.getSelection()
+            if (!sel) return
+
+            // Find the text node and set cursor position
+            const walker = document.createTreeWalker(
+              editorRef.current,
+              NodeFilter.SHOW_TEXT,
+            )
+            const firstTextNode = walker.nextNode()
+
+            if (firstTextNode && firstTextNode.nodeType === Node.TEXT_NODE) {
+              const range = document.createRange()
+              const maxOffset = Math.min(offset, firstTextNode.textContent?.length || 0)
+              range.setStart(firstTextNode, maxOffset)
+              range.collapse(true)
+              sel.removeAllRanges()
+              sel.addRange(range)
+            }
           },
 
           insertMention: (option: FileMentionOption) => {

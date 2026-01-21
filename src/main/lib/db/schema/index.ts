@@ -106,6 +106,7 @@ export const claudeCodeSettings = sqliteTable("claude_code_settings", {
   customBinaryPath: text("custom_binary_path"), // Path to user-specified Claude binary (null = use bundled)
   customEnvVars: text("custom_env_vars").notNull().default("{}"), // JSON object of custom env vars
   customConfigDir: text("custom_config_dir"), // Path to Claude config dir (null = use per-subchat isolated)
+  customWorktreeLocation: text("custom_worktree_location"), // Custom base path for worktrees with env var support (null = use ~/.21st/worktrees)
   mcpServerSettings: text("mcp_server_settings").notNull().default("{}"), // JSON object of MCP server overrides
   authMode: text("auth_mode").notNull().default("oauth"), // "oauth" | "aws" | "apiKey" | "devyard"
   apiKey: text("api_key"), // API key for apiKey mode (encrypted)
