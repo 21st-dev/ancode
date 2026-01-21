@@ -79,8 +79,14 @@ export function useFileContent(
     // If filePath is already relative, return it
     if (!filePath.startsWith("/")) return filePath
     // If filePath starts with projectPath, extract the relative part
-    if (filePath.startsWith(projectPath)) {
-      return filePath.slice(projectPath.length + 1) // +1 for the slash
+    // Ensure we match the full directory path by checking for trailing separator
+    const projectPathWithSep = projectPath.endsWith("/") ? projectPath : `${projectPath}/`
+    if (filePath.startsWith(projectPathWithSep)) {
+      return filePath.slice(projectPathWithSep.length)
+    }
+    // Handle exact match (filePath equals projectPath)
+    if (filePath === projectPath) {
+      return ""
     }
     return filePath
   }, [projectPath, filePath])
