@@ -2,7 +2,7 @@ import { z } from "zod"
 import { router, publicProcedure } from "../index"
 import { readdir, stat, readFile, rm, rename, copyFile, mkdir } from "node:fs/promises"
 import { watch, type FSWatcher } from "node:fs"
-import { join, relative, basename, resolve, isAbsolute } from "node:path"
+import { join, relative, basename, resolve, isAbsolute, sep } from "node:path"
 import { observable } from "@trpc/server/observable"
 import { EventEmitter } from "node:events"
 import { exec } from "node:child_process"
@@ -29,7 +29,8 @@ function validatePathWithinDirectory(basePath: string, filePath: string): string
   const resolvedPath = isAbsolute(filePath) ? resolve(filePath) : resolve(basePath, filePath)
 
   // Check if the resolved path starts with the base path
-  if (!resolvedPath.startsWith(resolvedBase + "/") && resolvedPath !== resolvedBase) {
+  // Use path.sep to handle both Unix (/) and Windows (\) separators
+  if (!resolvedPath.startsWith(resolvedBase + sep) && resolvedPath !== resolvedBase) {
     throw new Error("Path traversal attempt detected: file path must be within project directory")
   }
 
@@ -54,7 +55,8 @@ async function isSymlinkOutsideDirectory(basePath: string, targetPath: string): 
     const realTarget = await realpath(targetPath)
 
     // If the real target is outside the base directory, it's dangerous
-    return !realTarget.startsWith(resolvedBase + "/") && realTarget !== resolvedBase
+    // Use path.sep to handle both Unix (/) and Windows (\) separators
+    return !realTarget.startsWith(resolvedBase + sep) && realTarget !== resolvedBase
   } catch {
     // If we can't check, assume it's safe (file might not exist yet)
     return false
