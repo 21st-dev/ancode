@@ -51,8 +51,9 @@ To revert to official updates:
 }
 
 // Determine user data path based on platform
+// Note: Electron uses the "name" field from package.json for userData path
 function getUserDataPath() {
-  const appName = "1Code"
+  const appName = "21st-desktop"  // Must match package.json "name" field
 
   switch (process.platform) {
     case "darwin":
