@@ -416,9 +416,13 @@ export function FileTreeSidebar({
       // Only set timer if folder is not already expanded
       if (!expandedFolders.has(folderPath)) {
         autoExpandTimerRef.current = setTimeout(() => {
-          const next = new Set(expandedFolders)
-          next.add(folderPath)
-          setExpandedFolders(next)
+          // Use functional update to get the latest state and avoid overwriting
+          // any manual expand/collapse actions that occurred during the delay
+          setExpandedFolders((prev) => {
+            const next = new Set(prev)
+            next.add(folderPath)
+            return next
+          })
         }, 500)
       }
     }
