@@ -5,6 +5,7 @@ import os from "node:os"
 import { app } from "electron"
 import { stripVTControlCharacters } from "node:util"
 import { getDevyardConfig } from "../devyard-config"
+import { eq } from "drizzle-orm"
 
 // Cache the shell environment
 let cachedShellEnv: Record<string, string> | null = null
@@ -23,6 +24,69 @@ const STRIPPED_ENV_KEYS = [
 // Cache the bundled binary path (only compute once)
 let cachedBinaryPath: string | null = null
 let binaryPathComputed = false
+
+// AWS Credentials interface for Bedrock
+export interface AwsCredentials {
+  accessKeyId: string
+  secretAccessKey: string
+  sessionToken?: string
+  region: string
+}
+
+/**
+ * Get AWS credentials from database if AWS auth mode is enabled
+ * Note: This requires database access, so it's lazily imported
+ */
+export function getAwsCredentials(): AwsCredentials | null {
+  try {
+    // Lazy import to avoid circular dependencies
+    const { getDatabase, claudeCodeSettings } = require("../db")
+    const { decrypt } = require("../aws/sso-service")
+
+    const db = getDatabase()
+    const settings = db
+      .select()
+      .from(claudeCodeSettings)
+      .where(eq(claudeCodeSettings.id, "default"))
+      .get()
+
+    if (!settings || settings.authMode !== "aws") {
+      return null
+    }
+
+    // SSO mode
+    if (settings.bedrockConnectionMethod === "sso") {
+      if (!settings.awsAccessKeyId || !settings.awsSecretAccessKey) {
+        console.warn("[claude-env] AWS SSO credentials not available")
+        return null
+      }
+
+      // Check expiration
+      if (settings.awsCredentialsExpiresAt && settings.awsCredentialsExpiresAt < new Date()) {
+        console.warn("[claude-env] AWS credentials expired")
+        return null
+      }
+
+      return {
+        accessKeyId: decrypt(settings.awsAccessKeyId),
+        secretAccessKey: decrypt(settings.awsSecretAccessKey),
+        sessionToken: settings.awsSessionToken ? decrypt(settings.awsSessionToken) : undefined,
+        region: settings.bedrockRegion || "us-east-1",
+      }
+    }
+
+    // Profile mode - rely on AWS SDK to load from ~/.aws/
+    // Just return the region, credentials will be loaded by SDK
+    return {
+      accessKeyId: "", // SDK will load from profile
+      secretAccessKey: "",
+      region: settings.bedrockRegion || "us-east-1",
+    }
+  } catch (error) {
+    console.error("[claude-env] Failed to get AWS credentials:", error)
+    return null
+  }
+}
 
 /**
  * Get path to the bundled Claude binary.
@@ -238,7 +302,25 @@ export function buildClaudeEnv(options?: {
     }
   }
 
-  // 6. Mark as SDK entry
+  // 6. Add AWS Bedrock credentials if in AWS mode
+  const awsCreds = getAwsCredentials()
+  if (awsCreds) {
+    env.CLAUDE_CODE_USE_BEDROCK = "1"
+    env.AWS_REGION = awsCreds.region
+    env.AWS_DEFAULT_REGION = awsCreds.region
+
+    // Only set credentials if available (SSO mode)
+    // Profile mode will use AWS SDK's default credential chain
+    if (awsCreds.accessKeyId && awsCreds.secretAccessKey) {
+      env.AWS_ACCESS_KEY_ID = awsCreds.accessKeyId
+      env.AWS_SECRET_ACCESS_KEY = awsCreds.secretAccessKey
+      if (awsCreds.sessionToken) {
+        env.AWS_SESSION_TOKEN = awsCreds.sessionToken
+      }
+    }
+  }
+
+  // 7. Mark as SDK entry
   env.CLAUDE_CODE_ENTRYPOINT = "sdk-ts"
 
   return env

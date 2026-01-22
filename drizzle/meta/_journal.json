@@ -92,6 +92,13 @@
       "when": 1769021510582,
       "tag": "0012_marvelous_kid_colt",
       "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "6",
+      "when": 1737590400000,
+      "tag": "0013_add_aws_sso_fields",
+      "breakpoints": true
     }
   ]
 }

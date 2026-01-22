@@ -115,6 +115,35 @@ export const claudeCodeSettings = sqliteTable("claude_code_settings", {
   updatedAt: integer("updated_at", { mode: "timestamp" }).$defaultFn(
     () => new Date(),
   ),
+
+  // AWS Bedrock connection method
+  bedrockConnectionMethod: text("bedrock_connection_method").default("profile"), // "sso" | "profile"
+
+  // AWS Profile mode
+  awsProfileName: text("aws_profile_name"), // Name of AWS profile in ~/.aws/credentials
+
+  // AWS SSO Configuration
+  ssoStartUrl: text("sso_start_url"),
+  ssoRegion: text("sso_region"),
+  ssoAccountId: text("sso_account_id"),
+  ssoAccountName: text("sso_account_name"), // Display name
+  ssoRoleName: text("sso_role_name"),
+
+  // SSO Tokens (encrypted with safeStorage)
+  ssoAccessToken: text("sso_access_token"),
+  ssoRefreshToken: text("sso_refresh_token"),
+  ssoTokenExpiresAt: integer("sso_token_expires_at", { mode: "timestamp" }),
+
+  // OIDC Client registration (for device auth)
+  ssoClientId: text("sso_client_id"),
+  ssoClientSecret: text("sso_client_secret"), // Encrypted
+  ssoClientExpiresAt: integer("sso_client_expires_at", { mode: "timestamp" }),
+
+  // Cached AWS credentials (encrypted)
+  awsAccessKeyId: text("aws_access_key_id"),
+  awsSecretAccessKey: text("aws_secret_access_key"),
+  awsSessionToken: text("aws_session_token"),
+  awsCredentialsExpiresAt: integer("aws_credentials_expires_at", { mode: "timestamp" }),
 })
 
 // ============ MCP SERVER CREDENTIALS ============

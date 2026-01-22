@@ -33,6 +33,9 @@
   "dependencies": {
     "@ai-sdk/react": "^3.0.14",
     "@anthropic-ai/claude-agent-sdk": "^0.2.12",
+    "@aws-sdk/client-sso": "^3.974.0",
+    "@aws-sdk/client-sso-oidc": "^3.974.0",
+    "@aws-sdk/credential-provider-sso": "^3.972.1",
     "@git-diff-view/react": "^0.0.35",
     "@git-diff-view/shiki": "^0.0.36",
     "@radix-ui/react-accordion": "^1.2.12",

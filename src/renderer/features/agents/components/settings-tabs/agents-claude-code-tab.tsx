@@ -10,6 +10,7 @@ import { ExternalLink, Check, X, Copy } from "lucide-react"
 import { toast } from "sonner"
 import { useHaptic } from "../../hooks/use-haptic"
 import { cn } from "../../../../lib/utils"
+import { AwsSsoSection } from "../aws-sso-section"
 
 type AuthFlowState =
   | { step: "idle" }
@@ -296,42 +297,30 @@ export function AgentsClaudeCodeTab() {
                 </div>
               )}
 
-              {/* Bedrock Region Selector - only show in aws mode */}
-              {authMode === "aws" && (
-                <div className="space-y-2 pt-2">
-                  <Label className="text-sm">Bedrock Region</Label>
-                  <Input
-                    value={bedrockRegion}
-                    onChange={(e) => setBedrockRegion(e.target.value)}
-                    placeholder="us-east-1"
-                    className="font-mono text-sm"
-                  />
-                  <p className="text-xs text-muted-foreground">
-                    AWS region for Bedrock (e.g., us-east-1, eu-central-1)
-                  </p>
+              {/* Note: Bedrock Region is now configured in the AwsSsoSection below */}
+
+              {/* Save Auth Settings Button - not shown for AWS mode (has its own save in AwsSsoSection) */}
+              {authMode !== "aws" && (
+                <div className="flex justify-end pt-2">
+                  <Button
+                    size="sm"
+                    onClick={() => {
+                      updateSettings.mutate({
+                        authMode,
+                        ...(authMode === "apiKey" && apiKey && { apiKey }),
+                        bedrockRegion,
+                        anthropicBaseUrl: anthropicBaseUrl || null,
+                      })
+                    }}
+                    disabled={updateSettings.isPending}
+                  >
+                    {updateSettings.isPending && (
+                      <IconSpinner className="h-4 w-4 mr-2" />
+                    )}
+                    Save Auth Settings
+                  </Button>
                 </div>
               )}
-
-              {/* Save Auth Settings Button */}
-              <div className="flex justify-end pt-2">
-                <Button
-                  size="sm"
-                  onClick={() => {
-                    updateSettings.mutate({
-                      authMode,
-                      ...(authMode === "apiKey" && apiKey && { apiKey }),
-                      bedrockRegion,
-                      anthropicBaseUrl: anthropicBaseUrl || null,
-                    })
-                  }}
-                  disabled={updateSettings.isPending}
-                >
-                  {updateSettings.isPending && (
-                    <IconSpinner className="h-4 w-4 mr-2" />
-                  )}
-                  Save Auth Settings
-                </Button>
-              </div>
             </div>
 
             {/* Connected State - OAuth mode only */}
@@ -368,26 +357,19 @@ export function AgentsClaudeCodeTab() {
               </div>
             )}
 
-            {/* AWS Mode Status */}
+            {/* AWS Mode - Full SSO/Profile Configuration */}
             {authMode === "aws" && flowState.step === "idle" && (
-              <div className="space-y-4">
-                <div className="flex items-center gap-3">
-                  <div className="w-8 h-8 rounded-full bg-blue-100 dark:bg-blue-900/30 flex items-center justify-center">
-                    <Check className="w-4 h-4 text-blue-600 dark:text-blue-400" />
-                  </div>
-                  <div>
-                    <p className="text-sm font-medium text-foreground">
-                      AWS Bedrock Mode
-                    </p>
-                    <p className="text-xs text-muted-foreground">
-                      Region: {bedrockRegion || "us-east-1"}
-                    </p>
-                  </div>
-                </div>
-                <p className="text-xs text-muted-foreground">
-                  Ensure you have AWS credentials configured (env vars or ~/.aws/credentials file)
-                </p>
-              </div>
+              <AwsSsoSection
+                bedrockRegion={bedrockRegion}
+                onBedrockRegionChange={setBedrockRegion}
+                onSave={() => {
+                  updateSettings.mutate({
+                    authMode,
+                    bedrockRegion,
+                  })
+                }}
+                isSaving={updateSettings.isPending}
+              />
             )}
 
             {/* API Key Mode Status */}

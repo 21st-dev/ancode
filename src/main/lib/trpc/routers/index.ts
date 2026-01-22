@@ -15,6 +15,7 @@ import { workflowsRouter } from "./workflows"
 import { mcpRouter } from "./mcp"
 import { worktreeConfigRouter } from "./worktree-config"
 import { commandsRouter } from "./commands"
+import { awsSsoRouter } from "./aws-sso"
 import { createGitRouter } from "../../git"
 import { BrowserWindow } from "electron"
 
@@ -40,6 +41,7 @@ export function createAppRouter(getWindow: () => BrowserWindow | null) {
     mcp: mcpRouter,
     worktreeConfig: worktreeConfigRouter,
     commands: commandsRouter,
+    awsSso: awsSsoRouter,
     // Git operations - named "changes" to match Superset API
     changes: createGitRouter(),
   })
