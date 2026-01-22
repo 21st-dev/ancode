@@ -1572,6 +1572,57 @@ export const AgentDiffView = forwardRef<AgentDiffViewRef, AgentDiffViewProps>(
           </div>
         )}
 
+        {/* Desktop Toolbar */}
+        {!isMobile && !isLoadingDiff && fileDiffs.length > 0 && (
+          <div className="flex-shrink-0 flex items-center justify-end gap-2 px-3 py-2 border-b border-border/50 bg-background">
+            {/* Tree/Flat view toggle */}
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="h-7 px-2"
+                  onClick={() => setListMode(listMode === "flat" ? "tree" : "flat")}
+                >
+                  {listMode === "flat" ? (
+                    <FolderTree className="h-3.5 w-3.5" />
+                  ) : (
+                    <List className="h-3.5 w-3.5" />
+                  )}
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>
+                {listMode === "flat" ? "Switch to tree view" : "Switch to flat view"}
+              </TooltipContent>
+            </Tooltip>
+
+            {/* Split/Unified toggle */}
+            <div className="relative bg-muted rounded-md h-7 p-0.5 flex">
+              <div
+                className="absolute inset-y-0.5 rounded bg-background shadow transition-all duration-200 ease-in-out"
+                style={{
+                  width: "calc(50% - 2px)",
+                  left: diffMode === DiffModeEnum.Split ? "2px" : "calc(50%)",
+                }}
+              />
+              <button
+                onClick={() => setDiffMode(DiffModeEnum.Split)}
+                className="relative z-[2] px-1.5 flex items-center justify-center transition-colors duration-200 rounded text-muted-foreground"
+                title="Split view"
+              >
+                <Columns2 className="h-3.5 w-3.5" />
+              </button>
+              <button
+                onClick={() => setDiffMode(DiffModeEnum.Unified)}
+                className="relative z-[2] px-1.5 flex items-center justify-center transition-colors duration-200 rounded text-muted-foreground"
+                title="Unified view"
+              >
+                <Rows2 className="h-3.5 w-3.5" />
+              </button>
+            </div>
+          </div>
+        )}
+
         {/* Content */}
         <div
           ref={scrollContainerRef}
