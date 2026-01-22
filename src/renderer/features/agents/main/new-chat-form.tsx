@@ -44,6 +44,8 @@ import {
 } from "../atoms"
 import { ProjectSelector } from "../components/project-selector"
 import { WorkModeSelector } from "../components/work-mode-selector"
+import { CommandsDropdown } from "../components/commands-dropdown"
+import { AgentsDropdown } from "../components/agents-dropdown"
 // import { selectedTeamIdAtom } from "@/lib/atoms/team"
 import { atom } from "jotai"
 const selectedTeamIdAtom = atom<string | null>(null)
@@ -824,6 +826,38 @@ export function NewChatForm({
     setShowingToolsList(false)
   }, [])
 
+  // Handle command selection from Commands dropdown
+  const handleCommandSelect = useCallback((command: string) => {
+    const currentValue = editorRef.current?.getValue() || ""
+    const commandWithSpace = `${command} `
+    const newValue = currentValue.trim()
+      ? `${commandWithSpace}${currentValue}`
+      : commandWithSpace
+    editorRef.current?.setValue(newValue)
+    editorRef.current?.focus()
+
+    // Position cursor right after the command and space
+    setTimeout(() => {
+      editorRef.current?.setCursorPosition(commandWithSpace.length)
+    }, 0)
+  }, [])
+
+  // Handle agent selection from Agents dropdown
+  const handleAgentSelect = useCallback((agentId: string) => {
+    const command = `/${agentId} `
+    const currentValue = editorRef.current?.getValue() || ""
+    const newValue = currentValue.trim()
+      ? `${command}${currentValue}`
+      : command
+    editorRef.current?.setValue(newValue)
+    editorRef.current?.focus()
+
+    // Position cursor right after the agent command and space
+    setTimeout(() => {
+      editorRef.current?.setCursorPosition(command.length)
+    }, 0)
+  }, [])
+
   // Save draft to localStorage when content changes
   const handleContentChange = useCallback(
     (hasContent: boolean) => {
@@ -1166,7 +1200,7 @@ export function NewChatForm({
                           ) : (
                             <AgentIcon className="h-3.5 w-3.5" />
                           )}
-                          <span>{isPlanMode ? "Plan" : "Agent"}</span>
+                          <span>{isPlanMode ? "Plan" : "Accept"}</span>
                           <IconChevronDown className="h-3 w-3 shrink-0 opacity-50" />
                         </DropdownMenuTrigger>
                         <DropdownMenuContent
@@ -1225,7 +1259,7 @@ export function NewChatForm({
                           >
                             <div className="flex items-center gap-2">
                               <AgentIcon className="w-4 h-4 text-muted-foreground" />
-                              <span>Agent</span>
+                              <span>Accept</span>
                             </div>
                             {!isPlanMode && (
                               <CheckIcon className="h-3.5 w-3.5 ml-auto shrink-0" />
@@ -1417,6 +1451,18 @@ export function NewChatForm({
                           </DropdownMenuContent>
                         </DropdownMenu>
                       )}
+
+                      {/* Commands Dropdown */}
+                      <CommandsDropdown
+                        onCommandSelect={handleCommandSelect}
+                        disabled={createChatMutation.isPending}
+                      />
+
+                      {/* Agents Dropdown */}
+                      <AgentsDropdown
+                        onAgentSelect={handleAgentSelect}
+                        disabled={createChatMutation.isPending}
+                      />
                     </div>
 
                     <div className="flex items-center gap-0.5 ml-auto flex-shrink-0">

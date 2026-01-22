@@ -43,10 +43,8 @@ python311.priority = 10
 [vars]
 # Indicate Flox environment is active
 FLOX_ENVIRONMENT = "1"
-# Skip electron-rebuild (use pre-built binaries)
-VERCEL = "1"
-# Point electron package to Flox-provided Electron
-ELECTRON_OVERRIDE_DIST_PATH = "/nix/store/29ac4qwh9nri55cla2fhgbjqvhpamgzk-electron-33.0.2/Applications"
+# Skip electron binary download (Flox provides it)
+ELECTRON_SKIP_BINARY_DOWNLOAD = "1"
 
 
 ## Activation Hook ---------------------------------------------------

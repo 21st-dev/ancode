@@ -59,6 +59,7 @@ export type AgentsMentionsEditorHandle = {
   setValue: (value: string) => void
   clear: () => void
   clearSlashCommand: () => void // Clear slash command text after selection
+  setCursorPosition: (offset: number) => void // Position cursor at specific offset
 }
 
 type AgentsMentionsEditorProps = {
@@ -1078,6 +1079,29 @@ export const AgentsMentionsEditor = memo(
             triggerActive.current = false
             triggerStartIndex.current = null
             onCloseTrigger()
+          },
+
+          setCursorPosition: (offset: number) => {
+            if (!editorRef.current) return
+
+            const sel = window.getSelection()
+            if (!sel) return
+
+            // Find the text node and set cursor position
+            const walker = document.createTreeWalker(
+              editorRef.current,
+              NodeFilter.SHOW_TEXT,
+            )
+            const firstTextNode = walker.nextNode()
+
+            if (firstTextNode && firstTextNode.nodeType === Node.TEXT_NODE) {
+              const range = document.createRange()
+              const maxOffset = Math.min(offset, firstTextNode.textContent?.length || 0)
+              range.setStart(firstTextNode, maxOffset)
+              range.collapse(true)
+              sel.removeAllRanges()
+              sel.addRange(range)
+            }
           },
         }),
         [onCloseTrigger, onCloseSlashTrigger, resolveMention, onContentChange],
