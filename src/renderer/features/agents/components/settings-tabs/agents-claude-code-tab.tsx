@@ -238,20 +238,13 @@ export function AgentsClaudeCodeTab() {
             {/* Auth Mode Selector */}
             <div className="space-y-3 pb-4 border-b border-border">
               <Label className="text-sm font-medium">Authentication Mode</Label>
-              <div className="grid grid-cols-3 gap-2">
+              <div className="grid grid-cols-2 gap-2">
                 <Button
                   variant={authMode === "oauth" ? "default" : "outline"}
                   onClick={() => setAuthMode("oauth")}
                   size="sm"
                 >
                   OAuth
-                </Button>
-                <Button
-                  variant={authMode === "aws" ? "default" : "outline"}
-                  onClick={() => setAuthMode("aws")}
-                  size="sm"
-                >
-                  AWS Bedrock
                 </Button>
                 <Button
                   variant={authMode === "apiKey" ? "default" : "outline"}

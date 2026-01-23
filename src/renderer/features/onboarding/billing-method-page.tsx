@@ -25,12 +25,6 @@ const billingOptions: BillingOption[] = [
     icon: <ClaudeCodeIcon className="w-5 h-5" />,
   },
   {
-    id: "aws-bedrock",
-    title: "AWS Bedrock",
-    subtitle: "Use AWS Bedrock via SSO authentication.",
-    icon: <SettingsFilledIcon className="w-5 h-5" />,
-  },
-  {
     id: "api-key",
     title: "Anthropic API Key",
     subtitle: "Pay-as-you-go with your own API key.",

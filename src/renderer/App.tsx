@@ -9,7 +9,6 @@ import { AgentsLayout } from "./features/layout/agents-layout"
 import {
   AnthropicOnboardingPage,
   ApiKeyOnboardingPage,
-  AwsBedrockOnboardingPage,
   BillingMethodPage,
   SelectRepoPage,
 } from "./features/onboarding"
@@ -17,7 +16,6 @@ import { identify, initAnalytics, shutdown } from "./lib/analytics"
 import {
   anthropicOnboardingCompletedAtom,
   apiKeyOnboardingCompletedAtom,
-  awsBedrockOnboardingCompletedAtom,
   billingMethodAtom
 } from "./lib/atoms"
 import { appStore } from "./lib/jotai-store"
@@ -49,7 +47,6 @@ function AppContent() {
     anthropicOnboardingCompletedAtom
   )
   const apiKeyOnboardingCompleted = useAtomValue(apiKeyOnboardingCompletedAtom)
-  const awsBedrockOnboardingCompleted = useAtomValue(awsBedrockOnboardingCompletedAtom)
   const selectedProject = useAtomValue(selectedProjectAtom)
 
   // Migration: If user already completed Anthropic onboarding but has no billing method set,
@@ -94,10 +91,6 @@ function AppContent() {
     !apiKeyOnboardingCompleted
   ) {
     return <ApiKeyOnboardingPage />
-  }
-
-  if (billingMethod === "aws-bedrock" && !awsBedrockOnboardingCompleted) {
-    return <AwsBedrockOnboardingPage />
   }
 
   if (!validatedProject && !isLoadingProjects) {
