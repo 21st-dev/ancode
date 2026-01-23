@@ -25,7 +25,9 @@ export const AgentWebSearchCollapsible = memo(
 
     const isPending =
       part.state !== "output-available" && part.state !== "output-error"
-    const isStreaming = isPending && chatStatus === "streaming"
+    // Include "submitted" status - this is when request was sent but streaming hasn't started yet
+    const isActivelyStreaming = chatStatus === "streaming" || chatStatus === "submitted"
+    const isStreaming = isPending && isActivelyStreaming
 
     const query = part.input?.query || ""
 

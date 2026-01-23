@@ -1,6 +1,6 @@
 "use client"
 
-import { memo } from "react"
+import { memo, useMemo } from "react"
 import { useAtomValue } from "jotai"
 import {
   messageAtomFamily,
@@ -9,6 +9,7 @@ import {
   isStreamingAtom,
 } from "../stores/message-store"
 import { MemoizedAssistantMessages } from "./messages-list"
+import { extractTextMentions, TextMentionBlocks } from "../mentions/render-file-mentions"
 
 // ============================================================================
 // ISOLATED MESSAGE GROUP (LAYER 4)
@@ -30,6 +31,7 @@ import { MemoizedAssistantMessages } from "./messages-list"
 interface IsolatedMessageGroupProps {
   userMsgId: string
   subChatId: string
+  chatId: string
   isMobile: boolean
   sandboxSetupStatus: "cloning" | "ready" | "error"
   stickyTopClass: string
@@ -40,6 +42,7 @@ interface IsolatedMessageGroupProps {
     messageId: string
     textContent: string
     imageParts: any[]
+    skipTextMentionBlocks?: boolean
   }>
   ToolCallComponent: React.ComponentType<{
     icon: any
@@ -47,7 +50,7 @@ interface IsolatedMessageGroupProps {
     isPending: boolean
     isError: boolean
   }>
-  MessageGroupWrapper: React.ComponentType<{ children: React.ReactNode }>
+  MessageGroupWrapper: React.ComponentType<{ children: React.ReactNode; isLastGroup?: boolean }>
   toolRegistry: Record<string, { icon: any; title: (args: any) => string }>
 }
 
@@ -58,21 +61,23 @@ function areGroupPropsEqual(
   return (
     prev.userMsgId === next.userMsgId &&
     prev.subChatId === next.subChatId &&
+    prev.chatId === next.chatId &&
     prev.isMobile === next.isMobile &&
     prev.sandboxSetupStatus === next.sandboxSetupStatus &&
-    prev.stickyTopClass === next.stickyTopClass &&
-    prev.sandboxSetupError === next.sandboxSetupError &&
-    prev.onRetrySetup === next.onRetrySetup &&
-    prev.UserBubbleComponent === next.UserBubbleComponent &&
-    prev.ToolCallComponent === next.ToolCallComponent &&
-    prev.MessageGroupWrapper === next.MessageGroupWrapper &&
-    prev.toolRegistry === next.toolRegistry
+  prev.stickyTopClass === next.stickyTopClass &&
+  prev.sandboxSetupError === next.sandboxSetupError &&
+  prev.onRetrySetup === next.onRetrySetup &&
+  prev.UserBubbleComponent === next.UserBubbleComponent &&
+  prev.ToolCallComponent === next.ToolCallComponent &&
+  prev.MessageGroupWrapper === next.MessageGroupWrapper &&
+  prev.toolRegistry === next.toolRegistry
   )
 }
 
 export const IsolatedMessageGroup = memo(function IsolatedMessageGroup({
   userMsgId,
   subChatId,
+  chatId,
   isMobile,
   sandboxSetupStatus,
   stickyTopClass,
@@ -89,17 +94,24 @@ export const IsolatedMessageGroup = memo(function IsolatedMessageGroup({
   const isLastGroup = useAtomValue(isLastUserMessageAtomFamily(userMsgId))
   const isStreaming = useAtomValue(isStreamingAtom)
 
-  if (!userMsg) return null
-
   // Extract user message content
-  const textContent =
-    userMsg.parts
+  const rawTextContent =
+    userMsg?.parts
       ?.filter((p: any) => p.type === "text")
       .map((p: any) => p.text)
       .join("\n") || ""
 
   const imageParts =
-    userMsg.parts?.filter((p: any) => p.type === "data-image") || []
+    userMsg?.parts?.filter((p: any) => p.type === "data-image") || []
+
+  // Extract text mentions (quote/diff) to render separately above sticky block
+  // NOTE: useMemo must be called before any early returns to follow Rules of Hooks
+  const { textMentions, cleanedText: textContent } = useMemo(
+    () => extractTextMentions(rawTextContent),
+    [rawTextContent]
+  )
+
+  if (!userMsg) return null
 
   // Show cloning when sandbox is being set up
   const shouldShowCloning =
@@ -109,20 +121,31 @@ export const IsolatedMessageGroup = memo(function IsolatedMessageGroup({
   const shouldShowSetupError =
     sandboxSetupStatus === "error" && isLastGroup && assistantIds.length === 0
 
+  // Check if this is an image-only message (no text content)
+  const isImageOnlyMessage = imageParts.length > 0 && !textContent.trim() && textMentions.length === 0
+
   return (
-    <MessageGroupWrapper>
-      {/* Attachments - NOT sticky */}
-      {imageParts.length > 0 && (
+    <MessageGroupWrapper isLastGroup={isLastGroup}>
+      {/* Attachments - NOT sticky (only when there's also text) */}
+      {imageParts.length > 0 && !isImageOnlyMessage && (
         <div className="mb-2 pointer-events-auto">
           <UserBubbleComponent
             messageId={userMsgId}
             textContent=""
             imageParts={imageParts}
+            skipTextMentionBlocks
           />
         </div>
       )}
 
-      {/* User message text - sticky */}
+      {/* Text mentions (quote/diff) - NOT sticky */}
+      {textMentions.length > 0 && (
+        <div className="mb-2 pointer-events-auto">
+          <TextMentionBlocks mentions={textMentions} />
+        </div>
+      )}
+
+      {/* User message text - sticky (or image-only bubble) */}
       <div
         data-user-message-id={userMsgId}
         className={`[&>div]:!mb-4 pointer-events-auto sticky z-10 ${stickyTopClass}`}
@@ -130,7 +153,8 @@ export const IsolatedMessageGroup = memo(function IsolatedMessageGroup({
         <UserBubbleComponent
           messageId={userMsgId}
           textContent={textContent}
-          imageParts={[]}
+          imageParts={isImageOnlyMessage ? imageParts : []}
+          skipTextMentionBlocks={!isImageOnlyMessage}
         />
 
         {/* Cloning indicator */}
@@ -171,6 +195,7 @@ export const IsolatedMessageGroup = memo(function IsolatedMessageGroup({
         <MemoizedAssistantMessages
           assistantMsgIds={assistantIds}
           subChatId={subChatId}
+          chatId={chatId}
           isMobile={isMobile}
           sandboxSetupStatus={sandboxSetupStatus}
         />

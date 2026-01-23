@@ -3,6 +3,7 @@ import {
 	execFile,
 } from "node:child_process";
 import os from "node:os";
+import path from "node:path";
 import { promisify } from "node:util";
 
 const execFileAsync = promisify(execFile);
@@ -19,14 +20,56 @@ let pathFixAttempted = false;
 let pathFixSucceeded = false;
 
 /**
- * Gets the full shell environment by spawning a login shell.
- * This captures PATH and other environment variables set in shell profiles
- * which includes tools like git-lfs installed via homebrew.
+ * Build Windows PATH by combining process.env.PATH with common install locations.
+ * This ensures packaged apps on Windows can find user-installed tools.
+ */
+function buildWindowsPath(): string {
+	const paths: string[] = [];
+	const pathSeparator = ";";
+
+	// Start with existing PATH from process.env
+	if (process.env.PATH) {
+		paths.push(...process.env.PATH.split(pathSeparator).filter(Boolean));
+	}
+
+	// Add Windows-specific common paths
+	const commonPaths = [
+		// User-local installations (where tools like Claude CLI, git-lfs are often installed)
+		path.join(os.homedir(), ".local", "bin"),
+		// Git for Windows default location
+		"C:\\Program Files\\Git\\cmd",
+		"C:\\Program Files\\Git\\bin",
+		// System paths (usually already in PATH, but ensure they're present)
+		path.join(process.env.SystemRoot || "C:\\Windows", "System32"),
+		path.join(process.env.SystemRoot || "C:\\Windows"),
+	];
+
+	// Add common paths that aren't already in PATH
+	for (const commonPath of commonPaths) {
+		const normalizedPath = path.normalize(commonPath);
+		// Case-insensitive check for Windows
+		const normalizedLower = normalizedPath.toLowerCase();
+		const alreadyExists = paths.some(
+			(p) => path.normalize(p).toLowerCase() === normalizedLower,
+		);
+		if (!alreadyExists) {
+			paths.push(normalizedPath);
+		}
+	}
+
+	return paths.join(pathSeparator);
+}
+
+/**
+ * Gets the full shell environment with proper PATH for all platforms.
  *
- * Uses -lc (login, command) instead of -ilc to avoid interactive prompts
- * and TTY issues from dotfiles expecting a terminal.
+ * - **Windows**: Derives PATH from process.env + common install locations (no shell spawn)
+ * - **macOS/Linux**: Spawns login shell to capture PATH from shell profiles
  *
- * Results are cached for 1 minute to avoid spawning shells repeatedly.
+ * This captures PATH and other environment variables needed to find user-installed tools
+ * like git-lfs (homebrew on macOS) or Claude CLI (user-local on Windows).
+ *
+ * Results are cached for 1 minute to avoid repeated operations.
  */
 export async function getShellEnvironment(): Promise<Record<string, string>> {
 	const now = Date.now();
@@ -36,6 +79,38 @@ export async function getShellEnvironment(): Promise<Record<string, string>> {
 		return { ...cachedEnv };
 	}
 
+	// Windows: derive PATH without shell invocation
+	// Git Bash PATH doesn't include Windows user paths, so we build it manually
+	if (process.platform === "win32") {
+		console.log(
+			"[shell-env] Windows detected, deriving PATH without shell invocation",
+		);
+		const env: Record<string, string> = {
+			...process.env,
+			PATH: buildWindowsPath(),
+			HOME: os.homedir(),
+			USER: os.userInfo().username,
+			USERPROFILE: os.homedir(),
+		};
+
+		// Ensure all values are strings
+		const stringEnv: Record<string, string> = {};
+		for (const [key, value] of Object.entries(env)) {
+			if (typeof value === "string") {
+				stringEnv[key] = value;
+			}
+		}
+
+		cachedEnv = stringEnv;
+		cacheTime = now;
+		isFallbackCache = false;
+		console.log(
+			`[shell-env] Built Windows environment with ${Object.keys(stringEnv).length} vars`,
+		);
+		return { ...stringEnv };
+	}
+
+	// macOS/Linux: spawn login shell to get full environment
 	const shell =
 		process.env.SHELL ||
 		(process.platform === "darwin" ? "/bin/zsh" : "/bin/bash");

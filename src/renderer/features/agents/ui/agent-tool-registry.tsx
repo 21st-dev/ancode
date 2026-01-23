@@ -1,27 +1,27 @@
 "use client"
 
 import {
-  SearchIcon,
-  EyeIcon,
-  IconEditFile,
-  PlanningIcon,
-  WriteFileIcon,
-  CustomTerminalIcon,
-  GlobeIcon,
-  SparklesIcon,
-} from "../../../components/ui/icons"
-import {
+  Database,
+  FileCode2,
   FolderSearch,
   GitBranch,
   ListTodo,
   LogOut,
-  FileCode2,
+  Minimize2,
+  Server,
   Terminal,
   XCircle,
-  Server,
-  Database,
-  Minimize2,
 } from "lucide-react"
+import {
+  CustomTerminalIcon,
+  EyeIcon,
+  GlobeIcon,
+  IconEditFile,
+  PlanningIcon,
+  SearchIcon,
+  SparklesIcon,
+  WriteFileIcon,
+} from "../../../components/ui/icons"
 
 export type ToolVariant = "simple" | "collapsible"
 
@@ -35,15 +35,17 @@ export interface ToolMeta {
 
 export function getToolStatus(part: any, chatStatus?: string) {
   const basePending =
-    part.state !== "output-available" && part.state !== "output-error"
+    part.state !== "output-available" && part.state !== "output-error" && part.state !== "result"
   const isError =
     part.state === "output-error" ||
     (part.state === "output-available" && part.output?.success === false)
   const isSuccess = part.state === "output-available" && !isError
   // Critical: if chat stopped streaming, pending tools should show as complete
-  const isPending = basePending && chatStatus === "streaming"
+  // Include "submitted" status - this is when request was sent but streaming hasn't started yet
+  const isActivelyStreaming = chatStatus === "streaming" || chatStatus === "submitted"
+  const isPending = basePending && isActivelyStreaming
   // Tool was in progress but chat stopped streaming (user interrupted)
-  const isInterrupted = basePending && chatStatus !== "streaming" && chatStatus !== undefined
+  const isInterrupted = basePending && !isActivelyStreaming && chatStatus !== undefined
 
   return { isPending, isError, isSuccess, isInterrupted }
 }
@@ -107,7 +109,7 @@ export const AgentToolRegistry: Record<string, ToolMeta> = {
         part.state !== "output-available" && part.state !== "output-error"
       const isInputStreaming = part.state === "input-streaming"
       if (isInputStreaming) return "Preparing task"
-      return isPending ? "Running Task" : "Task completed"
+      return isPending ? "Running Task" : "Completed Task"
     },
     subtitle: (part) => {
       // Don't show subtitle while input is still streaming
@@ -128,7 +130,19 @@ export const AgentToolRegistry: Record<string, ToolMeta> = {
       const isInputStreaming = part.state === "input-streaming"
       if (isInputStreaming) return "Preparing search"
       if (isPending) return "Grepping"
+
+      // Handle different output modes:
+      // - "files_with_matches" mode: numFiles > 0, filenames is populated
+      // - "content" mode: numFiles = 0, but numLines > 0 and content has matches
+      const mode = part.output?.mode
       const numFiles = part.output?.numFiles || 0
+      const numLines = part.output?.numLines || 0
+
+      if (mode === "content") {
+        // In content mode, numFiles is always 0, use numLines instead
+        return numLines > 0 ? `Found ${numLines} matches` : "No matches"
+      }
+
       return numFiles > 0 ? `Grepped ${numFiles} files` : "No matches"
     },
     subtitle: (part) => {
@@ -156,6 +170,16 @@ export const AgentToolRegistry: Record<string, ToolMeta> = {
       const isInputStreaming = part.state === "input-streaming"
       if (isInputStreaming) return "Preparing search"
       if (isPending) return "Exploring files"
+
+      // DEBUG: Log the part.output to understand its structure
+      console.log("[Glob DEBUG] part.output:", {
+        state: part.state,
+        output: part.output,
+        outputType: typeof part.output,
+        outputKeys: part.output && typeof part.output === 'object' ? Object.keys(part.output) : null,
+        numFiles: part.output?.numFiles,
+      })
+
       const numFiles = part.output?.numFiles || 0
       return numFiles > 0 ? `Found ${numFiles} files` : "No files found"
     },
@@ -402,8 +426,7 @@ export const AgentToolRegistry: Record<string, ToolMeta> = {
   "tool-ExitPlanMode": {
     icon: LogOut,
     title: (part) => {
-      const isPending =
-        part.state !== "output-available" && part.state !== "output-error"
+      const {isPending} = getToolStatus(part)
       return isPending ? "Finishing plan" : "Plan complete"
     },
     subtitle: () => "",

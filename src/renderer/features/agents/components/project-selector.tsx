@@ -1,6 +1,7 @@
-import { useState, useMemo } from "react"
-import { useAtom } from "jotai"
+import { useState, useMemo, useCallback } from "react"
+import { useAtom, useAtomValue } from "jotai"
 import { FolderOpen } from "lucide-react"
+import { showOfflineModeFeaturesAtom } from "../../../lib/atoms"
 import {
   Popover,
   PopoverContent,
@@ -19,9 +20,9 @@ import {
   DialogContent,
   DialogHeader,
   DialogTitle,
-  DialogDescription,
 } from "../../../components/ui/dialog"
 import { Input } from "../../../components/ui/input"
+import { Button } from "../../../components/ui/button"
 import { IconChevronDown, CheckIcon, FolderPlusIcon, GitHubIcon } from "../../../components/ui/icons"
 import { trpc } from "../../../lib/trpc"
 import { selectedProjectAtom } from "../atoms"
@@ -31,24 +32,42 @@ function ProjectIcon({
   gitOwner,
   gitProvider,
   className = "h-4 w-4",
+  isOffline = false,
 }: {
   gitOwner?: string | null
   gitProvider?: string | null
   className?: string
+  isOffline?: boolean
 }) {
-  if (gitOwner && gitProvider === "github") {
+  const [isLoaded, setIsLoaded] = useState(false)
+  const [hasError, setHasError] = useState(false)
+
+  const handleLoad = useCallback(() => setIsLoaded(true), [])
+  const handleError = useCallback(() => setHasError(true), [])
+
+  // In offline mode or on error, don't try to load remote images
+  if (isOffline || hasError || !gitOwner || gitProvider !== "github") {
     return (
-      <img
-        src={`https://github.com/${gitOwner}.png?size=64`}
-        alt={gitOwner}
-        className={`${className} rounded-sm flex-shrink-0`}
+      <FolderOpen
+        className={`${className} text-muted-foreground flex-shrink-0`}
       />
     )
   }
+
   return (
-    <FolderOpen
-      className={`${className} text-muted-foreground flex-shrink-0`}
-    />
+    <div className={`${className} relative flex-shrink-0`}>
+      {/* Placeholder background while loading */}
+      {!isLoaded && (
+        <div className="absolute inset-0 rounded-sm bg-muted" />
+      )}
+      <img
+        src={`https://github.com/${gitOwner}.png?size=64`}
+        alt={gitOwner}
+        className={`${className} rounded-sm flex-shrink-0 ${isLoaded ? 'opacity-100' : 'opacity-0'}`}
+        onLoad={handleLoad}
+        onError={handleError}
+      />
+    </div>
   )
 }
 
@@ -58,6 +77,13 @@ export function ProjectSelector() {
   const [searchQuery, setSearchQuery] = useState("")
   const [githubDialogOpen, setGithubDialogOpen] = useState(false)
   const [githubUrl, setGithubUrl] = useState("")
+
+  // Check if offline mode is enabled and if we're actually offline
+  const showOfflineFeatures = useAtomValue(showOfflineModeFeaturesAtom)
+  const { data: ollamaStatus } = trpc.ollama.getStatus.useQuery(undefined, {
+    enabled: showOfflineFeatures,
+  })
+  const isOffline = showOfflineFeatures && ollamaStatus ? !ollamaStatus.internet.online : false
 
   // Fetch projects from DB
   const { data: projects, isLoading: isLoadingProjects } = trpc.projects.list.useQuery()
@@ -217,6 +243,7 @@ export function ProjectSelector() {
           <ProjectIcon
             gitOwner={validSelection?.gitOwner}
             gitProvider={validSelection?.gitProvider}
+            isOffline={isOffline}
           />
           <span className="truncate max-w-[120px]">
             {validSelection?.name || "Select repo"}
@@ -250,6 +277,7 @@ export function ProjectSelector() {
                       <ProjectIcon
                         gitOwner={project.gitOwner}
                         gitProvider={project.gitProvider}
+                        isOffline={isOffline}
                       />
                       <span className="truncate flex-1">{project.name}</span>
                       {isSelected && (
@@ -288,41 +316,42 @@ export function ProjectSelector() {
     </Popover>
 
     <Dialog open={githubDialogOpen} onOpenChange={setGithubDialogOpen}>
-      <DialogContent className="w-[400px]">
-        <DialogHeader>
-          <DialogTitle>Clone from GitHub</DialogTitle>
-          <DialogDescription>
-            Enter a GitHub repository URL or owner/repo
-          </DialogDescription>
-        </DialogHeader>
+      <DialogContent className="w-[400px] p-0 gap-0 overflow-hidden">
         <form
           onSubmit={(e) => {
             e.preventDefault()
             handleCloneFromGitHub()
           }}
-          className="flex flex-col gap-4"
         >
-          <Input
-            placeholder="owner/repo or https://github.com/..."
-            value={githubUrl}
-            onChange={(e) => setGithubUrl(e.target.value)}
-            autoFocus
-          />
-          <div className="flex justify-end gap-2">
-            <button
+          <div className="p-6">
+            <h2 className="text-xl font-semibold mb-4">
+              Clone from GitHub
+            </h2>
+            <Input
+              placeholder="owner/repo or https://github.com/..."
+              value={githubUrl}
+              onChange={(e) => setGithubUrl(e.target.value)}
+              className="w-full h-11 text-sm"
+              autoFocus
+            />
+          </div>
+          <div className="bg-muted p-4 flex justify-between border-t border-border">
+            <Button
               type="button"
               onClick={() => setGithubDialogOpen(false)}
-              className="px-3 py-1.5 text-sm rounded-md hover:bg-muted transition-colors"
+              variant="ghost"
+              className="rounded-md"
             >
               Cancel
-            </button>
-            <button
+            </Button>
+            <Button
               type="submit"
               disabled={!githubUrl.trim() || cloneFromGitHub.isPending}
-              className="px-3 py-1.5 text-sm bg-primary text-primary-foreground rounded-md hover:bg-primary/90 transition-colors disabled:opacity-50"
+              variant="default"
+              className="rounded-md"
             >
               {cloneFromGitHub.isPending ? "Cloning..." : "Clone"}
-            </button>
+            </Button>
           </div>
         </form>
       </DialogContent>

@@ -37,40 +37,30 @@ export const AgentTaskTool = memo(function AgentTaskTool({
 }: AgentTaskToolProps) {
   const { isPending, isInterrupted } = getToolStatus(part, chatStatus)
 
-  // Default: expanded while streaming, collapsed when done
-  const [isExpanded, setIsExpanded] = useState(isPending)
+  // Default: collapsed
+  const [isExpanded, setIsExpanded] = useState(false)
   const scrollRef = useRef<HTMLDivElement>(null)
-  const wasStreamingRef = useRef(isPending)
 
   // Track elapsed time for running tasks
   const [elapsedMs, setElapsedMs] = useState(0)
-  const startTimeRef = useRef<number | null>(null)
 
   const description = part.input?.description || ""
 
-  // Auto-collapse when streaming ends (transition from true -> false)
-  useEffect(() => {
-    if (wasStreamingRef.current && !isPending) {
-      setIsExpanded(false)
-    }
-    wasStreamingRef.current = isPending
-  }, [isPending])
+  // Use startedAt from backend for persistent timing across re-renders
+  const startedAt = part.startedAt as number | undefined
 
-  // Track elapsed time while task is running
+  // Track elapsed time while task is running using backend timestamp
   useEffect(() => {
-    if (isPending) {
-      // Start tracking time
-      if (startTimeRef.current === null) {
-        startTimeRef.current = Date.now()
-      }
+    if (isPending && startedAt) {
+      // Set initial elapsed time immediately
+      setElapsedMs(Date.now() - startedAt)
+
       const interval = setInterval(() => {
-        if (startTimeRef.current !== null) {
-          setElapsedMs(Date.now() - startTimeRef.current)
-        }
+        setElapsedMs(Date.now() - startedAt)
       }, 1000)
       return () => clearInterval(interval)
     }
-  }, [isPending])
+  }, [isPending, startedAt])
 
   // Use output duration from Claude Code if available, otherwise use our tracked time
   const outputDuration = part.output?.duration || part.output?.duration_ms
@@ -99,9 +89,9 @@ export const AgentTaskTool = memo(function AgentTaskTool({
 
   const subtitle = getSubtitle()
 
-  // Get title text - always use "Task"
+  // Get title text based on status
   const getTitle = () => {
-    return isPending ? "Running Task" : "Task"
+    return isPending ? "Running Task" : "Completed Task"
   }
 
   // Show interrupted state if task was interrupted without completing

@@ -232,12 +232,39 @@ export const agentsPreviewSidebarOpenAtom = atomWithStorage<boolean>(
 // Diff sidebar (right) width (global - same width for all chats)
 export const agentsDiffSidebarWidthAtom = atomWithStorage<number>(
   "agents-diff-sidebar-width",
-  500,
+  800,
   undefined,
   { getOnInit: true },
 )
 
-// Diff sidebar open state storage - stores per chatId
+// Changes panel (file list) width within the diff sidebar
+export const agentsChangesPanelWidthAtom = atomWithStorage<number>(
+  "agents-changes-panel-width",
+  280,
+  undefined,
+  { getOnInit: true },
+)
+
+// Changes panel collapsed state in narrow view (collapsed by default)
+export const agentsChangesPanelCollapsedAtom = atomWithStorage<boolean>(
+  "agents-changes-panel-collapsed",
+  true, // collapsed by default
+  undefined,
+  { getOnInit: true },
+)
+
+// Diff view display mode - sidebar (side peek), center dialog, or fullscreen
+// Defined early because diffSidebarOpenAtomFamily depends on it
+export type DiffViewDisplayMode = "side-peek" | "center-peek" | "full-page"
+
+export const diffViewDisplayModeAtom = atomWithStorage<DiffViewDisplayMode>(
+  "agents:diffViewDisplayMode",
+  "side-peek", // default to current behavior
+  undefined,
+  { getOnInit: true },
+)
+
+// Diff sidebar open state storage - stores per chatId (persisted)
 const diffSidebarOpenStorageAtom = atomWithStorage<Record<string, boolean>>(
   "agents:diffSidebarOpen",
   {},
@@ -245,11 +272,36 @@ const diffSidebarOpenStorageAtom = atomWithStorage<Record<string, boolean>>(
   { getOnInit: true },
 )
 
+// Runtime open state - not persisted, used for dialog/fullscreen modes
+const diffSidebarOpenRuntimeAtom = atom<Record<string, boolean>>({})
+
 // atomFamily to get/set diff sidebar open state per chatId
+// Only restores persisted state when display mode is "side-peek" (sidebar mode)
+// For dialog/fullscreen modes, we use runtime state only (not auto-restored on page load)
 export const diffSidebarOpenAtomFamily = atomFamily((chatId: string) =>
   atom(
-    (get) => get(diffSidebarOpenStorageAtom)[chatId] ?? false,
+    (get) => {
+      const displayMode = get(diffViewDisplayModeAtom)
+      const runtimeOpen = get(diffSidebarOpenRuntimeAtom)[chatId]
+
+      // If we have a runtime value, use it (user explicitly opened/closed)
+      if (runtimeOpen !== undefined) {
+        return runtimeOpen
+      }
+
+      // For initial load: only restore persisted state for sidebar mode
+      // Dialog and fullscreen should not auto-open on page load
+      if (displayMode !== "side-peek") {
+        return false
+      }
+      return get(diffSidebarOpenStorageAtom)[chatId] ?? false
+    },
     (get, set, isOpen: boolean) => {
+      // Always update runtime state
+      const currentRuntime = get(diffSidebarOpenRuntimeAtom)
+      set(diffSidebarOpenRuntimeAtom, { ...currentRuntime, [chatId]: isOpen })
+
+      // Also persist for sidebar mode
       const current = get(diffSidebarOpenStorageAtom)
       set(diffSidebarOpenStorageAtom, { ...current, [chatId]: isOpen })
     },
@@ -268,6 +320,20 @@ export const agentsDiffSidebarOpenAtom = atomWithStorage<boolean>(
 // Focused file path in diff sidebar (for scroll-to-file feature)
 // Set by AgentEditTool on click, consumed by AgentDiffView
 export const agentsFocusedDiffFileAtom = atom<string | null>(null)
+
+// Collapsed state for diff files per chat - preserved across narrow/wide layout changes
+// Map<fileKey, isCollapsed>
+const diffFilesCollapsedStorageAtom = atom<Record<string, Record<string, boolean>>>({})
+
+export const diffFilesCollapsedAtomFamily = atomFamily((chatId: string) =>
+  atom(
+    (get) => get(diffFilesCollapsedStorageAtom)[chatId] ?? {},
+    (get, set, collapsed: Record<string, boolean>) => {
+      const current = get(diffFilesCollapsedStorageAtom)
+      set(diffFilesCollapsedStorageAtom, { ...current, [chatId]: collapsed })
+    },
+  ),
+)
 
 // Sub-chats display mode - tabs (horizontal) or sidebar (vertical list)
 export const agentsSubChatsSidebarModeAtom = atomWithStorage<
@@ -338,42 +404,6 @@ export const lastChatModesAtom = atom<Map<string, "plan" | "agent">>(
 export type AgentsMobileViewMode = "chats" | "chat" | "preview" | "diff" | "terminal"
 export const agentsMobileViewModeAtom = atom<AgentsMobileViewMode>("chat")
 
-// Scroll position persistence per sub-chat
-// Maps subChatId to scroll data with validation metadata
-export interface ScrollPositionData {
-  scrollTop: number // Saved scroll position in pixels
-  scrollHeight: number // Total scrollable height at save time (for validation)
-  messageCount: number // Number of messages at save time (for validation)
-  wasStreaming: boolean // Was chat streaming when we left?
-  lastAssistantMsgId?: string // ID of last assistant message when we left
-}
-
-export const agentsScrollPositionsAtom = atomWithStorage<
-  Record<string, ScrollPositionData>
->("agents-scroll-positions-v2", {}, undefined, { getOnInit: true })
-
-// Module-level cache for SYNCHRONOUS scroll position access during tab switches.
-// The Jotai atom is async (state updates are batched), so we need this cache
-// to ensure we always read the latest saved position immediately.
-const scrollPositionsCache = new Map<string, ScrollPositionData>()
-
-export const scrollPositionsCacheStore = {
-  get: (subChatId: string): ScrollPositionData | undefined =>
-    scrollPositionsCache.get(subChatId),
-
-  set: (subChatId: string, data: ScrollPositionData) => {
-    scrollPositionsCache.set(subChatId, data)
-  },
-
-  delete: (subChatId: string) => {
-    scrollPositionsCache.delete(subChatId)
-  },
-
-  clear: () => {
-    scrollPositionsCache.clear()
-  },
-}
-
 // Debug mode for testing first-time user experience
 // Only works in development mode
 export interface AgentsDebugMode {
@@ -430,6 +460,30 @@ export const subChatToChatMapAtom = atom<Map<string, string>>(new Map())
 // When set, AgentDiffView will only show files matching these paths
 export const filteredDiffFilesAtom = atom<string[] | null>(null)
 
+// Selected file path in diff sidebar (for highlighting in file list and showing in diff view)
+// Using atom instead of useState to prevent re-renders of unrelated components
+export const selectedDiffFilePathAtom = atom<string | null>(null)
+
+// PR creation loading state - atom to allow ChatViewInner to reset it after sending message
+export const isCreatingPrAtom = atom<boolean>(false)
+
+// Filter by subchat ID for diff sidebar and changes panel (null = show all)
+// When set by Review button, both diff view and file list filter to this subchat's files
+export const filteredSubChatIdAtom = atom<string | null>(null)
+
+// Selected commit for viewing in diff view
+// null = show working tree diff (current behavior)
+// When set, diff view shows files from this commit instead of working tree
+export type SelectedCommit = {
+	hash: string
+	shortHash: string
+	message: string
+	description?: string
+	author?: string
+	date?: Date
+} | null
+export const selectedCommitAtom = atom<SelectedCommit>(null)
+
 // Pending PR message to send to chat
 // Set by ChatView when "Create PR" is clicked, consumed by ChatViewInner
 export const pendingPrMessageAtom = atom<string | null>(null)
@@ -437,6 +491,10 @@ export const pendingPrMessageAtom = atom<string | null>(null)
 // Pending Review message to send to chat
 // Set by ChatView when "Review" is clicked, consumed by ChatViewInner
 export const pendingReviewMessageAtom = atom<string | null>(null)
+
+// Pending merge conflict resolution message to send to chat
+// Set when user clicks "Fix Conflicts" button, consumed by ChatViewInner
+export const pendingConflictResolutionMessageAtom = atom<string | null>(null)
 
 // Pending auth retry - stores failed message when auth-error occurs
 // After successful OAuth flow, this triggers automatic retry of the message
@@ -462,11 +520,52 @@ export const lastSelectedWorkModeAtom = atomWithStorage<WorkMode>(
 )
 
 // Last selected branch per project (persisted)
-// Maps projectId -> branchName
-export const lastSelectedBranchesAtom = atomWithStorage<Record<string, string>>(
+// Maps projectId -> { name: string, type: "local" | "remote" }
+// Custom storage with migration from old string format
+const lastSelectedBranchesStorage = {
+  getItem: (key: string, initialValue: Record<string, { name: string; type: "local" | "remote" }>) => {
+    const storedValue = localStorage.getItem(key)
+    if (!storedValue) return initialValue
+
+    try {
+      const parsed = JSON.parse(storedValue)
+      
+      // Migrate old format: Record<string, string> -> Record<string, { name, type }>
+      const migrated: Record<string, { name: string; type: "local" | "remote" }> = {}
+      for (const [projectId, value] of Object.entries(parsed)) {
+        if (typeof value === "string") {
+          // Old format: string branch name -> assume "local" type
+          migrated[projectId] = { name: value, type: "local" }
+        } else if (value && typeof value === "object" && "name" in value && "type" in value) {
+          // New format: already migrated
+          migrated[projectId] = value as { name: string; type: "local" | "remote" }
+        }
+      }
+      
+      // Save migrated data back to localStorage
+      if (Object.keys(migrated).length > 0) {
+        localStorage.setItem(key, JSON.stringify(migrated))
+      }
+      
+      return migrated
+    } catch {
+      return initialValue
+    }
+  },
+  setItem: (key: string, value: Record<string, { name: string; type: "local" | "remote" }>) => {
+    localStorage.setItem(key, JSON.stringify(value))
+  },
+  removeItem: (key: string) => {
+    localStorage.removeItem(key)
+  },
+}
+
+export const lastSelectedBranchesAtom = atomWithStorage<
+  Record<string, { name: string; type: "local" | "remote" }>
+>(
   "agents:lastSelectedBranches",
   {},
-  undefined,
+  lastSelectedBranchesStorage,
   { getOnInit: true },
 )
 
@@ -483,8 +582,9 @@ export const justCreatedIdsAtom = atom<Set<string>>(new Set())
 export const QUESTIONS_SKIPPED_MESSAGE = "User skipped questions - proceed with defaults"
 export const QUESTIONS_TIMED_OUT_MESSAGE = "Timed out"
 
-export type PendingUserQuestions = {
+export type PendingUserQuestion = {
   subChatId: string
+  parentChatId: string
   toolUseId: string
   questions: Array<{
     question: string
@@ -493,11 +593,19 @@ export type PendingUserQuestions = {
     multiSelect: boolean
   }>
 }
-export const pendingUserQuestionsAtom = atom<PendingUserQuestions | null>(null)
+// Map<subChatId, PendingUserQuestion> - supports multiple pending questions across workspaces
+export const pendingUserQuestionsAtom = atom<Map<string, PendingUserQuestion>>(new Map())
+
+// Legacy type alias for backwards compatibility
+export type PendingUserQuestions = PendingUserQuestion
 
 // Track sub-chats with pending plan approval (plan ready but not yet implemented)
 // Set<subChatId>
 export const pendingPlanApprovalsAtom = atom<Set<string>>(new Set())
+
+// Pending "Build plan" trigger - set by ChatView sidebar, consumed by ChatViewInner
+// Contains subChatId to approve, null when no pending approval
+export const pendingBuildPlanSubChatIdAtom = atom<string | null>(null)
 
 // Store AskUserQuestion results by toolUseId for real-time updates
 // Map<toolUseId, result>
@@ -510,3 +618,75 @@ export type UndoItem =
   | { type: "subchat"; subChatId: string; chatId: string; timeoutId: ReturnType<typeof setTimeout> }
 
 export const undoStackAtom = atom<UndoItem[]>([])
+
+// Viewed files state for diff review (GitHub-style "Viewed" checkbox)
+// Tracks which files have been reviewed with content hash to detect changes
+export type ViewedFileState = {
+  viewed: boolean
+  contentHash: string // Hash of diffText when marked as viewed
+}
+
+// Storage atom for viewed files per chat
+// Structure: { [chatId]: { [fileKey]: ViewedFileState } }
+const viewedFilesStorageAtom = atomWithStorage<
+  Record<string, Record<string, ViewedFileState>>
+>(
+  "agents:viewedFiles",
+  {},
+  undefined,
+  { getOnInit: true },
+)
+
+// atomFamily to get/set viewed files per chatId
+export const viewedFilesAtomFamily = atomFamily((chatId: string) =>
+  atom(
+    (get) => get(viewedFilesStorageAtom)[chatId] ?? {},
+    (get, set, newState: Record<string, ViewedFileState>) => {
+      const current = get(viewedFilesStorageAtom)
+      set(viewedFilesStorageAtom, { ...current, [chatId]: newState })
+    },
+  ),
+)
+
+// Plan sidebar state atoms
+
+// Plan sidebar width (global, persisted)
+export const agentsPlanSidebarWidthAtom = atomWithStorage<number>(
+  "agents-plan-sidebar-width",
+  500,
+  undefined,
+  { getOnInit: true },
+)
+
+// Plan sidebar open state storage - stores per chatId (persisted)
+const planSidebarOpenStorageAtom = atomWithStorage<Record<string, boolean>>(
+  "agents:planSidebarOpen",
+  {},
+  undefined,
+  { getOnInit: true },
+)
+
+// atomFamily to get/set plan sidebar open state per chatId
+export const planSidebarOpenAtomFamily = atomFamily((chatId: string) =>
+  atom(
+    (get) => get(planSidebarOpenStorageAtom)[chatId] ?? false,
+    (get, set, isOpen: boolean) => {
+      const current = get(planSidebarOpenStorageAtom)
+      set(planSidebarOpenStorageAtom, { ...current, [chatId]: isOpen })
+    },
+  ),
+)
+
+// Current plan path storage - stores per chatId (runtime only, not persisted)
+const currentPlanPathStorageAtom = atom<Record<string, string | null>>({})
+
+// atomFamily to get/set current plan path per chatId
+export const currentPlanPathAtomFamily = atomFamily((chatId: string) =>
+  atom(
+    (get) => get(currentPlanPathStorageAtom)[chatId] ?? null,
+    (get, set, planPath: string | null) => {
+      const current = get(currentPlanPathStorageAtom)
+      set(currentPlanPathStorageAtom, { ...current, [chatId]: planPath })
+    },
+  ),
+)

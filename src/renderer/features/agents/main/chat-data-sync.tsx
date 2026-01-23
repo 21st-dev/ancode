@@ -64,9 +64,10 @@ export function ChatDataSync({
 
   // Sync to Jotai store - this is the ONLY thing we do with messages
   // Using useLayoutEffect to sync before paint
+  // CRITICAL: Must pass subChatId to correctly key caches per chat
   useLayoutEffect(() => {
-    syncMessages({ messages, status })
-  }, [messages, status, syncMessages])
+    syncMessages({ messages, status, subChatId })
+  }, [messages, status, subChatId, syncMessages])
 
   // Stable refs for actions to prevent context recreation
   const actionsRef = useRef<ChatActionsContextValue>({

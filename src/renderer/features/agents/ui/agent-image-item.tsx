@@ -78,6 +78,8 @@ export function AgentImageItem({
     const handleKeyDown = (e: KeyboardEvent) => {
       switch (e.key) {
         case "Escape":
+          e.preventDefault()
+          e.stopPropagation()
           closeFullscreen()
           break
         case "ArrowLeft":
@@ -89,8 +91,9 @@ export function AgentImageItem({
       }
     }
 
-    window.addEventListener("keydown", handleKeyDown)
-    return () => window.removeEventListener("keydown", handleKeyDown)
+    // Use capture phase to intercept before other handlers
+    window.addEventListener("keydown", handleKeyDown, true)
+    return () => window.removeEventListener("keydown", handleKeyDown, true)
   }, [isFullscreen, hasMultipleImages, closeFullscreen, goToPrevious, goToNext])
 
   return (
@@ -154,6 +157,8 @@ export function AgentImageItem({
       {/* Fullscreen overlay with gallery navigation - rendered via portal to escape stacking context */}
       {isFullscreen && currentImage?.url && createPortal(
         <div
+          role="dialog"
+          aria-modal="true"
           className="fixed inset-0 z-50 flex items-center justify-center bg-black/90"
           onClick={closeFullscreen}
         >

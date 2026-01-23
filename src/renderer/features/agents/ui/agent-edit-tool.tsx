@@ -24,6 +24,8 @@ import { cn } from "../../../lib/utils"
 
 interface AgentEditToolProps {
   part: any
+  messageId?: string
+  partIndex?: number
   chatStatus?: string
 }
 
@@ -212,6 +214,8 @@ const DiffLineRow = memo(
 
 export const AgentEditTool = memo(function AgentEditTool({
   part,
+  messageId,
+  partIndex,
   chatStatus,
 }: AgentEditToolProps) {
   const [isOutputExpanded, setIsOutputExpanded] = useState(false)
@@ -222,10 +226,14 @@ export const AgentEditTool = memo(function AgentEditTool({
   const setDiffSidebarOpen = useSetAtom(agentsDiffSidebarOpenAtom)
   const setFocusedDiffFile = useSetAtom(agentsFocusedDiffFileAtom)
 
-  // Determine mode: Write (create new file) vs Edit (modify existing)
+  // Determine tool type
   const isWriteMode = part.type === "tool-Write"
+  const toolPrefix = isWriteMode ? "tool-Write" : "tool-Edit"
+
   // Only consider streaming if chat is actively streaming (prevents spinner hang on stop)
-  const isInputStreaming = part.state === "input-streaming" && chatStatus === "streaming"
+  // Include "submitted" status - this is when request was sent but streaming hasn't started yet
+  const isActivelyStreaming = chatStatus === "streaming" || chatStatus === "submitted"
+  const isInputStreaming = part.state === "input-streaming" && isActivelyStreaming
 
   const filePath = part.input?.file_path || ""
   const oldString = part.input?.old_string || ""
@@ -497,7 +505,13 @@ export const AgentEditTool = memo(function AgentEditTool({
   }
 
   return (
-    <div className="rounded-lg border border-border bg-muted/30 overflow-hidden mx-2">
+    <div
+      data-message-id={messageId}
+      data-part-index={partIndex}
+      data-part-type={toolPrefix}
+      data-tool-file-path={displayPath}
+      className="rounded-lg border border-border bg-muted/30 overflow-hidden mx-2"
+    >
       {/* Header - clickable to expand, fixed height to prevent layout shift */}
       <div
         onClick={hasVisibleContent ? handleHeaderClick : undefined}

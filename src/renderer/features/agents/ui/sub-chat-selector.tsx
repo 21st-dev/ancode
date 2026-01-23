@@ -1,6 +1,6 @@
 "use client"
 
-import { useCallback, useMemo, useEffect, useRef, useState, memo } from "react"
+import { useCallback, useMemo, useEffect, useRef, useState, memo, forwardRef, useImperativeHandle } from "react"
 import { useAtom, useAtomValue, useSetAtom } from "jotai"
 import {
   loadingSubChatsAtom,
@@ -59,29 +59,38 @@ interface SearchHistoryPopoverProps {
   sortedSubChats: SubChatMeta[]
   loadingSubChats: Map<string, string>
   subChatUnseenChanges: Set<string>
-  pendingQuestions: { subChatId: string } | null
+  pendingQuestionsMap: Map<string, { subChatId: string }>
   pendingPlanApprovals: Set<string>
   allSubChatsLength: number
   onSelect: (subChat: SubChatMeta) => void
 }
 
-const SearchHistoryPopover = memo(function SearchHistoryPopover({
+export interface SearchHistoryPopoverRef {
+  open: () => void
+}
+
+const SearchHistoryPopover = memo(forwardRef<SearchHistoryPopoverRef, SearchHistoryPopoverProps>(function SearchHistoryPopover({
   sortedSubChats,
   loadingSubChats,
   subChatUnseenChanges,
-  pendingQuestions,
+  pendingQuestionsMap,
   pendingPlanApprovals,
   allSubChatsLength,
   onSelect,
-}: SearchHistoryPopoverProps) {
+}, ref) {
   const [isHistoryOpen, setIsHistoryOpen] = useState(false)
+
+  // Expose open function to parent
+  useImperativeHandle(ref, () => ({
+    open: () => setIsHistoryOpen(true)
+  }), [])
 
   const renderItem = useCallback((subChat: SubChatMeta) => {
     const timeAgo = formatTimeAgo(subChat.updated_at || subChat.created_at)
     const isLoading = loadingSubChats.has(subChat.id)
     const hasUnseen = subChatUnseenChanges.has(subChat.id)
     const mode = subChat.mode || "agent"
-    const hasPendingQuestion = pendingQuestions?.subChatId === subChat.id
+    const hasPendingQuestion = pendingQuestionsMap.has(subChat.id)
     const hasPendingPlan = pendingPlanApprovals.has(subChat.id)
 
     return (
@@ -113,7 +122,7 @@ const SearchHistoryPopover = memo(function SearchHistoryPopover({
         </span>
       </div>
     )
-  }, [loadingSubChats, subChatUnseenChanges, pendingQuestions, pendingPlanApprovals])
+  }, [loadingSubChats, subChatUnseenChanges, pendingQuestionsMap, pendingPlanApprovals])
 
   return (
     <SearchCombobox
@@ -147,7 +156,7 @@ const SearchHistoryPopover = memo(function SearchHistoryPopover({
       }
     />
   )
-})
+}))
 
 interface SubChatSelectorProps {
   onCreateNew: () => void
@@ -189,7 +198,7 @@ export function SubChatSelector({
   const [subChatsSidebarMode, setSubChatsSidebarMode] = useAtom(
     agentsSubChatsSidebarModeAtom,
   )
-  const pendingQuestions = useAtomValue(pendingUserQuestionsAtom)
+  const pendingQuestionsMap = useAtomValue(pendingUserQuestionsAtom)
 
   // Pending plan approvals from DB - only for open sub-chats
   const { data: pendingPlanApprovalsData } = trpc.chats.getPendingPlanApprovals.useQuery(
@@ -213,6 +222,7 @@ export function SubChatSelector({
   const leftGradientRef = useRef<HTMLDivElement>(null)
   const rightGradientRef = useRef<HTMLDivElement>(null)
   const truncatedTabsRef = useRef<Set<string>>(new Set())
+  const searchHistoryPopoverRef = useRef<SearchHistoryPopoverRef>(null)
 
   // Map open IDs to metadata and sort: pinned first, then preserve user's tab order
   const openSubChats = useMemo(() => {
@@ -371,7 +381,6 @@ export function SubChatSelector({
   const handleSelectFromHistory = useCallback(
     (subChat: SubChatMeta) => {
       onSwitchFromHistory(subChat.id)
-      setIsHistoryOpen(false)
     },
     [onSwitchFromHistory],
   )
@@ -401,7 +410,7 @@ export function SubChatSelector({
 
         e.preventDefault()
         e.stopPropagation()
-        setIsHistoryOpen(true)
+        searchHistoryPopoverRef.current?.open()
       }
     }
 
@@ -483,6 +492,7 @@ export function SubChatSelector({
   )
 
   const hasNoChats = openSubChats.length === 0
+  const hasSingleChat = openSubChats.length === 1
 
   // Check scroll position for gradients - uses direct DOM manipulation
   const checkScrollPosition = useCallback(() => {
@@ -605,7 +615,9 @@ export function SubChatSelector({
           ref={tabsContainerRef}
           className={cn(
             "flex items-center px-1 py-1 -my-1 gap-1 flex-1 min-w-0 overflow-x-auto scrollbar-hide pr-12",
-            subChatsSidebarMode === "sidebar" && !isMobile && "hidden",
+            // Hide tabs when sidebar is open (desktop) or when only one chat exists
+            (subChatsSidebarMode === "sidebar" && !isMobile) && "hidden",
+            hasSingleChat && "hidden",
           )}
         >
           {hasNoChats
@@ -619,7 +631,7 @@ export function SubChatSelector({
                 // Get mode from sub-chat itself (defaults to "agent")
                 const mode = subChat.mode || "agent"
                 // Check if this chat is waiting for user answer
-                const hasPendingQuestion = pendingQuestions?.subChatId === subChat.id
+                const hasPendingQuestion = pendingQuestionsMap.has(subChat.id)
                 // Check if this chat has a pending plan approval
                 const hasPendingPlan = pendingPlanApprovals.has(subChat.id)
 
@@ -641,6 +653,21 @@ export function SubChatSelector({
                             onSwitch(subChat.id)
                           }
                         }}
+                        onMouseDown={(e) => {
+                          // Middle-click to close tab (like Chrome)
+                          if (e.button === 1 && openSubChats.length > 1) {
+                            e.preventDefault()
+                            e.stopPropagation()
+                            onCloseTab(subChat.id)
+                          }
+                        }}
+                        onAuxClick={(e) => {
+                          // Prevent context menu on middle-click
+                          if (e.button === 1) {
+                            e.preventDefault()
+                            e.stopPropagation()
+                          }
+                        }}
                         onDoubleClick={(e) => {
                           e.stopPropagation()
                           e.preventDefault()
@@ -649,7 +676,7 @@ export function SubChatSelector({
                           }
                         }}
                         className={cn(
-                          "group relative flex items-center text-sm rounded-md transition-colors cursor-pointer h-6 flex-shrink-0",
+                          "group relative flex items-center text-sm rounded-md transition-colors duration-75 cursor-pointer h-6 flex-shrink-0",
                           "outline-offset-2 focus-visible:outline focus-visible:outline-2 focus-visible:outline-ring/70",
                           editingSubChatId === subChat.id
                             ? "overflow-visible px-0"
@@ -827,10 +854,11 @@ export function SubChatSelector({
           }}
         >
           <SearchHistoryPopover
+            ref={searchHistoryPopoverRef}
             sortedSubChats={sortedSubChats}
             loadingSubChats={loadingSubChats}
             subChatUnseenChanges={subChatUnseenChanges}
-            pendingQuestions={pendingQuestions}
+            pendingQuestionsMap={pendingQuestionsMap}
             pendingPlanApprovals={pendingPlanApprovals}
             allSubChatsLength={allSubChats.length}
             onSelect={handleSelectFromHistory}
@@ -838,8 +866,8 @@ export function SubChatSelector({
         </div>
       )}
 
-      {/* Diff button - always visible on desktop when sandbox exists, disabled if no changes */}
-      {!isMobile && canOpenDiff && !isDiffSidebarOpen && (
+      {/* Diff button - always visible on desktop when sandbox exists */}
+      {!isMobile && canOpenDiff && (
         <div
           className="rounded-md bg-background/10 backdrop-blur-[10px] flex items-center justify-center"
           style={{
@@ -853,13 +881,7 @@ export function SubChatSelector({
                 variant="ghost"
                 size="icon"
                 onClick={() => onOpenDiff?.()}
-                disabled={!diffStats?.hasChanges || diffStats?.isLoading}
-                className={cn(
-                  "h-6 w-6 p-0 transition-[background-color,transform] duration-150 ease-out active:scale-[0.97] flex-shrink-0 rounded-md flex items-center justify-center",
-                  diffStats?.hasChanges && !diffStats?.isLoading
-                    ? "hover:bg-foreground/10"
-                    : "text-muted-foreground cursor-not-allowed",
-                )}
+                className="h-6 w-6 p-0 transition-[background-color,transform] duration-150 ease-out active:scale-[0.97] flex-shrink-0 rounded-md flex items-center justify-center hover:bg-foreground/10"
               >
                 {diffStats?.isLoading ? (
                   <IconSpinner className="h-4 w-4" />

@@ -19,6 +19,7 @@ interface SubChatsQuickSwitchDialogProps {
   isOpen: boolean
   subChats: SubChatMeta[]
   selectedIndex: number
+  onHover?: (index: number) => void
 }
 
 // Sub-chat card for quick switch
@@ -28,12 +29,14 @@ function SubChatCard({
   isLoading,
   hasUnseenChanges,
   fileChanges,
+  onMouseEnter,
 }: {
   subChat: SubChatMeta
   isSelected: boolean
   isLoading: boolean
   hasUnseenChanges: boolean
   fileChanges: SubChatFileChange[]
+  onMouseEnter?: () => void
 }) {
   const mode = subChat.mode || "agent"
   const timeAgo = formatTimeAgo(subChat.updated_at || subChat.created_at)
@@ -52,6 +55,7 @@ function SubChatCard({
 
   return (
     <div
+      onMouseEnter={onMouseEnter}
       className={cn(
         "relative rounded-2xl overflow-hidden min-w-[160px] max-w-[180px] p-2 cursor-pointer",
         isSelected ? "bg-primary shadow-lg" : "bg-transparent",
@@ -178,6 +182,7 @@ export function SubChatsQuickSwitchDialog({
   isOpen,
   subChats,
   selectedIndex,
+  onHover,
 }: SubChatsQuickSwitchDialogProps) {
   if (typeof window === "undefined") return null
 
@@ -234,6 +239,7 @@ export function SubChatsQuickSwitchDialog({
                           isLoading={isLoading}
                           hasUnseenChanges={hasUnseenChanges}
                           fileChanges={fileChanges}
+                          onMouseEnter={() => onHover?.(index)}
                         />
                       )
                     })}

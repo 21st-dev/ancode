@@ -927,6 +927,7 @@ export function AgentsContent() {
         }
         selectedIndex={quickSwitchSelectedIndex}
         projectsMap={projectsMap}
+        onHover={setQuickSwitchSelectedIndex}
       />
 
       {/* Quick-switch dialog - Sub-chats (Ctrl+Tab) */}
@@ -938,6 +939,7 @@ export function AgentsContent() {
             : recentSubChats
         }
         selectedIndex={subChatQuickSwitchSelectedIndex}
+        onHover={setSubChatQuickSwitchSelectedIndex}
       />
 
       {/* Dev mode / Admin sandbox debugger */}

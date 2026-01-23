@@ -1,5 +1,6 @@
 "use client"
 
+import { useState, useCallback } from "react"
 import { cn } from "../../../lib/utils"
 import {
   GitHubLogo,
@@ -9,6 +10,41 @@ import {
 } from "../../../components/ui/canvas-icons"
 import { useAtomValue } from "jotai"
 import { agentsUnseenChangesAtom, lastChatModesAtom } from "../atoms"
+
+// GitHub avatar with loading placeholder
+function GitHubAvatar({
+  gitOwner,
+  className = "h-4 w-4",
+}: {
+  gitOwner: string
+  className?: string
+}) {
+  const [isLoaded, setIsLoaded] = useState(false)
+  const [hasError, setHasError] = useState(false)
+
+  const handleLoad = useCallback(() => setIsLoaded(true), [])
+  const handleError = useCallback(() => setHasError(true), [])
+
+  if (hasError) {
+    return <GitHubLogo className={cn(className, "text-muted-foreground flex-shrink-0")} />
+  }
+
+  return (
+    <div className={cn(className, "relative flex-shrink-0")}>
+      {/* Placeholder background while loading */}
+      {!isLoaded && (
+        <div className="absolute inset-0 rounded-sm bg-muted" />
+      )}
+      <img
+        src={`https://github.com/${gitOwner}.png?size=64`}
+        alt={gitOwner}
+        className={cn(className, "rounded-sm flex-shrink-0", isLoaded ? 'opacity-100' : 'opacity-0')}
+        onLoad={handleLoad}
+        onError={handleError}
+      />
+    </div>
+  )
+}
 
 interface AgentChatCardProps {
   chat: {
@@ -21,6 +57,7 @@ interface AgentChatCardProps {
   isSelected: boolean
   isLoading: boolean
   onClick?: () => void
+  onMouseEnter?: () => void
   variant?: "sidebar" | "quick-switch"
   // Git info from project (passed from parent)
   gitOwner?: string | null
@@ -47,13 +84,7 @@ function ChatIconWithBadge({
   // Show GitHub avatar if available, otherwise blank project icon
   const renderMainIcon = () => {
     if (gitOwner && gitProvider === "github") {
-      return (
-        <img
-          src={`https://github.com/${gitOwner}.png?size=64`}
-          alt={gitOwner}
-          className="h-4 w-4 rounded-sm flex-shrink-0"
-        />
-      )
+      return <GitHubAvatar gitOwner={gitOwner} />
     }
 
     return (
@@ -105,6 +136,7 @@ export function AgentChatCard({
   isSelected,
   isLoading,
   onClick,
+  onMouseEnter,
   variant = "sidebar",
   gitOwner,
   gitProvider,
@@ -130,6 +162,7 @@ export function AgentChatCard({
     return (
       <div
         onClick={onClick}
+        onMouseEnter={onMouseEnter}
         className={cn(
           "relative rounded-2xl overflow-hidden min-w-[160px] max-w-[180px] p-2 cursor-pointer",
           isSelected ? "bg-primary shadow-lg" : "bg-transparent",

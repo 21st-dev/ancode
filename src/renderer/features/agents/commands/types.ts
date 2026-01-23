@@ -15,6 +15,8 @@ export interface SlashCommand {
   path?: string
   // For repository commands - the repository name
   repository?: string
+  // For custom commands - hint for expected arguments (e.g. "[file_path]")
+  argumentHint?: string
 }
 
 export interface SlashCommandOption extends SlashCommand {
@@ -39,6 +41,8 @@ export type BuiltinCommandAction =
   | { type: "pr-comments" }
   | { type: "release-notes" }
   | { type: "security-review" }
+  | { type: "commit" }
+  | { type: "worktree-setup" }
 
 // Result of selecting a slash command
 export type SlashCommandSelection =

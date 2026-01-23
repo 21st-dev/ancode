@@ -1,13 +1,14 @@
 "use client"
 
 import React, { useMemo, useRef, useEffect, useState, useCallback, memo } from "react"
-import { useAtom } from "jotai"
+import { useAtom, useAtomValue } from "jotai"
 import { trpc } from "../../../lib/trpc"
 import {
   archivePopoverOpenAtom,
   archiveSearchQueryAtom,
   selectedAgentChatIdAtom,
 } from "../atoms"
+import { showWorkspaceIconAtom } from "../../../lib/atoms"
 import { Input } from "../../../components/ui/input"
 import {
   SearchIcon,
@@ -21,6 +22,41 @@ import {
   PopoverTrigger,
 } from "../../../components/ui/popover"
 import { cn } from "../../../lib/utils"
+
+// GitHub avatar with loading placeholder
+function GitHubAvatar({
+  gitOwner,
+  className = "h-4 w-4",
+}: {
+  gitOwner: string
+  className?: string
+}) {
+  const [isLoaded, setIsLoaded] = useState(false)
+  const [hasError, setHasError] = useState(false)
+
+  const handleLoad = useCallback(() => setIsLoaded(true), [])
+  const handleError = useCallback(() => setHasError(true), [])
+
+  if (hasError) {
+    return <GitHubLogo className={cn(className, "text-muted-foreground flex-shrink-0")} />
+  }
+
+  return (
+    <div className={cn(className, "relative flex-shrink-0")}>
+      {/* Placeholder background while loading */}
+      {!isLoaded && (
+        <div className="absolute inset-0 rounded-sm bg-muted" />
+      )}
+      <img
+        src={`https://github.com/${gitOwner}.png?size=64`}
+        alt={gitOwner}
+        className={cn(className, "rounded-sm flex-shrink-0", isLoaded ? 'opacity-100' : 'opacity-0')}
+        onLoad={handleLoad}
+        onError={handleError}
+      />
+    </div>
+  )
+}
 
 // Format relative time - moved outside component to avoid recreation
 const formatTime = (dateInput: Date | string) => {
@@ -53,7 +89,9 @@ interface ArchiveChatItemProps {
   index: number
   isSelected: boolean
   isCurrentChat: boolean
+  showIcon: boolean
   projectsMap: Map<string, { gitOwner: string | null; gitRepo: string | null; gitProvider: string | null; name: string }>
+  stats?: { additions: number; deletions: number }
   onSelect: (id: string) => void
   onRestore: (id: string) => void
   setRef: (index: number, el: HTMLDivElement | null) => void
@@ -64,7 +102,9 @@ const ArchiveChatItem = memo(function ArchiveChatItem({
   index,
   isSelected,
   isCurrentChat,
+  showIcon,
   projectsMap,
+  stats,
   onSelect,
   onRestore,
   setRef,
@@ -75,9 +115,6 @@ const ArchiveChatItem = memo(function ArchiveChatItem({
   const gitRepo = project?.gitRepo
   const gitProvider = project?.gitProvider
   const isGitHubRepo = gitProvider === "github" && !!gitOwner
-  const avatarUrl = isGitHubRepo
-    ? `https://github.com/${gitOwner}.png?size=64`
-    : null
 
   const repoName = gitRepo || project?.name
   const displayText = branch
@@ -104,7 +141,7 @@ const ArchiveChatItem = memo(function ArchiveChatItem({
       ref={handleRef}
       onClick={handleClick}
       className={cn(
-        "w-[calc(100%-8px)] mx-1 text-left min-h-[32px] py-[5px] px-1.5 rounded-md transition-colors duration-150 cursor-pointer group relative",
+        "w-[calc(100%-8px)] mx-1 text-left min-h-[32px] py-[5px] px-1.5 rounded-md transition-colors duration-75 cursor-pointer group relative",
         "outline-offset-2 focus-visible:outline focus-visible:outline-2 focus-visible:outline-ring/70",
         isSelected || isCurrentChat
           ? "dark:bg-neutral-800 bg-accent text-foreground"
@@ -112,35 +149,22 @@ const ArchiveChatItem = memo(function ArchiveChatItem({
       )}
     >
       <div className="flex items-start gap-2.5">
-        <div className="pt-0.5">
-          {isGitHubRepo ? (
-            avatarUrl ? (
-              <img
-                src={avatarUrl}
-                alt={gitOwner || "GitHub"}
-                className="h-4 w-4 rounded-sm flex-shrink-0"
-              />
+        {showIcon && (
+          <div className="pt-0.5">
+            {isGitHubRepo && gitOwner ? (
+              <GitHubAvatar gitOwner={gitOwner} />
             ) : (
               <GitHubLogo
                 className={cn(
-                  "h-4 w-4 flex-shrink-0 transition-colors duration-150",
+                  "h-4 w-4 flex-shrink-0 transition-colors duration-75",
                   isSelected
                     ? "text-foreground"
                     : "text-muted-foreground",
                 )}
               />
-            )
-          ) : (
-            <GitHubLogo
-              className={cn(
-                "h-4 w-4 flex-shrink-0 transition-colors duration-150",
-                isSelected
-                  ? "text-foreground"
-                  : "text-muted-foreground",
-              )}
-            />
-          )}
-        </div>
+            )}
+          </div>
+        )}
         <div className="flex-1 min-w-0 flex flex-col gap-0.5">
           <div className="flex items-center gap-1">
             <span className="truncate block text-sm leading-tight flex-1">
@@ -162,12 +186,20 @@ const ArchiveChatItem = memo(function ArchiveChatItem({
             <span className="text-[11px] text-muted-foreground/60 truncate">
               {displayText}
             </span>
-            <span className="text-[11px] text-muted-foreground/60 flex-shrink-0">
-              {formatTime(
-                chat.updatedAt?.toISOString() ??
-                  new Date().toISOString(),
+            <div className="flex items-center gap-1.5 flex-shrink-0 text-[11px]">
+              {stats && (stats.additions > 0 || stats.deletions > 0) && (
+                <>
+                  <span className="text-green-600 dark:text-green-400">+{stats.additions}</span>
+                  <span className="text-red-600 dark:text-red-400">-{stats.deletions}</span>
+                </>
               )}
-            </span>
+              <span className="text-muted-foreground/60">
+                {formatTime(
+                  chat.updatedAt?.toISOString() ??
+                    new Date().toISOString(),
+                )}
+              </span>
+            </div>
           </div>
         </div>
       </div>
@@ -189,6 +221,7 @@ export const ArchivePopover = memo(function ArchivePopover({ trigger }: ArchiveP
   const popoverContentRef = useRef<HTMLDivElement>(null)
   const chatItemRefs = useRef<(HTMLDivElement | null)[]>([])
   const [selectedChatId, setSelectedChatId] = useAtom(selectedAgentChatIdAtom)
+  const showWorkspaceIcon = useAtomValue(showWorkspaceIconAtom)
 
   // Get utils outside of callbacks - hooks must be called at top level
   const utils = trpc.useUtils()
@@ -201,11 +234,29 @@ export const ArchivePopover = memo(function ArchivePopover({ trigger }: ArchiveP
   // Fetch all projects for git info
   const { data: projects } = trpc.projects.list.useQuery()
 
+  // Collect chat IDs for file stats query
+  const archivedChatIds = useMemo(() => {
+    if (!archivedChats) return []
+    return archivedChats.map((chat) => chat.id)
+  }, [archivedChats])
+
+  // Fetch file stats for archived chats
+  const { data: fileStatsData } = trpc.chats.getFileStats.useQuery(
+    { chatIds: archivedChatIds },
+    { enabled: open && archivedChatIds.length > 0 },
+  )
+
   // Create map for quick project lookup by id
   const projectsMap = useMemo(() => {
     if (!projects) return new Map()
     return new Map(projects.map((p) => [p.id, p]))
   }, [projects])
+
+  // Create map for quick file stats lookup by chat id
+  const fileStatsMap = useMemo(() => {
+    if (!fileStatsData) return new Map<string, { additions: number; deletions: number }>()
+    return new Map(fileStatsData.map((s) => [s.chatId, { additions: s.additions, deletions: s.deletions }]))
+  }, [fileStatsData])
 
   const restoreMutation = trpc.chats.restore.useMutation({
     onSuccess: (restoredChat) => {
@@ -345,8 +396,8 @@ export const ArchivePopover = memo(function ArchivePopover({ trigger }: ArchiveP
         tabIndex={-1}
       >
         {/* Search */}
-        <div className="px-1 pt-1 pb-1 border-b">
-          <div className="relative flex items-center gap-1.5 h-7 px-1.5 mx-1 rounded-md bg-muted/50">
+        <div className="p-1 border-b">
+          <div className="relative flex items-center gap-1.5 h-7 px-1.5 rounded-md bg-muted/50">
             <SearchIcon className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
             <Input
               ref={searchInputRef}
@@ -379,7 +430,9 @@ export const ArchivePopover = memo(function ArchivePopover({ trigger }: ArchiveP
                 index={index}
                 isSelected={index === selectedIndex}
                 isCurrentChat={selectedChatId === chat.id}
+                showIcon={showWorkspaceIcon}
                 projectsMap={projectsMap}
+                stats={fileStatsMap.get(chat.id)}
                 onSelect={handleSelectChat}
                 onRestore={handleRestoreChat}
                 setRef={handleSetRef}

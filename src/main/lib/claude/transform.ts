@@ -1,6 +1,8 @@
-import type { UIMessageChunk, MessageMetadata, MCPServerStatus, MCPServer } from "./types"
+import type { MCPServer, MCPServerStatus, MessageMetadata, UIMessageChunk } from "./types"
 
-export function createTransformer() {
+export function createTransformer(options?: { emitSdkMessageUuid?: boolean; isUsingOllama?: boolean }) {
+  const emitSdkMessageUuid = options?.emitSdkMessageUuid === true
+  const isUsingOllama = options?.isUsingOllama === true
   let textId: string | null = null
   let textStarted = false
   let started = false
@@ -73,10 +75,24 @@ export function createTransformer() {
   }
 
   return function* transform(msg: any): Generator<UIMessageChunk> {
+
     // Debug: log ALL message types to understand what SDK sends
-    console.log("[transform] MSG:", msg.type, msg.subtype || "", msg.event?.type || "")
-    if (msg.type === "system") {
-      console.log("[transform] SYSTEM message:", msg.subtype, msg)
+    if (isUsingOllama) {
+      console.log("[Ollama Transform] MSG:", msg.type, msg.subtype || "", msg.event?.type || "")
+      if (msg.type === "system") {
+        console.log("[Ollama Transform] SYSTEM message full:", JSON.stringify(msg, null, 2))
+      }
+      if (msg.type === "stream_event") {
+        console.log("[Ollama Transform] STREAM_EVENT:", msg.event?.type, "content_block:", msg.event?.content_block?.type)
+      }
+      if (msg.type === "assistant") {
+        console.log("[Ollama Transform] ASSISTANT message, content blocks:", msg.message?.content?.length || 0)
+      }
+    } else {
+      console.log("[transform] MSG:", msg.type, msg.subtype || "", msg.event?.type || "")
+      if (msg.type === "system") {
+        console.log("[transform] SYSTEM message:", msg.subtype, msg)
+      }
     }
 
     // Track parent_tool_use_id for nested tools
@@ -112,18 +128,30 @@ export function createTransformer() {
 
       // Text block start
       if (event.type === "content_block_start" && event.content_block?.type === "text") {
-        console.log("[transform] TEXT BLOCK START")
+        if (isUsingOllama) {
+          console.log("[Ollama Transform] ✓ TEXT BLOCK START - Model is generating text!")
+        } else {
+          console.log("[transform] TEXT BLOCK START")
+        }
         yield* endTextBlock()
         yield* endToolInput()
         textId = genId()
         yield { type: "text-start", id: textId }
         textStarted = true
-        console.log("[transform] textStarted set to TRUE, textId:", textId)
+        if (isUsingOllama) {
+          console.log("[Ollama Transform] textStarted set to TRUE, textId:", textId)
+        } else {
+          console.log("[transform] textStarted set to TRUE, textId:", textId)
+        }
       }
 
       // Text delta
       if (event.type === "content_block_delta" && event.delta?.type === "text_delta") {
-        console.log("[transform] TEXT DELTA, textStarted:", textStarted, "delta:", event.delta.text?.slice(0, 20))
+        if (isUsingOllama) {
+          console.log("[Ollama Transform] ✓ TEXT DELTA received, length:", event.delta.text?.length, "preview:", event.delta.text?.slice(0, 50))
+        } else {
+          console.log("[transform] TEXT DELTA, textStarted:", textStarted, "delta:", event.delta.text?.slice(0, 20))
+        }
         if (!textStarted) {
           yield* endToolInput()
           textId = genId()
@@ -135,10 +163,18 @@ export function createTransformer() {
 
       // Content block stop
       if (event.type === "content_block_stop") {
-        console.log("[transform] CONTENT BLOCK STOP, textStarted:", textStarted)
+        if (isUsingOllama) {
+          console.log("[Ollama Transform] CONTENT BLOCK STOP, textStarted:", textStarted)
+        } else {
+          console.log("[transform] CONTENT BLOCK STOP, textStarted:", textStarted)
+        }
         if (textStarted) {
           yield* endTextBlock()
-          console.log("[transform] after endTextBlock, textStarted:", textStarted)
+          if (isUsingOllama) {
+            console.log("[Ollama Transform] Text block ended, textStarted now:", textStarted)
+          } else {
+            console.log("[transform] after endTextBlock, textStarted:", textStarted)
+          }
         }
         if (currentToolCallId) {
           yield* endToolInput()
@@ -309,6 +345,18 @@ export function createTransformer() {
 
     // ===== USER MESSAGE (tool results) =====
     if (msg.type === "user" && msg.message?.content) {
+      // DEBUG: Log the message structure to understand tool_use_result
+      console.log("[Transform DEBUG] User message:", {
+        tool_use_result: msg.tool_use_result,
+        tool_use_result_type: typeof msg.tool_use_result,
+        content_length: msg.message.content.length,
+        blocks: msg.message.content.map((b: any) => ({
+          type: b.type,
+          tool_use_id: b.tool_use_id,
+          content_preview: typeof b.content === 'string' ? b.content.slice(0, 100) : typeof b.content,
+        })),
+      })
+
       for (const block of msg.message.content) {
         if (block.type === "tool_result") {
           // Lookup composite ID from mapping, fallback to original
@@ -321,10 +369,33 @@ export function createTransformer() {
               errorText: String(block.content),
             }
           } else {
+            // Try to parse structured data from block.content if it's JSON
+            let output = msg.tool_use_result
+            if (!output && typeof block.content === 'string') {
+              try {
+                // Some tool results may have JSON embedded in the string
+                const parsed = JSON.parse(block.content)
+                if (parsed && typeof parsed === 'object') {
+                  output = parsed
+                }
+              } catch {
+                // Not JSON, use raw content
+              }
+            }
+            output = output || block.content
+
+            console.log("[Transform DEBUG] Tool output:", {
+              tool_use_id: block.tool_use_id,
+              compositeId,
+              output_type: typeof output,
+              output_keys: output && typeof output === 'object' ? Object.keys(output) : null,
+              numFiles: output?.numFiles,
+            })
+
             yield {
               type: "tool-output-available",
               toolCallId: compositeId,
-              output: msg.tool_use_result || block.content,
+              output,
             }
           }
         }

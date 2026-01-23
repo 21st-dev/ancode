@@ -1,36 +1,37 @@
 "use client"
 
-import { memo, useMemo, useState, useCallback } from "react"
+import { useAtomValue } from "jotai"
 import { ListTree } from "lucide-react"
+import { memo, useCallback, useMemo, useState } from "react"
 
+import { CollapseIcon, ExpandIcon, IconTextUndo } from "../../../components/ui/icons"
 import { cn } from "../../../lib/utils"
-import {
-  CollapseIcon,
-  ExpandIcon,
-} from "../../../components/ui/icons"
-import { MemoizedTextPart } from "./memoized-text-part"
+import { isRollingBackAtom, rollbackHandlerAtom } from "../stores/message-store"
+import { AgentAskUserQuestionTool } from "../ui/agent-ask-user-question-tool"
 import { AgentBashTool } from "../ui/agent-bash-tool"
 import { AgentEditTool } from "../ui/agent-edit-tool"
-import { AgentTaskTool } from "../ui/agent-task-tool"
-import { AgentThinkingTool } from "../ui/agent-thinking-tool"
-import { AgentPlanTool } from "../ui/agent-plan-tool"
-import { AgentTodoTool } from "../ui/agent-todo-tool"
-import { AgentWebFetchTool } from "../ui/agent-web-fetch-tool"
-import { AgentWebSearchCollapsible } from "../ui/agent-web-search-collapsible"
 import { AgentExploringGroup } from "../ui/agent-exploring-group"
-import { AgentExitPlanModeTool } from "../ui/agent-exit-plan-mode-tool"
-import { AgentAskUserQuestionTool } from "../ui/agent-ask-user-question-tool"
-import { AgentToolCall } from "../ui/agent-tool-call"
-import { AgentToolRegistry, getToolStatus } from "../ui/agent-tool-registry"
+import { AgentPlanCompactCard } from "../ui/agent-plan-compact-card"
+import { AgentPlanFileTool } from "../ui/agent-plan-file-tool"
+import { isPlanFile } from "../ui/agent-tool-utils"
 import {
   AgentMessageUsage,
   type AgentMessageMetadata,
 } from "../ui/agent-message-usage"
+import { AgentPlanTool } from "../ui/agent-plan-tool"
+import { AgentTaskTool } from "../ui/agent-task-tool"
+import { AgentThinkingTool } from "../ui/agent-thinking-tool"
+import { AgentTodoTool } from "../ui/agent-todo-tool"
+import { AgentToolCall } from "../ui/agent-tool-call"
+import { AgentToolRegistry, getToolStatus } from "../ui/agent-tool-registry"
+import { AgentWebFetchTool } from "../ui/agent-web-fetch-tool"
+import { AgentWebSearchCollapsible } from "../ui/agent-web-search-collapsible"
 import {
   CopyButton,
   PlayButton,
   getMessageTextContent,
 } from "../ui/message-action-buttons"
+import { MemoizedTextPart } from "./memoized-text-part"
 
 // Exploring tools - these get grouped when 3+ consecutive
 const EXPLORING_TOOLS = new Set([
@@ -136,6 +137,7 @@ export interface AssistantMessageItemProps {
   status: string
   isMobile: boolean
   subChatId: string
+  chatId: string
   sandboxSetupStatus?: "cloning" | "ready" | "error"
 }
 
@@ -169,6 +171,7 @@ function areMessagePropsEqual(
   if (prev.isLastMessage !== next.isLastMessage) return false
   if (prev.isMobile !== next.isMobile) return false
   if (prev.subChatId !== next.subChatId) return false
+  if (prev.chatId !== next.chatId) return false
   if (prev.sandboxSetupStatus !== next.sandboxSetupStatus) return false
 
   // Get current message state from parts
@@ -230,8 +233,11 @@ export const AssistantMessageItem = memo(function AssistantMessageItem({
   status,
   isMobile,
   subChatId,
+  chatId,
   sandboxSetupStatus = "ready",
 }: AssistantMessageItemProps) {
+  const onRollback = useAtomValue(rollbackHandlerAtom)
+  const isRollingBack = useAtomValue(isRollingBackAtom)
   const messageParts = message?.parts || []
 
   const contentParts = useMemo(() =>
@@ -282,9 +288,23 @@ export const AssistantMessageItem = memo(function AssistantMessageItem({
     return { nestedToolsMap, nestedToolIds, orphanTaskGroups, orphanToolCallIds, orphanFirstToolCallIds }
   }, [messageParts])
 
-  const { finalTextIndex, hasFinalText, visibleStepsCount, hasPlan, exitPlanPart, planText } = useMemo(() => {
+  // Find plan file part FIRST (needed for collapsing logic)
+  const { planFilePart, planFileIndex } = useMemo(() => {
+    if (isStreaming && isLastMessage) return { planFilePart: null, planFileIndex: -1 }
+    for (let i = messageParts.length - 1; i >= 0; i--) {
+      const part = messageParts[i]
+      if ((part.type === "tool-Write" || part.type === "tool-Edit") && isPlanFile(part.input?.file_path || "")) {
+        return { planFilePart: part, planFileIndex: i }
+      }
+    }
+    return { planFilePart: null, planFileIndex: -1 }
+  }, [messageParts, isStreaming, isLastMessage])
+
+  // Collapsing logic: collapse if final text OR plan file exists
+  const { shouldCollapse, visibleStepsCount, collapseBeforeIndex } = useMemo(() => {
     let lastToolIndex = -1
     let lastTextIndex = -1
+
     for (let i = 0; i < messageParts.length; i++) {
       const part = messageParts[i]
       if (part.type?.startsWith("tool-")) {
@@ -299,39 +319,37 @@ export const AssistantMessageItem = memo(function AssistantMessageItem({
     const finalTextIndex = hasToolsAndFinalText ? lastTextIndex : -1
     const hasFinalText = finalTextIndex !== -1 && (!isStreaming || !isLastMessage)
 
-    const exitPlanPart = messageParts.find((p: any) => p.type === "tool-ExitPlanMode")
-    const planText = typeof exitPlanPart?.output?.plan === "string" ? exitPlanPart.output.plan : ""
-    const hasPlan = !!planText
+    // Also collapse if we have a plan file (even without final text after it)
+    const hasPlanToCollapse = planFileIndex !== -1 && (!isStreaming || !isLastMessage)
+    const shouldCollapse = hasFinalText || hasPlanToCollapse
 
-    const stepParts = hasFinalText
-      ? messageParts.slice(0, finalTextIndex)
-      : hasPlan
-        ? messageParts.filter((p: any) => p.type !== "tool-ExitPlanMode")
-        : []
+    // Where to collapse: before final text (priority) OR before plan file
+    const collapseBeforeIndex = hasFinalText ? finalTextIndex : (hasPlanToCollapse ? planFileIndex : -1)
 
+    // Calculate visible steps count for collapsible header
+    const stepParts = shouldCollapse && collapseBeforeIndex !== -1 ? messageParts.slice(0, collapseBeforeIndex) : []
     const visibleStepsCount = stepParts.filter((p: any) => {
       if (p.type === "step-start") return false
       if (p.type === "tool-TaskOutput") return false
+      if (p.type === "tool-ExitPlanMode") return false
       if (p.toolCallId && nestedToolIds.has(p.toolCallId)) return false
       if (p.toolCallId && orphanToolCallIds.has(p.toolCallId) && !orphanFirstToolCallIds.has(p.toolCallId)) return false
       if (p.type === "text" && !p.text?.trim()) return false
       return true
     }).length
 
-    return { finalTextIndex, hasFinalText, visibleStepsCount, hasPlan, exitPlanPart, planText }
-  }, [messageParts, isStreaming, isLastMessage, nestedToolIds, orphanToolCallIds, orphanFirstToolCallIds])
+    return { shouldCollapse, visibleStepsCount, collapseBeforeIndex }
+  }, [messageParts, isStreaming, isLastMessage, nestedToolIds, orphanToolCallIds, orphanFirstToolCallIds, planFileIndex])
 
   const stepParts = useMemo(() => {
-    if (hasFinalText) return messageParts.slice(0, finalTextIndex)
-    if (hasPlan) return messageParts.filter((p: any) => p.type !== "tool-ExitPlanMode")
-    return []
-  }, [messageParts, hasFinalText, hasPlan, finalTextIndex])
+    if (!shouldCollapse || collapseBeforeIndex === -1) return []
+    return messageParts.slice(0, collapseBeforeIndex)
+  }, [messageParts, shouldCollapse, collapseBeforeIndex])
 
   const finalParts = useMemo(() => {
-    if (hasFinalText) return messageParts.slice(finalTextIndex)
-    if (hasPlan) return []
-    return messageParts
-  }, [messageParts, hasFinalText, hasPlan, finalTextIndex])
+    if (!shouldCollapse || collapseBeforeIndex === -1) return messageParts
+    return messageParts.slice(collapseBeforeIndex)
+  }, [messageParts, shouldCollapse, collapseBeforeIndex])
 
   const hasTextContent = useMemo(() =>
     messageParts.some((p: any) => p.type === "text" && p.text?.trim()),
@@ -369,13 +387,14 @@ export const AssistantMessageItem = memo(function AssistantMessageItem({
 
     if (part.type === "text") {
       if (!part.text?.trim()) return null
-      const isFinalText = isFinal && idx === finalTextIndex
+      const isFinalText = isFinal && idx === collapseBeforeIndex
       const isTextStreaming = isLastMessage && isStreaming
       return (
         <MemoizedTextPart
           key={idx}
           text={part.text}
           messageId={message.id}
+          partIndex={idx}
           isFinalText={isFinalText}
           visibleStepsCount={visibleStepsCount}
           isStreaming={isTextStreaming}
@@ -388,25 +407,31 @@ export const AssistantMessageItem = memo(function AssistantMessageItem({
       return <AgentTaskTool key={idx} part={part} nestedTools={nestedTools} chatStatus={status} />
     }
 
-    if (part.type === "tool-Bash") return <AgentBashTool key={idx} part={part} chatStatus={status} />
+    if (part.type === "tool-Bash") return <AgentBashTool key={idx} part={part} messageId={message.id} partIndex={idx} chatStatus={status} />
     if (part.type === "tool-Thinking") return <AgentThinkingTool key={idx} part={part} chatStatus={status} />
-    if (part.type === "tool-Edit") return <AgentEditTool key={idx} part={part} chatStatus={status} />
-    if (part.type === "tool-Write") return <AgentEditTool key={idx} part={part} chatStatus={status} />
+
+    // Plan files: show inline during streaming, skip if planFilePart (shown as compact card at bottom)
+    if (part.type === "tool-Edit" || part.type === "tool-Write") {
+      const filePath = part.input?.file_path || ""
+      if (isPlanFile(filePath)) {
+        // If this is the plan file part and we have planFilePart, skip (shown at bottom)
+        if (planFilePart && part === planFilePart) {
+          return null
+        }
+        // During streaming, show plan inline
+        return <AgentPlanFileTool key={idx} part={part} chatStatus={status} chatId={chatId} />
+      }
+    }
+
+    if (part.type === "tool-Edit") return <AgentEditTool key={idx} part={part} messageId={message.id} partIndex={idx} chatStatus={status} />
+    if (part.type === "tool-Write") return <AgentEditTool key={idx} part={part} messageId={message.id} partIndex={idx} chatStatus={status} />
     if (part.type === "tool-WebSearch") return <AgentWebSearchCollapsible key={idx} part={part} chatStatus={status} />
     if (part.type === "tool-WebFetch") return <AgentWebFetchTool key={idx} part={part} chatStatus={status} />
     if (part.type === "tool-PlanWrite") return <AgentPlanTool key={idx} part={part} chatStatus={status} />
 
+    // ExitPlanMode tool is hidden - plan is shown in sidebar instead
     if (part.type === "tool-ExitPlanMode") {
-      const { isPending, isError } = getToolStatus(part, status)
-      return (
-        <AgentToolCall
-          key={idx}
-          icon={AgentToolRegistry["tool-ExitPlanMode"].icon}
-          title={AgentToolRegistry["tool-ExitPlanMode"].title(part)}
-          isPending={isPending}
-          isError={isError}
-        />
-      )
+      return null
     }
 
     if (part.type === "tool-TodoWrite") {
@@ -453,7 +478,7 @@ export const AssistantMessageItem = memo(function AssistantMessageItem({
     }
 
     return null
-  }, [nestedToolsMap, nestedToolIds, orphanToolCallIds, orphanFirstToolCallIds, orphanTaskGroups, finalTextIndex, visibleStepsCount, status, isLastMessage, isStreaming, subChatId])
+  }, [nestedToolsMap, nestedToolIds, orphanToolCallIds, orphanFirstToolCallIds, orphanTaskGroups, collapseBeforeIndex, visibleStepsCount, status, isLastMessage, isStreaming, subChatId, chatId, message.id, planFilePart])
 
   if (!message) return null
 
@@ -463,7 +488,7 @@ export const AssistantMessageItem = memo(function AssistantMessageItem({
       className="group/message w-full mb-4"
     >
       <div className="flex flex-col gap-1.5">
-        {(hasFinalText || hasPlan) && visibleStepsCount > 0 && (
+        {shouldCollapse && visibleStepsCount > 0 && (
           <CollapsibleSteps stepsCount={visibleStepsCount}>
             {(() => {
               const grouped = groupExploringTools(stepParts, nestedToolIds)
@@ -501,13 +526,9 @@ export const AssistantMessageItem = memo(function AssistantMessageItem({
                 />
               )
             }
-            return renderPart(part, hasFinalText ? finalTextIndex + idx : idx, hasFinalText)
+            return renderPart(part, shouldCollapse ? collapseBeforeIndex + idx : idx, shouldCollapse)
           })
         })()}
-
-        {hasPlan && exitPlanPart && (
-          <AgentExitPlanModeTool part={exitPlanPart as any} chatStatus={status} />
-        )}
 
         {shouldShowPlanning && (
           <AgentToolCall
@@ -517,19 +538,37 @@ export const AssistantMessageItem = memo(function AssistantMessageItem({
             isError={false}
           />
         )}
+
+        {/* Show plan compact card at the bottom when there's a completed plan */}
+        {planFilePart && (
+          <AgentPlanCompactCard part={planFilePart} chatId={chatId} />
+        )}
       </div>
 
-      {(hasTextContent || hasPlan) && (!isStreaming || !isLastMessage) && (
+      {hasTextContent && (!isStreaming || !isLastMessage) && (
         <div className="flex justify-between items-center h-6 px-2 mt-1">
           <div className="flex items-center gap-0.5">
             <CopyButton
-              text={hasPlan ? planText : getMessageTextContent(message)}
+              text={getMessageTextContent(message)}
               isMobile={isMobile}
             />
             <PlayButton
-              text={hasPlan ? planText : getMessageTextContent(message)}
+              text={getMessageTextContent(message)}
               isMobile={isMobile}
             />
+            {onRollback && (message.metadata as any)?.sdkMessageUuid && (
+              <button
+                onClick={() => onRollback(message)}
+                disabled={isStreaming || isRollingBack}
+                tabIndex={-1}
+                className={cn(
+                  "p-1.5 rounded-md transition-[background-color,transform] duration-150 ease-out hover:bg-accent active:scale-[0.97]",
+                  (isStreaming || isRollingBack) && "opacity-50 cursor-not-allowed",
+                )}
+              >
+                <IconTextUndo className="w-3.5 h-3.5 text-muted-foreground" />
+              </button>
+            )}
           </div>
           <AgentMessageUsage metadata={msgMetadata} isStreaming={isStreaming} isMobile={isMobile} />
         </div>

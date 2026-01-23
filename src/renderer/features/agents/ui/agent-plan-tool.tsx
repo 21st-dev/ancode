@@ -6,7 +6,6 @@ import {
   IconSpinner,
   ExpandIcon,
   CollapseIcon,
-  PlanningIcon,
   CheckIcon,
 } from "../../../components/ui/icons"
 import { getToolStatus } from "./agent-tool-registry"
@@ -163,7 +162,6 @@ export const AgentPlanTool = memo(function AgentPlanTool({
         onClick={() => setIsExpanded(!isExpanded)}
       >
         <div className="flex items-center gap-2 min-w-0 flex-1">
-          <PlanningIcon className="w-4 h-4 text-muted-foreground flex-shrink-0" />
           <div className="flex flex-col min-w-0 flex-1">
             {isPending ? (
               <TextShimmer

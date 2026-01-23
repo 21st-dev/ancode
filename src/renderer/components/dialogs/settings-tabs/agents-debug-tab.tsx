@@ -1,9 +1,10 @@
 import { useState, useEffect } from "react"
+import { useAtom } from "jotai"
 import { Button } from "../../ui/button"
 import { Switch } from "../../ui/switch"
 import { trpc } from "../../../lib/trpc"
 import { toast } from "sonner"
-import { Copy, FolderOpen, RefreshCw, Terminal, Check, Scan } from "lucide-react"
+import { Copy, FolderOpen, RefreshCw, Terminal, Check, Scan, WifiOff } from "lucide-react"
 
 // Hook to detect narrow screen
 function useIsNarrowScreen(): boolean {
@@ -68,6 +69,22 @@ export function AgentsDebugTab() {
   // Fetch system info
   const { data: systemInfo, isLoading: isLoadingSystem } =
     trpc.debug.getSystemInfo.useQuery()
+
+  // Offline simulation state
+  const { data: offlineSimulation, refetch: refetchOfflineSimulation } =
+    trpc.debug.getOfflineSimulation.useQuery()
+  const setOfflineSimulationMutation = trpc.debug.setOfflineSimulation.useMutation({
+    onSuccess: (data) => {
+      refetchOfflineSimulation()
+      toast.success(data.enabled ? "Offline simulation enabled" : "Offline simulation disabled", {
+        description: data.enabled
+          ? "App will behave as if offline"
+          : "Network detection restored to normal"
+      })
+    },
+    onError: (error) => toast.error(error.message),
+  })
+
 
   // Fetch DB stats
   const { data: dbStats, isLoading: isLoadingDb, refetch: refetchDb } =
@@ -257,6 +274,24 @@ export function AgentsDebugTab() {
                 checked={reactScanEnabled}
                 onCheckedChange={handleReactScanToggle}
                 disabled={reactScanLoading}
+              />
+            </div>
+            <div className="flex items-center justify-between p-3">
+              <div className="flex items-center gap-2">
+                <WifiOff className="h-4 w-4 text-muted-foreground" />
+                <div>
+                  <span className="text-sm">Simulate Offline</span>
+                  <p className="text-xs text-muted-foreground">
+                    Test offline mode without disconnecting
+                  </p>
+                </div>
+              </div>
+              <Switch
+                checked={offlineSimulation?.enabled ?? false}
+                onCheckedChange={(enabled) =>
+                  setOfflineSimulationMutation.mutate({ enabled })
+                }
+                disabled={setOfflineSimulationMutation.isPending}
               />
             </div>
           </div>

@@ -9,6 +9,7 @@ import {
   isStreamingAtom,
   chatStatusAtom,
 } from "../stores/message-store"
+import { extractTextMentions, TextMentionBlocks } from "../mentions/render-file-mentions"
 
 // ============================================================================
 // MESSAGE STORE - External store for fine-grained subscriptions
@@ -285,6 +286,7 @@ export function useStreamingStatus() {
 interface MessageItemWrapperProps {
   messageId: string
   subChatId: string
+  chatId: string
   isMobile: boolean
   sandboxSetupStatus: "cloning" | "ready" | "error"
 }
@@ -352,17 +354,25 @@ function useIsStreaming() {
 }
 
 // For non-last messages - no streaming subscription needed
+// Subscribes to message via Jotai messageAtomFamily, passes message as prop to AssistantMessageItem
 const NonStreamingMessageItem = memo(function NonStreamingMessageItem({
-  message,
+  messageId,
   subChatId,
+  chatId,
   isMobile,
   sandboxSetupStatus,
 }: {
-  message: any
+  messageId: string
   subChatId: string
+  chatId: string
   isMobile: boolean
   sandboxSetupStatus: "cloning" | "ready" | "error"
 }) {
+  // Subscribe to this specific message via Jotai - only re-renders when THIS message changes
+  const message = useAtomValue(messageAtomFamily(messageId))
+
+  if (!message) return null
+
   return (
     <AssistantMessageItem
       message={message}
@@ -370,27 +380,36 @@ const NonStreamingMessageItem = memo(function NonStreamingMessageItem({
       isStreaming={false}
       status="ready"
       subChatId={subChatId}
+      chatId={chatId}
       isMobile={isMobile}
       sandboxSetupStatus={sandboxSetupStatus}
     />
   )
 })
 
-// For the last message - subscribes to streaming status via Jotai
+// For the last message - subscribes to streaming status AND message via Jotai
+// Passes message as prop to AssistantMessageItem
 const StreamingMessageItem = memo(function StreamingMessageItem({
-  message,
+  messageId,
   subChatId,
+  chatId,
   isMobile,
   sandboxSetupStatus,
 }: {
-  message: any
+  messageId: string
   subChatId: string
+  chatId: string
   isMobile: boolean
   sandboxSetupStatus: "cloning" | "ready" | "error"
 }) {
-  // Use Jotai atoms for streaming status
+  // Subscribe to this specific message via Jotai - only re-renders when THIS message changes
+  const message = useAtomValue(messageAtomFamily(messageId))
+
+  // Subscribe to streaming status
   const isStreaming = useAtomValue(isStreamingAtom)
   const status = useAtomValue(chatStatusAtom)
+
+  if (!message) return null
 
   return (
     <AssistantMessageItem
@@ -399,6 +418,7 @@ const StreamingMessageItem = memo(function StreamingMessageItem({
       isStreaming={isStreaming}
       status={status}
       subChatId={subChatId}
+      chatId={chatId}
       isMobile={isMobile}
       sandboxSetupStatus={sandboxSetupStatus}
     />
@@ -455,32 +475,35 @@ function useMessageWithLastStatus(messageId: string) {
 export const MessageItemWrapper = memo(function MessageItemWrapper({
   messageId,
   subChatId,
+  chatId,
   isMobile,
   sandboxSetupStatus,
 }: MessageItemWrapperProps) {
-  // Use Jotai atoms for fine-grained subscriptions
-  const message = useAtomValue(messageAtomFamily(messageId))
+
+  // Only subscribe to isLast - NOT to message content!
+  // StreamingMessageItem and NonStreamingMessageItem will subscribe to message themselves
   const isLast = useAtomValue(isLastMessageAtomFamily(messageId))
-
-
-  if (!message) return null
 
   // Only the last message subscribes to streaming status
   if (isLast) {
+    // StreamingMessageItem subscribes to messageAtomFamily internally
     return (
       <StreamingMessageItem
-        message={message}
+        messageId={messageId}
         subChatId={subChatId}
+        chatId={chatId}
         isMobile={isMobile}
         sandboxSetupStatus={sandboxSetupStatus}
       />
     )
   }
 
+  // NonStreamingMessageItem subscribes to messageAtomFamily internally
   return (
     <NonStreamingMessageItem
-      message={message}
+      messageId={messageId}
       subChatId={subChatId}
+      chatId={chatId}
       isMobile={isMobile}
       sandboxSetupStatus={sandboxSetupStatus}
     />
@@ -499,6 +522,7 @@ export const MessageItemWrapper = memo(function MessageItemWrapper({
 interface MemoizedAssistantMessagesProps {
   assistantMsgIds: string[]
   subChatId: string
+  chatId: string
   isMobile: boolean
   sandboxSetupStatus: "cloning" | "ready" | "error"
 }
@@ -521,6 +545,7 @@ function areMemoizedAssistantMessagesEqual(
 
   // Also check static props
   if (prev.subChatId !== next.subChatId) return false
+  if (prev.chatId !== next.chatId) return false
   if (prev.isMobile !== next.isMobile) return false
   if (prev.sandboxSetupStatus !== next.sandboxSetupStatus) return false
 
@@ -530,6 +555,7 @@ function areMemoizedAssistantMessagesEqual(
 export const MemoizedAssistantMessages = memo(function MemoizedAssistantMessages({
   assistantMsgIds,
   subChatId,
+  chatId,
   isMobile,
   sandboxSetupStatus,
 }: MemoizedAssistantMessagesProps) {
@@ -544,6 +570,7 @@ export const MemoizedAssistantMessages = memo(function MemoizedAssistantMessages
           key={id}
           messageId={id}
           subChatId={subChatId}
+          chatId={chatId}
           isMobile={isMobile}
           sandboxSetupStatus={sandboxSetupStatus}
         />
@@ -701,12 +728,14 @@ export function useMessageGroups() {
 
 interface MessagesListProps {
   subChatId: string
+  chatId: string
   isMobile: boolean
   sandboxSetupStatus: "cloning" | "ready" | "error"
 }
 
 export const MessagesList = memo(function MessagesList({
   subChatId,
+  chatId,
   isMobile,
   sandboxSetupStatus,
 }: MessagesListProps) {
@@ -719,6 +748,7 @@ export const MessagesList = memo(function MessagesList({
           key={id}
           messageId={id}
           subChatId={subChatId}
+          chatId={chatId}
           isMobile={isMobile}
           sandboxSetupStatus={sandboxSetupStatus}
         />
@@ -894,6 +924,7 @@ interface SimpleIsolatedGroupProps {
     messageId: string
     textContent: string
     imageParts: any[]
+    skipTextMentionBlocks?: boolean
   }>
   ToolCallComponent: React.ComponentType<{
     icon: any
@@ -945,12 +976,18 @@ export const SimpleIsolatedGroup = memo(function SimpleIsolatedGroup({
   if (!userMsg) return null
 
   // User message data
-  const textContent = userMsg.parts
+  const rawTextContent = userMsg.parts
     ?.filter((p: any) => p.type === "text")
     .map((p: any) => p.text)
     .join("\n") || ""
 
   const imageParts = userMsg.parts?.filter((p: any) => p.type === "data-image") || []
+
+  // Extract text mentions (quote/diff) to render separately above sticky block
+  const { textMentions, cleanedText: textContent } = useMemo(
+    () => extractTextMentions(rawTextContent),
+    [rawTextContent]
+  )
 
   // Show cloning when sandbox is being set up
   const shouldShowCloning =
@@ -973,7 +1010,15 @@ export const SimpleIsolatedGroup = memo(function SimpleIsolatedGroup({
             messageId={userMsg.id}
             textContent=""
             imageParts={imageParts}
+            skipTextMentionBlocks
           />
+        </div>
+      )}
+
+      {/* Text mentions (quote/diff) - NOT sticky */}
+      {textMentions.length > 0 && (
+        <div className="mb-2 pointer-events-auto">
+          <TextMentionBlocks mentions={textMentions} />
         </div>
       )}
 
@@ -986,6 +1031,7 @@ export const SimpleIsolatedGroup = memo(function SimpleIsolatedGroup({
           messageId={userMsg.id}
           textContent={textContent}
           imageParts={[]}
+          skipTextMentionBlocks
         />
 
         {/* Cloning indicator */}
@@ -1118,4 +1164,3 @@ export const SimpleIsolatedMessagesList = memo(function SimpleIsolatedMessagesLi
     </>
   )
 }, areSimpleListPropsEqual)
-

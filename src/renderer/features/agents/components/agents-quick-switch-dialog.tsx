@@ -19,6 +19,7 @@ interface AgentsQuickSwitchDialogProps {
   }>
   selectedIndex: number
   projectsMap: Map<string, { gitOwner?: string | null; gitProvider?: string | null; gitRepo?: string | null; name: string }>
+  onHover?: (index: number) => void
 }
 
 export function AgentsQuickSwitchDialog({
@@ -26,6 +27,7 @@ export function AgentsQuickSwitchDialog({
   chats,
   selectedIndex,
   projectsMap,
+  onHover,
 }: AgentsQuickSwitchDialogProps) {
   if (typeof window === "undefined") return null
 
@@ -77,6 +79,7 @@ export function AgentsQuickSwitchDialog({
                           gitOwner={project?.gitOwner}
                           gitProvider={project?.gitProvider}
                           repoName={project?.gitRepo || project?.name}
+                          onMouseEnter={() => onHover?.(index)}
                         />
                       )
                     })}

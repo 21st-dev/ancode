@@ -15,6 +15,43 @@ const pendingNotificationsAtom = atomWithStorage<number>(
 let isWindowFocused = true
 
 /**
+ * Generate a badge icon image for Windows taskbar overlay
+ * Creates a 32x32 canvas with a red circle and white number
+ */
+function generateBadgeIcon(count: number): string {
+  const size = 32
+  const canvas = document.createElement("canvas")
+  canvas.width = size
+  canvas.height = size
+  const ctx = canvas.getContext("2d")
+
+  if (!ctx) return ""
+
+  // Draw red circle background
+  ctx.fillStyle = "#FF4444"
+  ctx.beginPath()
+  ctx.arc(size / 2, size / 2, size / 2 - 2, 0, Math.PI * 2)
+  ctx.fill()
+
+  // Draw white border
+  ctx.strokeStyle = "#FFFFFF"
+  ctx.lineWidth = 2
+  ctx.stroke()
+
+  // Draw white number text
+  ctx.fillStyle = "#FFFFFF"
+  ctx.font = "bold 18px Arial"
+  ctx.textAlign = "center"
+  ctx.textBaseline = "middle"
+
+  // Format count (show "9+" if > 9)
+  const displayText = count > 9 ? "9+" : String(count)
+  ctx.fillText(displayText, size / 2, size / 2)
+
+  return canvas.toDataURL("image/png")
+}
+
+/**
  * Hook to manage desktop notifications and badge count
  * - Shows native notifications when window is not focused
  * - Updates dock badge with pending notification count
@@ -70,8 +107,18 @@ export function useDesktopNotifications() {
 
     if (pendingCount > 0) {
       window.desktopApi?.setBadge(pendingCount)
+
+      // Windows: Generate and set overlay icon with badge number
+      if (window.desktopApi?.platform === "win32" && window.desktopApi?.setBadgeIcon) {
+        const badgeImage = generateBadgeIcon(pendingCount)
+        window.desktopApi.setBadgeIcon(badgeImage)
+      }
     } else {
       window.desktopApi?.setBadge(null)
+      // Clear overlay icon on Windows
+      if (window.desktopApi?.platform === "win32" && window.desktopApi?.setBadgeIcon) {
+        window.desktopApi.setBadgeIcon(null)
+      }
     }
   }, [pendingCount])
 

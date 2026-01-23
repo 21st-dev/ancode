@@ -12,6 +12,7 @@ export {
   lastSelectedModelIdAtom,
   lastSelectedAgentIdAtom,
   lastSelectedRepoAtom,
+  selectedProjectAtom,
   agentsUnseenChangesAtom,
   agentsSubChatUnseenChangesAtom,
   loadingSubChatsAtom,
@@ -36,6 +37,7 @@ export {
 
   // Diff atoms
   agentsDiffSidebarWidthAtom,
+  agentsChangesPanelWidthAtom,
   agentsDiffSidebarOpenAtom,
   agentsFocusedDiffFileAtom,
   filteredDiffFilesAtom,
@@ -46,8 +48,7 @@ export {
   archiveSearchQueryAtom,
   archiveRepositoryFilterAtom,
 
-  // Scroll & UI state
-  agentsScrollPositionsAtom,
+  // UI state
   agentsMobileViewModeAtom,
 
   // Debug mode
@@ -163,15 +164,183 @@ export const clearSubChatSelectionAtom = atom(null, (_get, set) => {
 // ============================================
 
 // Settings dialog
-export type SettingsTab = "profile" | "appearance" | "preferences" | "skills" | "agents" | "mcp" | "debug"
+export type SettingsTab =
+  | "profile"
+  | "appearance"
+  | "preferences"
+  | "models"
+  | "skills"
+  | "agents"
+  | "mcp"
+  | "worktrees"
+  | "debug"
+  | "beta"
+  | "keyboard"
+  | `project-${string}` // Dynamic project tabs
 export const agentsSettingsDialogActiveTabAtom = atom<SettingsTab>("profile")
 export const agentsSettingsDialogOpenAtom = atom<boolean>(false)
+
+export type CustomClaudeConfig = {
+  model: string
+  token: string
+  baseUrl: string
+}
+
+// Model profile system - support multiple configs
+export type ModelProfile = {
+  id: string
+  name: string
+  config: CustomClaudeConfig
+  isOffline?: boolean // Mark as offline/Ollama profile
+}
+
+// Selected Ollama model for offline mode
+export const selectedOllamaModelAtom = atomWithStorage<string | null>(
+  "agents:selected-ollama-model",
+  null, // null = use recommended model
+  undefined,
+  { getOnInit: true },
+)
+
+// Helper to get offline profile with selected model
+export const getOfflineProfile = (modelName?: string | null): ModelProfile => ({
+  id: 'offline-ollama',
+  name: 'Offline (Ollama)',
+  isOffline: true,
+  config: {
+    model: modelName || 'qwen2.5-coder:7b',
+    token: 'ollama',
+    baseUrl: 'http://localhost:11434',
+  },
+})
+
+// Predefined offline profile for Ollama (legacy, uses default model)
+export const OFFLINE_PROFILE: ModelProfile = {
+  id: 'offline-ollama',
+  name: 'Offline (Ollama)',
+  isOffline: true,
+  config: {
+    model: 'qwen2.5-coder:7b',
+    token: 'ollama',
+    baseUrl: 'http://localhost:11434',
+  },
+}
+
+// Legacy single config (deprecated, kept for backwards compatibility)
+export const customClaudeConfigAtom = atomWithStorage<CustomClaudeConfig>(
+  "agents:claude-custom-config",
+  {
+    model: "",
+    token: "",
+    baseUrl: "",
+  },
+  undefined,
+  { getOnInit: true },
+)
+
+// New: Model profiles storage
+export const modelProfilesAtom = atomWithStorage<ModelProfile[]>(
+  "agents:model-profiles",
+  [OFFLINE_PROFILE], // Start with offline profile
+  undefined,
+  { getOnInit: true },
+)
+
+// Active profile ID (null = use Claude Code default)
+export const activeProfileIdAtom = atomWithStorage<string | null>(
+  "agents:active-profile-id",
+  null,
+  undefined,
+  { getOnInit: true },
+)
+
+// Auto-fallback to offline mode when internet is unavailable
+export const autoOfflineModeAtom = atomWithStorage<boolean>(
+  "agents:auto-offline-mode",
+  true, // Enabled by default
+  undefined,
+  { getOnInit: true },
+)
+
+// Simulate offline mode for testing (debug feature)
+export const simulateOfflineAtom = atomWithStorage<boolean>(
+  "agents:simulate-offline",
+  false, // Disabled by default
+  undefined,
+  { getOnInit: true },
+)
+
+// Show offline mode UI (debug feature - enables offline functionality visibility)
+export const showOfflineModeFeaturesAtom = atomWithStorage<boolean>(
+  "agents:show-offline-mode-features",
+  false, // Hidden by default
+  undefined,
+  { getOnInit: true },
+)
+
+// Network status (updated from main process)
+export const networkOnlineAtom = atom<boolean>(true)
+
+export function normalizeCustomClaudeConfig(
+  config: CustomClaudeConfig,
+): CustomClaudeConfig | undefined {
+  const model = config.model.trim()
+  const token = config.token.trim()
+  const baseUrl = config.baseUrl.trim()
+
+  if (!model || !token || !baseUrl) return undefined
+
+  return { model, token, baseUrl }
+}
+
+// Get active config (considering network status and auto-fallback)
+export const activeConfigAtom = atom((get) => {
+  const activeProfileId = get(activeProfileIdAtom)
+  const profiles = get(modelProfilesAtom)
+  const legacyConfig = get(customClaudeConfigAtom)
+  const networkOnline = get(networkOnlineAtom)
+  const autoOffline = get(autoOfflineModeAtom)
+
+  // If auto-offline enabled and no internet, use offline profile
+  if (!networkOnline && autoOffline) {
+    const offlineProfile = profiles.find(p => p.isOffline)
+    if (offlineProfile) {
+      return offlineProfile.config
+    }
+  }
+
+  // If specific profile is selected, use it
+  if (activeProfileId) {
+    const profile = profiles.find(p => p.id === activeProfileId)
+    if (profile) {
+      return profile.config
+    }
+  }
+
+  // Fallback to legacy config if set
+  const normalized = normalizeCustomClaudeConfig(legacyConfig)
+  if (normalized) {
+    return normalized
+  }
+
+  // No custom config
+  return undefined
+})
 
 // Preferences - Extended Thinking
 // When enabled, Claude will use extended thinking for deeper reasoning (128K tokens)
 // Note: Extended thinking disables response streaming
 export const extendedThinkingEnabledAtom = atomWithStorage<boolean>(
   "preferences:extended-thinking-enabled",
+  false,
+  undefined,
+  { getOnInit: true },
+)
+
+// Preferences - History (Rollback)
+// When enabled, allow rollback to previous assistant messages
+export const historyEnabledAtom = atomWithStorage<boolean>(
+  "preferences:history-enabled",
   false,
   undefined,
   { getOnInit: true },
@@ -186,11 +355,41 @@ export const soundNotificationsEnabledAtom = atomWithStorage<boolean>(
   { getOnInit: true },
 )
 
+// Preferences - Desktop Notifications (Windows)
+// When enabled, show Windows desktop notification when agent completes work
+export const desktopNotificationsEnabledAtom = atomWithStorage<boolean>(
+  "preferences:desktop-notifications-enabled",
+  true,
+  undefined,
+  { getOnInit: true },
+)
+
+// Preferences - Windows Window Frame Style
+// When true, uses native frame (standard Windows title bar)
+// When false, uses frameless window (dark custom title bar)
+// Only applies on Windows, requires app restart to take effect
+export const useNativeFrameAtom = atomWithStorage<boolean>(
+  "preferences:windows-use-native-frame",
+  false, // Default: frameless (dark title bar)
+  undefined,
+  { getOnInit: true },
+)
+
 // Preferences - Analytics Opt-out
 // When true, user has opted out of analytics tracking
 export const analyticsOptOutAtom = atomWithStorage<boolean>(
   "preferences:analytics-opt-out",
   false, // Default to opt-in (false means not opted out)
+  undefined,
+  { getOnInit: true },
+)
+
+// Beta: Enable git features in diff sidebar (commit, staging, file selection)
+// When enabled, shows checkboxes for file selection and commit UI in diff sidebar
+// When disabled, shows simple file list with "Create PR" button
+export const betaGitFeaturesEnabledAtom = atomWithStorage<boolean>(
+  "preferences:beta-git-features-enabled",
+  false, // Default OFF
   undefined,
   { getOnInit: true },
 )
@@ -202,6 +401,16 @@ export type CtrlTabTarget = "workspaces" | "agents"
 export const ctrlTabTargetAtom = atomWithStorage<CtrlTabTarget>(
   "preferences:ctrl-tab-target",
   "workspaces", // Default: Ctrl+Tab switches workspaces, Opt+Ctrl+Tab switches agents
+  undefined,
+  { getOnInit: true },
+)
+
+// Preferences - Auto-advance after archive
+// Controls where to navigate after archiving a workspace
+export type AutoAdvanceTarget = "next" | "previous" | "close"
+export const autoAdvanceTargetAtom = atomWithStorage<AutoAdvanceTarget>(
+  "preferences:auto-advance-target",
+  "next", // Default: go to next workspace
   undefined,
   { getOnInit: true },
 )
@@ -274,6 +483,29 @@ export const systemDarkThemeIdAtom = atomWithStorage<string>(
 )
 
 /**
+ * Show workspace icon in sidebar
+ * When disabled, hides the project icon and moves loader/status indicators to the right of the name
+ */
+export const showWorkspaceIconAtom = atomWithStorage<boolean>(
+  "preferences:show-workspace-icon",
+  false, // Hidden by default
+  undefined,
+  { getOnInit: true },
+)
+
+/**
+ * Always expand to-do list
+ * When enabled, to-do lists are always shown expanded (full list view)
+ * When disabled (default), to-do lists start collapsed and can be expanded manually
+ */
+export const alwaysExpandTodoListAtom = atomWithStorage<boolean>(
+  "preferences:always-expand-todo-list",
+  false, // Collapsed by default
+  undefined,
+  { getOnInit: true },
+)
+
+/**
  * Cached full theme data for the selected theme
  * This is populated when a theme is selected and used for applying CSS variables
  */
@@ -289,8 +521,29 @@ export const allFullThemesAtom = atom<VSCodeFullTheme[]>((get) => {
   return []
 })
 
-// Shortcuts dialog
-export const agentsShortcutsDialogOpenAtom = atom<boolean>(false)
+// ============================================
+// CUSTOM HOTKEYS CONFIGURATION
+// ============================================
+
+import type { CustomHotkeysConfig } from "../hotkeys/types"
+export type { CustomHotkeysConfig }
+
+/**
+ * Custom hotkey overrides storage
+ * Maps action IDs to custom hotkey strings (or null for default)
+ */
+export const customHotkeysAtom = atomWithStorage<CustomHotkeysConfig>(
+  "preferences:custom-hotkeys",
+  { version: 1, bindings: {} },
+  undefined,
+  { getOnInit: true },
+)
+
+/**
+ * Currently recording hotkey for action (UI state)
+ * null when not recording
+ */
+export const recordingHotkeyForActionAtom = atom<string | null>(null)
 
 // Login modal (shown when Claude Code auth fails)
 export const agentsLoginModalOpenAtom = atom<boolean>(false)
@@ -358,14 +611,37 @@ export const isDesktopAtom = atom<boolean>(false)
 export const isFullscreenAtom = atom<boolean | null>(null)
 
 // ============================================
-// ANTHROPIC ONBOARDING ATOMS
+// ONBOARDING ATOMS
 // ============================================
+
+// Billing method selected during onboarding
+// "claude-subscription" = use Claude Pro/Max via OAuth
+// "api-key" = use Anthropic API key directly
+// "custom-model" = use custom base URL and model (e.g. for proxies or alternative providers)
+// null = not yet selected (show billing method selection screen)
+export type BillingMethod = "claude-subscription" | "api-key" | "custom-model" | null
+
+export const billingMethodAtom = atomWithStorage<BillingMethod>(
+  "onboarding:billing-method",
+  null,
+  undefined,
+  { getOnInit: true },
+)
 
 // Whether user has completed Anthropic OAuth during onboarding
 // This is used to show the onboarding screen after 21st.dev sign-in
 // Reset on logout
 export const anthropicOnboardingCompletedAtom = atomWithStorage<boolean>(
   "onboarding:anthropic-completed",
+  false,
+  undefined,
+  { getOnInit: true },
+)
+
+// Whether user has completed API key configuration during onboarding
+// Only relevant when billingMethod is "api-key"
+export const apiKeyOnboardingCompletedAtom = atomWithStorage<boolean>(
+  "onboarding:api-key-completed",
   false,
   undefined,
   { getOnInit: true },

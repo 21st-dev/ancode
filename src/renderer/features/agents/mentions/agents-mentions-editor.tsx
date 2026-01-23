@@ -39,6 +39,8 @@ export const MENTION_PREFIXES = {
   SKILL: "skill:",
   AGENT: "agent:",
   TOOL: "tool:", // MCP tools
+  QUOTE: "quote:", // Selected text from assistant messages
+  DIFF: "diff:", // Selected text from diff sidebar
 } as const
 
 type TriggerPayload = {
@@ -70,6 +72,7 @@ type AgentsMentionsEditorProps = {
   placeholder?: string
   className?: string
   onSubmit?: () => void
+  onForceSubmit?: () => void // Opt+Enter: bypass queue, stop stream and send immediately
   disabled?: boolean
   onPaste?: (e: React.ClipboardEvent) => void
   onShiftTab?: () => void // callback for Shift+Tab (e.g., mode switching)
@@ -494,6 +497,7 @@ export const AgentsMentionsEditor = memo(
         placeholder,
         className,
         onSubmit,
+        onForceSubmit,
         disabled,
         onPaste,
         onShiftTab,
@@ -719,11 +723,21 @@ export const AgentsMentionsEditor = memo(
             const afterAt = textBeforeCursor.slice(atIndex + 1)
 
             // Get position for dropdown
-            if (atPosition.node.nodeType === Node.TEXT_NODE) {
+            // Use cursor position for vertical, parent container left edge for horizontal alignment
+            if (range && editorRef.current) {
               const tempRange = document.createRange()
-              tempRange.setStart(atPosition.node, atPosition.offset)
-              tempRange.setEnd(atPosition.node, atPosition.offset + 1)
-              const rect = tempRange.getBoundingClientRect()
+              tempRange.setStart(range.endContainer, range.endOffset)
+              tempRange.setEnd(range.endContainer, range.endOffset)
+              const cursorRect = tempRange.getBoundingClientRect()
+
+              // Use CURSOR position - menu should appear under cursor, not at text start
+              const rect = new DOMRect(
+                cursorRect.left,   // Use actual cursor position for horizontal
+                cursorRect.top,    // Use cursor top for vertical position
+                0,
+                cursorRect.height
+              )
+
               onTrigger({ searchText: afterAt, rect })
               return
             }
@@ -744,11 +758,21 @@ export const AgentsMentionsEditor = memo(
             const afterSlash = textBeforeCursor.slice(slashIndex + 1)
 
             // Get position for dropdown
-            if (slashPosition.node.nodeType === Node.TEXT_NODE) {
+            // Use cursor position for vertical, parent container left edge for horizontal alignment
+            if (range && editorRef.current) {
               const tempRange = document.createRange()
-              tempRange.setStart(slashPosition.node, slashPosition.offset)
-              tempRange.setEnd(slashPosition.node, slashPosition.offset + 1)
-              const rect = tempRange.getBoundingClientRect()
+              tempRange.setStart(range.endContainer, range.endOffset)
+              tempRange.setEnd(range.endContainer, range.endOffset)
+              const cursorRect = tempRange.getBoundingClientRect()
+
+              // Use CURSOR position - menu should appear under cursor, not at text start
+              const rect = new DOMRect(
+                cursorRect.left,   // Use actual cursor position for horizontal
+                cursorRect.top,    // Use cursor top for vertical position
+                0,
+                cursorRect.height
+              )
+
               onSlashTrigger({ searchText: afterSlash, rect })
               return
             }
@@ -783,13 +807,19 @@ export const AgentsMentionsEditor = memo(
       // Handle keydown
       const handleKeyDown = useCallback(
         (e: React.KeyboardEvent) => {
-          if (e.key === "Enter" && !e.shiftKey) {
+          // Prevent submission during IME composition (e.g., Chinese/Japanese/Korean input)
+          if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
             if (triggerActive.current || slashTriggerActive.current) {
               // Let dropdown handle Enter
               return
             }
             e.preventDefault()
-            onSubmit?.()
+            // Opt+Enter = force submit (bypass queue, stop stream and send immediately)
+            if (e.altKey && onForceSubmit) {
+              onForceSubmit()
+            } else {
+              onSubmit?.()
+            }
           }
           if (e.key === "Escape") {
             // Close mention dropdown
@@ -817,7 +847,7 @@ export const AgentsMentionsEditor = memo(
             onShiftTab?.()
           }
         },
-        [onSubmit, onCloseTrigger, onCloseSlashTrigger, onShiftTab],
+        [onSubmit, onForceSubmit, onCloseTrigger, onCloseSlashTrigger, onShiftTab],
       )
 
       // Expose methods via ref (UNCONTROLLED pattern)

@@ -3,8 +3,15 @@ import type { ChatTransport, UIMessage } from "ai"
 import { toast } from "sonner"
 import {
   agentsLoginModalOpenAtom,
+  customClaudeConfigAtom,
   extendedThinkingEnabledAtom,
+  historyEnabledAtom,
   sessionInfoAtom,
+  selectedOllamaModelAtom,
+  showOfflineModeFeaturesAtom,
+  autoOfflineModeAtom,
+  type CustomClaudeConfig,
+  normalizeCustomClaudeConfig,
 } from "../../../lib/atoms"
 import { appStore } from "../../../lib/jotai-store"
 import { trpcClient } from "../../../lib/trpc"
@@ -46,12 +53,26 @@ const ERROR_TOAST_CONFIG: Record<
       "Your Claude API key is invalid. Check your CLI configuration.",
   },
   RATE_LIMIT_SDK: {
-    title: "Rate limited",
-    description: "Too many requests. Please wait a moment and try again.",
+    title: "Session limit reached",
+    description: "You've hit the Claude Code usage limit.",
+    action: {
+      label: "View usage",
+      onClick: () =>
+        trpcClient.external.openExternal.mutate(
+          "https://claude.ai/settings/usage",
+        ),
+    },
   },
   RATE_LIMIT: {
-    title: "Rate limited",
-    description: "Too many requests. Please wait a moment and try again.",
+    title: "Session limit reached",
+    description: "You've hit the Claude Code usage limit.",
+    action: {
+      label: "View usage",
+      onClick: () =>
+        trpcClient.external.openExternal.mutate(
+          "https://claude.ai/settings/usage",
+        ),
+    },
   },
   OVERLOADED_SDK: {
     title: "Claude is busy",
@@ -61,7 +82,12 @@ const ERROR_TOAST_CONFIG: Record<
   PROCESS_CRASH: {
     title: "Claude crashed",
     description:
-      "The Claude process exited unexpectedly. Try sending your message again.",
+      "The Claude process exited unexpectedly. Try sending your message again or rollback.",
+  },
+  SESSION_EXPIRED: {
+    title: "Session expired",
+    description:
+      "Your previous chat session expired. Send your message again to start fresh.",
   },
   EXECUTABLE_NOT_FOUND: {
     title: "Claude CLI not found",
@@ -126,10 +152,23 @@ export class IPCChatTransport implements ChatTransport<UIMessage> {
     // Read extended thinking setting dynamically (so toggle applies to existing chats)
     const thinkingEnabled = appStore.get(extendedThinkingEnabledAtom)
     const maxThinkingTokens = thinkingEnabled ? 128_000 : undefined
+    const historyEnabled = appStore.get(historyEnabledAtom)
 
     // Read model selection dynamically (so model changes apply to existing chats)
     const selectedModelId = appStore.get(lastSelectedModelIdAtom)
     const modelString = MODEL_ID_MAP[selectedModelId]
+
+    const storedCustomConfig = appStore.get(
+      customClaudeConfigAtom,
+    ) as CustomClaudeConfig
+    const customConfig = normalizeCustomClaudeConfig(storedCustomConfig)
+
+    // Get selected Ollama model for offline mode
+    const selectedOllamaModel = appStore.get(selectedOllamaModelAtom)
+    // Check if offline mode is enabled in settings
+    const showOfflineFeatures = appStore.get(showOfflineModeFeaturesAtom)
+    const autoOfflineMode = appStore.get(autoOfflineModeAtom)
+    const offlineModeEnabled = showOfflineFeatures && autoOfflineMode
 
     const currentMode =
       useAgentSubChatStore
@@ -141,7 +180,7 @@ export class IPCChatTransport implements ChatTransport<UIMessage> {
     const subId = this.config.subChatId.slice(-8)
     let chunkCount = 0
     let lastChunkType = ""
-    console.log(`[SD] R:START sub=${subId} cwd=${this.config.cwd} projectPath=${this.config.projectPath || "(not set)"}`)
+    console.log(`[SD] R:START sub=${subId} cwd=${this.config.cwd} projectPath=${this.config.projectPath || "(not set)"} customConfig=${customConfig ? "set" : "not set"}`)
 
     return new ReadableStream({
       start: (controller) => {
@@ -156,6 +195,10 @@ export class IPCChatTransport implements ChatTransport<UIMessage> {
             sessionId,
             ...(maxThinkingTokens && { maxThinkingTokens }),
             ...(modelString && { model: modelString }),
+            ...(customConfig && { customConfig }),
+            ...(selectedOllamaModel && { selectedOllamaModel }),
+            historyEnabled,
+            offlineModeEnabled,
             ...(images.length > 0 && { images }),
           },
           {
@@ -165,18 +208,25 @@ export class IPCChatTransport implements ChatTransport<UIMessage> {
 
               // Handle AskUserQuestion - show question UI
               if (chunk.type === "ask-user-question") {
-                appStore.set(pendingUserQuestionsAtom, {
+                const currentMap = appStore.get(pendingUserQuestionsAtom)
+                const newMap = new Map(currentMap)
+                newMap.set(this.config.subChatId, {
                   subChatId: this.config.subChatId,
+                  parentChatId: this.config.chatId,
                   toolUseId: chunk.toolUseId,
                   questions: chunk.questions,
                 })
+                appStore.set(pendingUserQuestionsAtom, newMap)
               }
 
               // Handle AskUserQuestion timeout - clear pending question immediately
               if (chunk.type === "ask-user-question-timeout") {
-                const pending = appStore.get(pendingUserQuestionsAtom)
+                const currentMap = appStore.get(pendingUserQuestionsAtom)
+                const pending = currentMap.get(this.config.subChatId)
                 if (pending && pending.toolUseId === chunk.toolUseId) {
-                  appStore.set(pendingUserQuestionsAtom, null)
+                  const newMap = new Map(currentMap)
+                  newMap.delete(this.config.subChatId)
+                  appStore.set(pendingUserQuestionsAtom, newMap)
                 }
               }
 
@@ -232,9 +282,11 @@ export class IPCChatTransport implements ChatTransport<UIMessage> {
                 chunk.type !== "start-step"
 
               if (shouldClearOnChunk) {
-                const pending = appStore.get(pendingUserQuestionsAtom)
-                if (pending && pending.subChatId === this.config.subChatId) {
-                  appStore.set(pendingUserQuestionsAtom, null)
+                const currentMap = appStore.get(pendingUserQuestionsAtom)
+                if (currentMap.has(this.config.subChatId)) {
+                  const newMap = new Map(currentMap)
+                  newMap.delete(this.config.subChatId)
+                  appStore.set(pendingUserQuestionsAtom, newMap)
                 }
               }
 

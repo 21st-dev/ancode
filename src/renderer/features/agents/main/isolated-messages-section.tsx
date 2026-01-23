@@ -2,7 +2,7 @@
 
 import { memo } from "react"
 import { useAtomValue } from "jotai"
-import { userMessageIdsAtom } from "../stores/message-store"
+import { userMessageIdsAtom, currentSubChatIdAtom } from "../stores/message-store"
 import { IsolatedMessageGroup } from "./isolated-message-group"
 
 // ============================================================================
@@ -20,6 +20,7 @@ import { IsolatedMessageGroup } from "./isolated-message-group"
 
 interface IsolatedMessagesSectionProps {
   subChatId: string
+  chatId: string
   isMobile: boolean
   sandboxSetupStatus: "cloning" | "ready" | "error"
   stickyTopClass: string
@@ -30,6 +31,7 @@ interface IsolatedMessagesSectionProps {
     messageId: string
     textContent: string
     imageParts: any[]
+    skipTextMentionBlocks?: boolean
   }>
   ToolCallComponent: React.ComponentType<{
     icon: any
@@ -37,7 +39,7 @@ interface IsolatedMessagesSectionProps {
     isPending: boolean
     isError: boolean
   }>
-  MessageGroupWrapper: React.ComponentType<{ children: React.ReactNode }>
+  MessageGroupWrapper: React.ComponentType<{ children: React.ReactNode; isLastGroup?: boolean }>
   toolRegistry: Record<string, { icon: any; title: (args: any) => string }>
 }
 
@@ -47,6 +49,7 @@ function areSectionPropsEqual(
 ): boolean {
   return (
     prev.subChatId === next.subChatId &&
+    prev.chatId === next.chatId &&
     prev.isMobile === next.isMobile &&
     prev.sandboxSetupStatus === next.sandboxSetupStatus &&
     prev.stickyTopClass === next.stickyTopClass &&
@@ -61,6 +64,7 @@ function areSectionPropsEqual(
 
 export const IsolatedMessagesSection = memo(function IsolatedMessagesSection({
   subChatId,
+  chatId,
   isMobile,
   sandboxSetupStatus,
   stickyTopClass,
@@ -71,9 +75,26 @@ export const IsolatedMessagesSection = memo(function IsolatedMessagesSection({
   MessageGroupWrapper,
   toolRegistry,
 }: IsolatedMessagesSectionProps) {
-  // Subscribe to user message IDs only - NOT the full messages array
-  // This only changes when a new user message is added
+  // CRITICAL: Check if global atoms are synced for THIS subChat FIRST
+  // With keep-alive tabs, multiple ChatViewInner instances exist simultaneously.
+  // Global atoms (messageIdsAtom, etc.) contain data from the ACTIVE tab only.
+  // When a tab becomes active, useLayoutEffect syncs its messages to global atoms,
+  // but that happens AFTER this component renders. So on first render after activation,
+  // we might read stale data from the previous active tab.
+  //
+  // Solution: Check currentSubChatIdAtom BEFORE reading userMessageIdsAtom.
+  // If it doesn't match our subChatId, return empty to avoid showing wrong messages.
+  // The useLayoutEffect will sync and update currentSubChatIdAtom, which triggers
+  // a re-render of this component (since we're subscribed to it).
+  const currentSubChatId = useAtomValue(currentSubChatIdAtom)
+
+  // Subscribe to user message IDs - but only use them if we're the active chat
   const userMsgIds = useAtomValue(userMessageIdsAtom)
+
+  if (currentSubChatId !== subChatId) {
+    // Data not synced yet - render nothing, we'll re-render when currentSubChatIdAtom updates
+    return null
+  }
 
   return (
     <>
@@ -82,6 +103,7 @@ export const IsolatedMessagesSection = memo(function IsolatedMessagesSection({
           key={userMsgId}
           userMsgId={userMsgId}
           subChatId={subChatId}
+          chatId={chatId}
           isMobile={isMobile}
           sandboxSetupStatus={sandboxSetupStatus}
           stickyTopClass={stickyTopClass}

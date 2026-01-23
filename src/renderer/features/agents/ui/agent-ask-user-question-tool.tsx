@@ -51,8 +51,10 @@ export const AgentAskUserQuestionTool = memo(function AgentAskUserQuestionTool({
   const realtimeResult = toolCallId ? resultsMap.get(toolCallId) : undefined
 
   // Check if the question dialog is currently shown for this tool
-  const pendingQuestions = useAtomValue(pendingUserQuestionsAtom)
-  const isDialogShown = pendingQuestions?.toolUseId === toolCallId
+  const pendingQuestionsMap = useAtomValue(pendingUserQuestionsAtom)
+  const isDialogShown = toolCallId
+    ? Array.from(pendingQuestionsMap.values()).some(q => q.toolUseId === toolCallId)
+    : false
 
   // Use realtime result if available, otherwise fall back to prop
   const effectiveResult = realtimeResult ?? result

@@ -21,7 +21,7 @@ export interface AgentActionContext {
   setSidebarOpen?: (open: boolean | ((prev: boolean) => boolean)) => void
   setSettingsDialogOpen?: (open: boolean) => void
   setSettingsActiveTab?: (tab: SettingsTab) => void
-  setShortcutsDialogOpen?: (open: boolean) => void
+  toggleChatSearch?: () => void
 
   // Data
   selectedChatId?: string | null
@@ -58,7 +58,9 @@ const openShortcutsAction: AgentActionDefinition = {
   category: "general",
   hotkey: "?",
   handler: async (context) => {
-    context.setShortcutsDialogOpen?.(true)
+    // Open settings dialog on Keyboard tab instead of separate shortcuts dialog
+    context.setSettingsActiveTab?.("keyboard")
+    context.setSettingsDialogOpen?.(true)
     return { success: true }
   },
 }
@@ -105,6 +107,18 @@ const toggleSidebarAction: AgentActionDefinition = {
   },
 }
 
+const toggleChatSearchAction: AgentActionDefinition = {
+  id: "toggle-chat-search",
+  label: "Search messages",
+  description: "Search through chat history",
+  category: "view",
+  hotkey: ["cmd+f", "ctrl+f"],
+  handler: async (context) => {
+    context.toggleChatSearch?.()
+    return { success: true }
+  },
+}
+
 // ============================================================================
 // ACTION REGISTRY
 // ============================================================================
@@ -114,6 +128,7 @@ export const AGENT_ACTIONS: Record<string, AgentActionDefinition> = {
   "create-new-agent": createNewAgentAction,
   "open-settings": openSettingsAction,
   "toggle-sidebar": toggleSidebarAction,
+  "toggle-chat-search": toggleChatSearchAction,
 }
 
 export function getAgentAction(id: string): AgentActionDefinition | undefined {

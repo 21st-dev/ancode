@@ -110,17 +110,6 @@ export function areToolPropsEqual(
   // First check if the tool data itself changed
   const partsEqual = arePartsEqual(prevProps.part, nextProps.part)
 
-  // Debug logging
-  console.log('[areToolPropsEqual]', {
-    toolCallId: nextProps.part?.toolCallId,
-    type: nextProps.part?.type,
-    partsEqual,
-    prevInput: JSON.stringify(prevProps.part?.input)?.slice(0, 50),
-    nextInput: JSON.stringify(nextProps.part?.input)?.slice(0, 50),
-    prevState: prevProps.part?.state,
-    nextState: nextProps.part?.state,
-  })
-
   if (!partsEqual) return false
 
   // If tool is completed, it doesn't care about chatStatus changes
@@ -196,6 +185,23 @@ export function areExploringGroupPropsEqual(
   if (prevProps.isStreaming !== nextProps.isStreaming) return false
 
   return true
+}
+
+/**
+ * Check if a file path is a plan file.
+ * Plan files are stored in the claude-sessions directory under /plans/
+ */
+export function isPlanFile(filePath: string): boolean {
+  // Check for official plan location in claude-sessions
+  if (filePath.includes("claude-sessions") && filePath.includes("/plans/")) {
+    return true
+  }
+  // Also check for plan files by name pattern (for backwards compatibility)
+  const fileName = filePath.split("/").pop()?.toLowerCase() || ""
+  if (fileName.includes("plan") && fileName.endsWith(".md")) {
+    return true
+  }
+  return false
 }
 
 /**

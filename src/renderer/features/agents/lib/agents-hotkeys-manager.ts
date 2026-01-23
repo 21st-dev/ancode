@@ -11,7 +11,46 @@ import {
   executeAgentAction,
   getAvailableAgentActions,
 } from "./agents-actions"
-import type { SettingsTab } from "../../../lib/atoms"
+import type { SettingsTab, CustomHotkeysConfig } from "../../../lib/atoms"
+import { getResolvedHotkey, type ShortcutActionId } from "../../../lib/hotkeys"
+
+// ============================================================================
+// ACTION ID MAPPING
+// ============================================================================
+
+/**
+ * Maps shortcut registry IDs to agent action IDs
+ * This allows the shortcut system to work with the existing action system
+ */
+const SHORTCUT_TO_ACTION_MAP: Record<ShortcutActionId, string> = {
+  "show-shortcuts": "open-shortcuts",
+  "open-settings": "open-settings",
+  "toggle-sidebar": "toggle-sidebar",
+  "undo-archive": "undo-archive",
+  "new-workspace": "create-new-agent",
+  "search-workspaces": "search-workspaces",
+  "archive-workspace": "archive-workspace",
+  "quick-switch-workspaces": "quick-switch-workspaces",
+  "new-agent": "create-new-agent",
+  "search-chats": "search-chats",
+  "search-in-chat": "toggle-chat-search",
+  "archive-agent": "archive-agent",
+  "quick-switch-agents": "quick-switch-agents",
+  "prev-agent": "prev-agent",
+  "next-agent": "next-agent",
+  "focus-input": "focus-input",
+  "toggle-focus": "toggle-focus",
+  "stop-generation": "stop-generation",
+  "switch-model": "switch-model",
+  "toggle-terminal": "toggle-terminal",
+  "open-diff": "open-diff",
+  "create-pr": "create-pr",
+}
+
+// Reverse mapping: action ID -> shortcut ID
+const ACTION_TO_SHORTCUT_MAP: Record<string, ShortcutActionId> = Object.fromEntries(
+  Object.entries(SHORTCUT_TO_ACTION_MAP).map(([k, v]) => [v, k as ShortcutActionId])
+) as Record<string, ShortcutActionId>
 
 // ============================================================================
 // HOTKEY MATCHING
@@ -63,8 +102,9 @@ export interface AgentsHotkeysManagerConfig {
   setSidebarOpen?: (open: boolean | ((prev: boolean) => boolean)) => void
   setSettingsDialogOpen?: (open: boolean) => void
   setSettingsActiveTab?: (tab: SettingsTab) => void
-  setShortcutsDialogOpen?: (open: boolean) => void
+  toggleChatSearch?: () => void
   selectedChatId?: string | null
+  customHotkeysConfig?: CustomHotkeysConfig
 }
 
 export interface UseAgentsHotkeysOptions {
@@ -91,7 +131,7 @@ export function useAgentsHotkeys(
       setSidebarOpen: config.setSidebarOpen,
       setSettingsDialogOpen: config.setSettingsDialogOpen,
       setSettingsActiveTab: config.setSettingsActiveTab,
-      setShortcutsDialogOpen: config.setShortcutsDialogOpen,
+      toggleChatSearch: config.toggleChatSearch,
       selectedChatId: config.selectedChatId,
     }),
     [
@@ -99,7 +139,7 @@ export function useAgentsHotkeys(
       config.setSidebarOpen,
       config.setSettingsDialogOpen,
       config.setSettingsActiveTab,
-      config.setShortcutsDialogOpen,
+      config.toggleChatSearch,
       config.selectedChatId,
     ],
   )
@@ -130,32 +170,20 @@ export function useAgentsHotkeys(
     return cleanup
   }, [enabled, handleHotkeyAction])
 
-  // Direct listener for Cmd+\ - toggle sidebar
+  // Get the resolved hotkey for a shortcut, respecting custom bindings
+  const getHotkeyForAction = useCallback(
+    (shortcutId: ShortcutActionId): string | null => {
+      const customConfig = config.customHotkeysConfig || { version: 1, bindings: {} }
+      return getResolvedHotkey(shortcutId, customConfig)
+    },
+    [config.customHotkeysConfig]
+  )
+
+  // Unified hotkey listener that respects custom configurations
   React.useEffect(() => {
     if (!enabled) return
 
-    const handleToggleSidebar = (e: KeyboardEvent) => {
-      if (
-        (e.metaKey || e.ctrlKey) &&
-        (e.key === "\\" || e.code === "Backslash") &&
-        !e.shiftKey &&
-        !e.altKey
-      ) {
-        e.preventDefault()
-        e.stopPropagation()
-        handleHotkeyAction("toggle-sidebar")
-      }
-    }
-
-    window.addEventListener("keydown", handleToggleSidebar, true)
-    return () => window.removeEventListener("keydown", handleToggleSidebar, true)
-  }, [enabled, handleHotkeyAction])
-
-  // Direct listener for ? - open shortcuts
-  React.useEffect(() => {
-    if (!enabled) return
-
-    const handleShortcuts = (e: KeyboardEvent) => {
+    const handleKeyDown = (e: KeyboardEvent) => {
       const activeElement = document.activeElement
       const isInputFocused =
         activeElement instanceof HTMLInputElement ||
@@ -163,43 +191,48 @@ export function useAgentsHotkeys(
         activeElement?.getAttribute("contenteditable") === "true" ||
         activeElement?.closest('[contenteditable="true"]')
 
-      if (
-        !isInputFocused &&
-        e.key === "?" &&
-        !e.metaKey &&
-        !e.ctrlKey &&
-        !e.altKey
-      ) {
+      // Check toggle-sidebar hotkey
+      const toggleSidebarHotkey = getHotkeyForAction("toggle-sidebar")
+      if (toggleSidebarHotkey && matchesHotkey(e, toggleSidebarHotkey)) {
         e.preventDefault()
         e.stopPropagation()
-        handleHotkeyAction("open-shortcuts")
+        handleHotkeyAction("toggle-sidebar")
+        return
       }
-    }
 
-    window.addEventListener("keydown", handleShortcuts, true)
-    return () => window.removeEventListener("keydown", handleShortcuts, true)
-  }, [enabled, handleHotkeyAction])
+      // Check show-shortcuts hotkey (only when not in input)
+      if (!isInputFocused) {
+        const showShortcutsHotkey = getHotkeyForAction("show-shortcuts")
+        if (showShortcutsHotkey && matchesHotkey(e, showShortcutsHotkey)) {
+          e.preventDefault()
+          e.stopPropagation()
+          handleHotkeyAction("open-shortcuts")
+          return
+        }
+      }
 
-  // Direct listener for Cmd+, - open settings
-  React.useEffect(() => {
-    if (!enabled) return
-
-    const handleSettings = (e: KeyboardEvent) => {
-      if (
-        (e.metaKey || e.ctrlKey) &&
-        e.code === "Comma" &&
-        !e.shiftKey &&
-        !e.altKey
-      ) {
+      // Check open-settings hotkey
+      const openSettingsHotkey = getHotkeyForAction("open-settings")
+      if (openSettingsHotkey && matchesHotkey(e, openSettingsHotkey)) {
         e.preventDefault()
         e.stopPropagation()
         handleHotkeyAction("open-settings")
+        return
+      }
+
+      // Check search-in-chat hotkey
+      const searchInChatHotkey = getHotkeyForAction("search-in-chat")
+      if (searchInChatHotkey && matchesHotkey(e, searchInChatHotkey)) {
+        e.preventDefault()
+        e.stopPropagation()
+        handleHotkeyAction("toggle-chat-search")
+        return
       }
     }
 
-    window.addEventListener("keydown", handleSettings, true)
-    return () => window.removeEventListener("keydown", handleSettings, true)
-  }, [enabled, handleHotkeyAction])
+    window.addEventListener("keydown", handleKeyDown, true)
+    return () => window.removeEventListener("keydown", handleKeyDown, true)
+  }, [enabled, handleHotkeyAction, getHotkeyForAction])
 
   // General hotkey handler for remaining actions
   const actionsWithHotkeys = useMemo(
@@ -210,7 +243,8 @@ export function useAgentsHotkeys(
           action.id !== "create-new-agent" &&
           action.id !== "toggle-sidebar" &&
           action.id !== "open-shortcuts" &&
-          action.id !== "open-settings",
+          action.id !== "open-settings" &&
+          action.id !== "toggle-chat-search",
       ),
     [],
   )

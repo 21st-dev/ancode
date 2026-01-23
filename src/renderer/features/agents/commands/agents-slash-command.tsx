@@ -1,7 +1,7 @@
 "use client"
 
 import { cn } from "../../../lib/utils"
-import { api } from "../../../lib/mock-api"
+import { trpc } from "../../../lib/trpc"
 import {
   useCallback,
   useEffect,
@@ -11,45 +11,13 @@ import {
   useState,
   memo,
 } from "react"
-import {
-  IconSpinner,
-  IconChatBubble,
-  PlanIcon,
-  AgentIcon,
-} from "../../../components/ui/icons"
-import {
-  MessageSquareCode,
-  FileText,
-  ShieldCheck,
-  Eye,
-} from "lucide-react"
+import { createPortal } from "react-dom"
+import { IconSpinner } from "../../../components/ui/icons"
 import type { SlashCommandOption, SlashTriggerPayload } from "./types"
 import {
   filterBuiltinCommands,
   BUILTIN_SLASH_COMMANDS,
 } from "./builtin-commands"
-
-// Get icon component for a slash command
-function getCommandIcon(commandName: string) {
-  switch (commandName) {
-    case "clear":
-      return IconChatBubble
-    case "plan":
-      return PlanIcon
-    case "agent":
-      return AgentIcon
-    case "review":
-      return Eye
-    case "pr-comments":
-      return MessageSquareCode
-    case "release-notes":
-      return FileText
-    case "security-review":
-      return ShieldCheck
-    default:
-      return IconChatBubble
-  }
-}
 
 interface AgentsSlashCommandProps {
   isOpen: boolean
@@ -57,8 +25,7 @@ interface AgentsSlashCommandProps {
   onSelect: (command: SlashCommandOption) => void
   searchText: string
   position: { top: number; left: number }
-  teamId?: string
-  repository?: string
+  projectPath?: string
   isPlanMode?: boolean
   disabledCommands?: string[]
 }
@@ -70,8 +37,7 @@ export const AgentsSlashCommand = memo(function AgentsSlashCommand({
   onSelect,
   searchText,
   position,
-  teamId,
-  repository,
+  projectPath,
   isPlanMode,
   disabledCommands,
 }: AgentsSlashCommandProps) {
@@ -88,27 +54,36 @@ export const AgentsSlashCommand = memo(function AgentsSlashCommand({
     return () => clearTimeout(timer)
   }, [searchText])
 
-  // Fetch repository commands
-  const { data: repoCommands = [], isLoading } =
-    api.github.getSlashCommands.useQuery(
-      {
-        teamId: teamId!,
-        repository: repository!,
-      },
-      {
-        enabled: isOpen && !!teamId && !!repository,
-        staleTime: 30_000, // Cache for 30 seconds
-        refetchOnWindowFocus: false,
-      },
-    )
+  // Fetch custom commands from filesystem
+  const { data: fileCommands = [], isLoading } = trpc.commands.list.useQuery(
+    { projectPath },
+    {
+      enabled: isOpen,
+      staleTime: 30_000, // Cache for 30 seconds
+      refetchOnWindowFocus: false,
+    },
+  )
+
+  // Transform FileCommand to SlashCommandOption
+  const customCommands: SlashCommandOption[] = useMemo(() => {
+    return fileCommands.map((cmd) => ({
+      id: `custom:${cmd.source}:${cmd.name}`,
+      name: cmd.name,
+      command: `/${cmd.name}`,
+      description: cmd.description || `Custom command from ${cmd.source}`,
+      category: "repository" as const,
+      path: cmd.path,
+      argumentHint: cmd.argumentHint,
+    }))
+  }, [fileCommands])
 
   // State for loading command content
   const [isLoadingContent, setIsLoadingContent] = useState(false)
 
   // tRPC utils for fetching command content
-  const utils = api.useUtils()
+  const trpcUtils = trpc.useUtils()
 
-  // Handle command selection - fetch content for repository commands
+  // Handle command selection - fetch content for custom commands
   const handleSelect = useCallback(
     async (option: SlashCommandOption) => {
       // For builtin commands, call onSelect directly
@@ -117,13 +92,11 @@ export const AgentsSlashCommand = memo(function AgentsSlashCommand({
         return
       }
 
-      // For repository commands, fetch the prompt content first
-      if (option.path && teamId) {
+      // For custom commands, fetch the prompt content from filesystem
+      if (option.path) {
         setIsLoadingContent(true)
         try {
-          const result = await utils.github.getSlashCommandContent.fetch({
-            teamId,
-            repository: option.repository || repository!,
+          const result = await trpcUtils.commands.getContent.fetch({
             path: option.path,
           })
 
@@ -144,7 +117,7 @@ export const AgentsSlashCommand = memo(function AgentsSlashCommand({
         onSelect(option)
       }
     },
-    [onSelect, onClose, teamId, repository, utils],
+    [onSelect, onClose, trpcUtils],
   )
 
   // Combine builtin and repository commands, filtered by search
@@ -167,20 +140,20 @@ export const AgentsSlashCommand = memo(function AgentsSlashCommand({
       )
     }
 
-    // Filter repo commands by search
-    let repoFiltered = repoCommands
+    // Filter custom commands by search
+    let customFiltered = customCommands
     if (debouncedSearchText) {
       const query = debouncedSearchText.toLowerCase()
-      repoFiltered = repoCommands.filter(
+      customFiltered = customCommands.filter(
         (cmd) =>
           cmd.name.toLowerCase().includes(query) ||
           cmd.command.toLowerCase().includes(query),
       )
     }
 
-    // Return builtin first, then repository commands
-    return [...builtinFiltered, ...repoFiltered]
-  }, [debouncedSearchText, repoCommands, isPlanMode, disabledCommands])
+    // Return custom commands first, then builtin
+    return [...customFiltered, ...builtinFiltered]
+  }, [debouncedSearchText, customCommands, isPlanMode, disabledCommands])
 
   // Track previous values for smarter selection reset
   const prevIsOpenRef = useRef(isOpen)
@@ -308,9 +281,8 @@ export const AgentsSlashCommand = memo(function AgentsSlashCommand({
   const dropdownWidth = 320
   const itemHeight = 28  // h-7 = 28px to match file mention
   const headerHeight = 24
-  const builtinCount = filterBuiltinCommands(debouncedSearchText).length
-  const repoCount = options.length - builtinCount
-  const headersCount = (builtinCount > 0 ? 1 : 0) + (repoCount > 0 ? 1 : 0)
+  // Single "Commands" header for all options
+  const headersCount = options.length > 0 ? 1 : 0
   const requestedHeight = Math.min(
     options.length * itemHeight + headersCount * headerHeight + 8,
     200,  // Match file mention maxHeight
@@ -362,102 +334,47 @@ export const AgentsSlashCommand = memo(function AgentsSlashCommand({
   )
   const transformY = placeAbove ? "translateY(-100%)" : "translateY(0)"
 
-  // Split options into builtin and repository
-  const builtinOptions = options.filter((o) => o.category === "builtin")
-  const repoOptions = options.filter((o) => o.category === "repository")
-
-  // Calculate global index for each item
-  let globalIndex = 0
-
-  return (
+  return createPortal(
     <div
       ref={dropdownRef}
-      className="fixed z-[99999] overflow-hidden rounded-[10px] border border-border bg-popover py-1 text-xs text-popover-foreground shadow-lg dark"
+      className="fixed z-[99999] overflow-y-auto rounded-[10px] border border-border bg-popover py-1 text-xs text-popover-foreground shadow-lg dark [&::-webkit-scrollbar]:hidden"
       style={{
         top: finalTop,
         left: finalLeft,
         width: `${dropdownWidth}px`,
         maxHeight: `${computedMaxHeight}px`,
-        overflowY: "auto",
         transform: transformY,
-      }}
+        scrollbarWidth: 'none',
+        msOverflowStyle: 'none',
+      } as React.CSSProperties}
     >
-      {/* Builtin commands section */}
-      {builtinOptions.length > 0 && (
+      {/* All commands in one section - custom first, then builtin */}
+      {options.length > 0 && (
         <>
           <div className="px-2.5 py-1.5 mx-1 text-xs font-medium text-muted-foreground">
             Commands
           </div>
-          {builtinOptions.map((option) => {
-            const currentIndex = globalIndex++
-            const isSelected = selectedIndex === currentIndex
-            const CommandIcon = getCommandIcon(option.name)
+          {options.map((option, index) => {
+            const isSelected = selectedIndex === index
             return (
               <div
                 key={option.id}
-                data-option-index={currentIndex}
+                data-option-index={index}
                 onMouseDown={(e) => {
                   e.preventDefault()
                   e.stopPropagation()
                   handleSelect(option)
                 }}
-                onMouseEnter={() => setSelectedIndex(currentIndex)}
+                onMouseEnter={() => setSelectedIndex(index)}
                 className={cn(
                   "group inline-flex w-[calc(100%-8px)] mx-1 items-center whitespace-nowrap outline-none",
                   "h-7 px-1.5 justify-start text-xs rounded-md",
-                  "transition-colors cursor-pointer select-none gap-1.5",
+                  "transition-colors cursor-pointer select-none",
                   isSelected
                     ? "dark:bg-neutral-800 bg-accent text-foreground"
                     : "text-muted-foreground dark:hover:bg-neutral-800 hover:bg-accent hover:text-foreground",
                 )}
               >
-                <CommandIcon className="h-3 w-3 text-muted-foreground flex-shrink-0" />
-                <span className="flex items-center gap-1 w-full min-w-0">
-                  <span className="shrink-0 whitespace-nowrap font-medium">
-                    {option.command}
-                  </span>
-                  <span
-                    className="text-muted-foreground flex-1 min-w-0 ml-2 overflow-hidden text-[10px] truncate"
-                  >
-                    {option.description}
-                  </span>
-                </span>
-              </div>
-            )
-          })}
-        </>
-      )}
-
-      {/* Repository commands section */}
-      {repoOptions.length > 0 && (
-        <>
-          <div className="px-2.5 py-1.5 mx-1 text-xs font-medium text-muted-foreground mt-1">
-            From repository
-          </div>
-          {repoOptions.map((option) => {
-            const currentIndex = globalIndex++
-            const isSelected = selectedIndex === currentIndex
-            const CommandIcon = getCommandIcon(option.name)
-            return (
-              <div
-                key={option.id}
-                data-option-index={currentIndex}
-                onMouseDown={(e) => {
-                  e.preventDefault()
-                  e.stopPropagation()
-                  handleSelect(option)
-                }}
-                onMouseEnter={() => setSelectedIndex(currentIndex)}
-                className={cn(
-                  "group inline-flex w-[calc(100%-8px)] mx-1 items-center whitespace-nowrap outline-none",
-                  "h-7 px-1.5 justify-start text-xs rounded-md",
-                  "transition-colors cursor-pointer select-none gap-1.5",
-                  isSelected
-                    ? "dark:bg-neutral-800 bg-accent text-foreground"
-                    : "text-muted-foreground dark:hover:bg-neutral-800 hover:bg-accent hover:text-foreground",
-                )}
-              >
-                <CommandIcon className="h-3 w-3 text-muted-foreground flex-shrink-0" />
                 <span className="flex items-center gap-1 w-full min-w-0">
                   <span className="shrink-0 whitespace-nowrap font-medium">
                     {option.command}
@@ -490,6 +407,7 @@ export const AgentsSlashCommand = memo(function AgentsSlashCommand({
             : "No commands available"}
         </div>
       )}
-    </div>
+    </div>,
+    document.body
   )
 })

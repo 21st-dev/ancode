@@ -10,10 +10,19 @@ import { existsSync } from "node:fs"
 import { mkdir } from "node:fs/promises"
 import { getGitRemoteInfo } from "../../git"
 import { trackProjectOpened } from "../../analytics"
+import { getLaunchDirectory } from "../../cli"
 
 const execAsync = promisify(exec)
 
 export const projectsRouter = router({
+  /**
+   * Get launch directory from CLI args (consumed once)
+   * Based on PR #16 by @caffeinum
+   */
+  getLaunchDirectory: publicProcedure.query(() => {
+    return getLaunchDirectory()
+  }),
+
   /**
    * List all projects
    */

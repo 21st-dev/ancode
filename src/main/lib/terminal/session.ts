@@ -1,4 +1,6 @@
+import fs from "node:fs"
 import os from "node:os"
+import path from "node:path"
 import * as pty from "node-pty"
 import { buildTerminalEnv, FALLBACK_SHELL, getDefaultShell } from "./env"
 import type { InternalCreateSessionParams, TerminalSession } from "./types"
@@ -16,6 +18,66 @@ function getShellArgs(shell: string): string[] {
 	return []
 }
 
+/**
+ * Validate and resolve cwd path (Windows compatibility)
+ * Falls back to home directory if path doesn't exist
+ */
+function validateAndResolveCwd(cwd: string): string {
+	if (!fs.existsSync(cwd)) {
+		const homeDir = os.homedir()
+		console.warn(`[Terminal] CWD does not exist: ${cwd}, using home directory: ${homeDir}`)
+		return homeDir
+	}
+
+	try {
+		const stat = fs.statSync(cwd)
+		if (!stat.isDirectory()) {
+			const homeDir = os.homedir()
+			console.warn(`[Terminal] CWD is not a directory: ${cwd}, using home directory: ${homeDir}`)
+			return homeDir
+		}
+	} catch {
+		const homeDir = os.homedir()
+		console.warn(`[Terminal] Error checking CWD: ${cwd}, using home directory: ${homeDir}`)
+		return homeDir
+	}
+
+	try {
+		return path.resolve(cwd)
+	} catch {
+		const homeDir = os.homedir()
+		console.warn(`[Terminal] Error resolving CWD: ${cwd}, using home directory: ${homeDir}`)
+		return homeDir
+	}
+}
+
+/**
+ * Resolve shell path for Windows
+ * Tries to find shell in common Windows locations
+ */
+function resolveShellPath(shell: string): string {
+	if (os.platform() !== "win32") return shell
+
+	// If shell already has a path, use it as-is
+	if (shell.includes("\\") || shell.includes("/")) return shell
+
+	// Try common Windows shell locations
+	const commonPaths = [
+		process.env.COMSPEC || "",
+		process.env.SystemRoot ? `${process.env.SystemRoot}\\System32\\WindowsPowerShell\\v1.0\\powershell.exe` : "",
+		process.env.SystemRoot ? `${process.env.SystemRoot}\\System32\\cmd.exe` : "",
+	].filter(Boolean)
+
+	for (const shellPath of commonPaths) {
+		if (fs.existsSync(shellPath)) {
+			return shellPath
+		}
+	}
+
+	// Return as-is, let node-pty handle PATH resolution
+	return shell
+}
+
 function spawnPty(params: {
 	shell: string
 	cols: number
@@ -25,14 +87,29 @@ function spawnPty(params: {
 }): pty.IPty {
 	const { shell, cols, rows, cwd, env } = params
 	const shellArgs = getShellArgs(shell)
+	const resolvedCwd = validateAndResolveCwd(cwd)
+	const resolvedShell = resolveShellPath(shell)
 
-	return pty.spawn(shell, shellArgs, {
-		name: "xterm-256color",
-		cols,
-		rows,
-		cwd,
-		env,
-	})
+	try {
+		return pty.spawn(resolvedShell, shellArgs, {
+			name: "xterm-256color",
+			cols,
+			rows,
+			cwd: resolvedCwd,
+			env,
+		})
+	} catch (error) {
+		console.error(`[Terminal] Failed to spawn PTY with ${resolvedShell}:`, error)
+		// Try with fallback shell
+		console.log(`[Terminal] Retrying with fallback shell: ${FALLBACK_SHELL}`)
+		return pty.spawn(FALLBACK_SHELL, [], {
+			name: "xterm-256color",
+			cols,
+			rows,
+			cwd: resolvedCwd,
+			env,
+		})
+	}
 }
 
 export async function createSession(
@@ -53,7 +130,7 @@ export async function createSession(
 	} = params
 
 	const shell = useFallbackShell ? FALLBACK_SHELL : getDefaultShell()
-	const workingDir = cwd || os.homedir()
+	const workingDir = validateAndResolveCwd(cwd || os.homedir())
 	const terminalCols = cols || DEFAULT_COLS
 	const terminalRows = rows || DEFAULT_ROWS
 

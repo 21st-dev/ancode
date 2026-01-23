@@ -92,7 +92,7 @@ interface SidebarSearchHistoryPopoverProps {
   sortedSubChats: SubChatMeta[]
   loadingSubChats: Map<string, string>
   subChatUnseenChanges: Set<string>
-  pendingQuestions: { subChatId: string } | null
+  pendingQuestionsMap: Map<string, { subChatId: string }>
   allSubChatsLength: number
   onSelect: (subChat: SubChatMeta) => void
 }
@@ -101,7 +101,7 @@ const SidebarSearchHistoryPopover = memo(function SidebarSearchHistoryPopover({
   sortedSubChats,
   loadingSubChats,
   subChatUnseenChanges,
-  pendingQuestions,
+  pendingQuestionsMap,
   allSubChatsLength,
   onSelect,
 }: SidebarSearchHistoryPopoverProps) {
@@ -112,7 +112,7 @@ const SidebarSearchHistoryPopover = memo(function SidebarSearchHistoryPopover({
     const isLoading = loadingSubChats.has(subChat.id)
     const hasUnseen = subChatUnseenChanges.has(subChat.id)
     const mode = subChat.mode || "agent"
-    const hasPendingQuestion = pendingQuestions?.subChatId === subChat.id
+    const hasPendingQuestion = pendingQuestionsMap.has(subChat.id)
 
     return (
       <div className="flex items-center gap-2 flex-1 min-w-0">
@@ -140,7 +140,7 @@ const SidebarSearchHistoryPopover = memo(function SidebarSearchHistoryPopover({
         </span>
       </div>
     )
-  }, [loadingSubChats, subChatUnseenChanges, pendingQuestions])
+  }, [loadingSubChats, subChatUnseenChanges, pendingQuestionsMap])
 
   return (
     <SearchCombobox
@@ -241,7 +241,7 @@ export function AgentsSubChatsSidebar({
   const subChatUnseenChanges = useAtomValue(agentsSubChatUnseenChangesAtom)
   const setSubChatUnseenChanges = useSetAtom(agentsSubChatUnseenChangesAtom)
   const [justCreatedIds, setJustCreatedIds] = useAtom(justCreatedIdsAtom)
-  const pendingQuestions = useAtomValue(pendingUserQuestionsAtom)
+  const pendingQuestionsMap = useAtomValue(pendingUserQuestionsAtom)
 
   // Pending plan approvals from DB - only for open sub-chats
   const { data: pendingPlanApprovalsData } = trpc.chats.getPendingPlanApprovals.useQuery(
@@ -947,7 +947,7 @@ export function AgentsSubChatsSidebar({
         sortedSubChats={sortedSubChats}
         loadingSubChats={loadingSubChats}
         subChatUnseenChanges={subChatUnseenChanges}
-        pendingQuestions={pendingQuestions}
+        pendingQuestionsMap={pendingQuestionsMap}
         allSubChatsLength={allSubChats.length}
         onSelect={handleSelectFromHistory}
       />
@@ -974,6 +974,17 @@ export function AgentsSubChatsSidebar({
       className="flex flex-col h-full bg-background border-r overflow-hidden relative"
       style={{ borderRightWidth: "0.5px" }}
     >
+      {/* Draggable area for window movement - background layer (hidden in fullscreen) */}
+      {isDesktop && !isFullscreen && (
+        <div
+          className="absolute inset-0 z-0"
+          style={{
+            // @ts-expect-error - WebKit-specific property
+            WebkitAppRegion: "drag",
+          }}
+        />
+      )}
+
       {/* Spacer for macOS traffic lights - only when agents sidebar is open */}
       {isSidebarOpen && (
         <TrafficLightSpacer isDesktop={isDesktop} isFullscreen={isFullscreen} />
@@ -993,27 +1004,13 @@ export function AgentsSubChatsSidebar({
       )}
 
       {/* Header */}
-      <div className="p-2 pb-3 flex-shrink-0">
+      <div className="p-2 pb-3 flex-shrink-0 relative z-10">
         <div className="space-y-2">
           {/* Top row - different layout based on agents sidebar state */}
           {isSidebarOpen ? (
-            <div
-              className="h-6"
-              style={{
-                // @ts-expect-error - WebKit-specific property for Electron window dragging
-                WebkitAppRegion:
-                  isDesktop && !isFullscreen ? "drag" : undefined,
-              }}
-            />
+            <div className="h-6" />
           ) : (
-            <div
-              className="flex items-center justify-between gap-1 mb-1"
-              style={{
-                // @ts-expect-error - WebKit-specific property for Electron window dragging
-                WebkitAppRegion:
-                  isDesktop && !isFullscreen ? "drag" : undefined,
-              }}
-            >
+            <div className="flex items-center justify-between gap-1 mb-1">
               {onBackToChats && (
                 <Tooltip delayDuration={500}>
                   <TooltipTrigger asChild>
@@ -1047,7 +1044,13 @@ export function AgentsSubChatsSidebar({
             </div>
           )}
           {/* Search Input */}
-          <div className="relative">
+          <div
+            className="relative"
+            style={{
+              // @ts-expect-error - WebKit-specific property
+              WebkitAppRegion: "no-drag",
+            }}
+          >
             <Input
               ref={searchInputRef}
               placeholder="Search chats..."
@@ -1096,27 +1099,40 @@ export function AgentsSubChatsSidebar({
             />
           </div>
           {/* New Chat Button */}
-          <Tooltip delayDuration={500}>
-            <TooltipTrigger asChild>
-              <Button
-                onClick={handleCreateNew}
-                variant="outline"
-                size="sm"
-                className="h-7 px-2 w-full hover:bg-foreground/10 transition-[background-color,transform] duration-150 ease-out active:scale-[0.97] text-foreground rounded-lg"
-              >
-                <span className="text-sm font-medium">New Chat</span>
-              </Button>
-            </TooltipTrigger>
+          <div
+            style={{
+              // @ts-expect-error - WebKit-specific property
+              WebkitAppRegion: "no-drag",
+            }}
+          >
+            <Tooltip delayDuration={500}>
+              <TooltipTrigger asChild>
+                <Button
+                  onClick={handleCreateNew}
+                  variant="outline"
+                  size="sm"
+                  className="h-7 px-2 w-full hover:bg-foreground/10 transition-[background-color,transform] duration-150 ease-out active:scale-[0.97] text-foreground rounded-lg"
+                >
+                  <span className="text-sm font-medium">New Chat</span>
+                </Button>
+              </TooltipTrigger>
             <TooltipContent side="right">
               Create a new chat
               <Kbd>{getShortcutKey("newTab")}</Kbd>
             </TooltipContent>
           </Tooltip>
+          </div>
         </div>
       </div>
 
       {/* Scrollable Sub-Chats List */}
-      <div className="flex-1 min-h-0 relative">
+      <div
+        className="flex-1 min-h-0 relative z-10"
+        style={{
+          // @ts-expect-error - WebKit-specific property
+          WebkitAppRegion: "no-drag",
+        }}
+      >
         {/* Loading state - centered spinner */}
         {isLoading ? (
           <div className="flex items-center justify-center h-full">
@@ -1179,7 +1195,7 @@ export function AgentsSubChatsSidebar({
                           const mode = subChat.mode || "agent"
                           const isChecked = selectedSubChatIds.has(subChat.id)
                           const draftText = getDraftText(subChat.id)
-                          const hasPendingQuestion = pendingQuestions?.subChatId === subChat.id
+                          const hasPendingQuestion = pendingQuestionsMap.has(subChat.id)
                           const hasPendingPlan = pendingPlanApprovals.has(subChat.id)
                           const fileChanges = subChatFiles.get(subChat.id) || []
                           const stats =
@@ -1230,7 +1246,7 @@ export function AgentsSubChatsSidebar({
                                     handleSubChatMouseLeave()
                                   }}
                                   className={cn(
-                                    "w-full text-left py-1.5 transition-colors duration-150 cursor-pointer group relative",
+                                    "w-full text-left py-1.5 transition-colors duration-75 cursor-pointer group relative",
                                     "outline-offset-2 focus-visible:outline focus-visible:outline-2 focus-visible:outline-ring/70",
                                     isMultiSelectMode ? "px-3" : "pl-2 pr-2",
                                     isMultiSelectMode ? "" : "rounded-md",
@@ -1452,7 +1468,7 @@ export function AgentsSubChatsSidebar({
                           const mode = subChat.mode || "agent"
                           const isChecked = selectedSubChatIds.has(subChat.id)
                           const draftText = getDraftText(subChat.id)
-                          const hasPendingQuestion = pendingQuestions?.subChatId === subChat.id
+                          const hasPendingQuestion = pendingQuestionsMap.has(subChat.id)
                           const hasPendingPlan = pendingPlanApprovals.has(subChat.id)
                           const fileChanges = subChatFiles.get(subChat.id) || []
                           const stats =
@@ -1503,7 +1519,7 @@ export function AgentsSubChatsSidebar({
                                     handleSubChatMouseLeave()
                                   }}
                                   className={cn(
-                                    "w-full text-left py-1.5 transition-colors duration-150 cursor-pointer group relative",
+                                    "w-full text-left py-1.5 transition-colors duration-75 cursor-pointer group relative",
                                     "outline-offset-2 focus-visible:outline focus-visible:outline-2 focus-visible:outline-ring/70",
                                     isMultiSelectMode ? "px-3" : "pl-2 pr-2",
                                     isMultiSelectMode ? "" : "rounded-md",
@@ -1716,7 +1732,11 @@ export function AgentsSubChatsSidebar({
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: 8 }}
             transition={{ duration: 0 }}
-            className="flex-shrink-0 p-2 bg-background space-y-2"
+            className="flex-shrink-0 p-2 bg-background space-y-2 relative z-10"
+            style={{
+              // @ts-expect-error - WebKit-specific property
+              WebkitAppRegion: "no-drag",
+            }}
           >
             <div className="flex items-center justify-between px-1">
               <span className="text-xs text-muted-foreground">

@@ -1,6 +1,6 @@
 import { z } from "zod"
 import { router, publicProcedure } from "../index"
-import { readdir, stat } from "node:fs/promises"
+import { readdir, stat, readFile } from "node:fs/promises"
 import { join, relative, basename } from "node:path"
 
 // Directories to ignore when scanning
@@ -260,5 +260,22 @@ export const filesRouter = router({
     .mutation(({ input }) => {
       fileListCache.delete(input.projectPath)
       return { success: true }
+    }),
+
+  /**
+   * Read file contents from filesystem
+   */
+  readFile: publicProcedure
+    .input(z.object({ filePath: z.string() }))
+    .query(async ({ input }) => {
+      const { filePath } = input
+
+      try {
+        const content = await readFile(filePath, "utf-8")
+        return content
+      } catch (error) {
+        console.error(`[files] Error reading file ${filePath}:`, error)
+        throw new Error(`Failed to read file: ${error instanceof Error ? error.message : "Unknown error"}`)
+      }
     }),
 })

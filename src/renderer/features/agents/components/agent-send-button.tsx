@@ -32,6 +32,8 @@ interface AgentSendButtonProps {
   ariaLabel?: string
   /** Whether this is plan mode (orange styling) */
   isPlanMode?: boolean
+  /** Whether input has content (used during streaming to show send-to-queue arrow) */
+  hasContent?: boolean
 }
 
 export function AgentSendButton({
@@ -44,24 +46,32 @@ export function AgentSendButton({
   size = "sm",
   ariaLabel,
   isPlanMode = false,
+  hasContent = false,
 }: AgentSendButtonProps) {
   // Note: Enter shortcut is now handled by input components directly
 
+  // When streaming AND user has typed content, show arrow to add to queue
+  // Otherwise during streaming, show stop button
+  const shouldShowQueueArrow = isStreaming && hasContent
+
   // Determine the actual click handler based on state
   const handleClick = () => {
-    if (isStreaming && onStop) {
+    if (isStreaming && !hasContent && onStop) {
+      // Stop only when streaming and no content to queue
       onStop()
     } else {
+      // Send (or add to queue if streaming)
       onClick()
     }
   }
 
   // Determine if button should be disabled
+  // During streaming with content, enable the button for queue
   const isDisabled = isStreaming ? false : disabled
 
   // Determine icon to show
   const getIcon = () => {
-    if (isStreaming) {
+    if (isStreaming && !hasContent) {
       return (
         <div className="w-2.5 h-2.5 bg-current rounded-[2px] flex-shrink-0 mx-auto" />
       )
@@ -74,7 +84,7 @@ export function AgentSendButton({
 
   // Determine tooltip content
   const getTooltipContent = () => {
-    if (isStreaming)
+    if (isStreaming && !hasContent)
       return (
         <span className="flex items-center gap-1">
           Stop
@@ -83,11 +93,32 @@ export function AgentSendButton({
           <Kbd className="-me-1">Ctrl C</Kbd>
         </span>
       )
+    if (isStreaming && hasContent)
+      return (
+        <span className="flex items-center gap-1">
+          Add to queue
+          <Kbd className="ms-0.5">
+            <EnterIcon className="size-2.5 inline" />
+          </Kbd>
+          <span className="text-muted-foreground/60">or</span>
+          Send now
+          <Kbd className="ms-0.5">Alt</Kbd>
+          <Kbd className="-me-1">
+            <EnterIcon className="size-2.5 inline" />
+          </Kbd>
+        </span>
+      )
     if (isSubmitting) return "Generating..."
     return (
-      <span className="flex items-center">
+      <span className="flex items-center gap-1">
         Send
-        <Kbd className="-me-1 ms-1">
+        <Kbd className="ms-0.5">
+          <EnterIcon className="size-2.5 inline" />
+        </Kbd>
+        <span className="text-muted-foreground/60">or</span>
+        Send now
+        <Kbd className="ms-0.5">Alt</Kbd>
+        <Kbd className="-me-1">
           <EnterIcon className="size-2.5 inline" />
         </Kbd>
       </span>
@@ -97,13 +128,14 @@ export function AgentSendButton({
   // Determine aria-label
   const getAriaLabel = () => {
     if (ariaLabel) return ariaLabel
-    if (isStreaming) return "Stop generation"
+    if (isStreaming && !hasContent) return "Stop generation"
+    if (isStreaming && hasContent) return "Add to queue"
     if (isSubmitting) return "Generating..."
     return "Send message"
   }
 
-  // Apply glow effect when button is active and ready to send
-  const shouldShowGlow = !isStreaming && !isSubmitting && !disabled
+  // Apply glow effect when button is active and ready to send/queue
+  const shouldShowGlow = (!isStreaming && !isSubmitting && !disabled) || shouldShowQueueArrow
 
   const glowClass = shouldShowGlow
     ? "shadow-[0_0_0_2px_white,0_0_0_4px_rgba(0,0,0,0.06)] dark:shadow-[0_0_0_2px_#1a1a1a,0_0_0_4px_rgba(255,255,255,0.08)]"

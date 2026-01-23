@@ -64,6 +64,10 @@ export const streamingMessageIdAtom = atom<string | null>(null)
 // Chat status atom
 export const chatStatusAtom = atom<string>("ready")
 
+// Rollback handler/state (optional) to avoid prop drilling
+export const rollbackHandlerAtom = atom<((msg: any) => void) | null>(null)
+export const isRollingBackAtom = atom<boolean>(false)
+
 // Current subChatId - used to isolate caches per chat
 export const currentSubChatIdAtom = atom<string>("default")
 
@@ -89,6 +93,139 @@ export const isMessageStreamingAtomFamily = atomFamily((messageId: string) =>
     const lastId = get(lastMessageIdAtom)
     // A message is streaming if it's the last message and there's active streaming
     return messageId === lastId && streamingId === messageId
+  })
+)
+
+// ============================================================================
+// TEXT PART ATOMS - For IsolatedTextPart optimization
+// ============================================================================
+// Problem: When IsolatedTextPart subscribes to messageAtomFamily, ALL text parts
+// of that message re-render when ANY part changes (even tool parts).
+//
+// Solution: Create a derived atom that extracts ONLY the specific text part.
+// This way, a text part only re-renders when ITS text changes, not when
+// other parts of the same message change.
+
+// Cache for text part content to return stable references
+const textPartCache = new Map<string, string>()
+
+export const textPartAtomFamily = atomFamily((key: string) => {
+  // Key format: "messageId:partIndex"
+  const [messageId, partIndexStr] = key.split(":")
+  const partIndex = parseInt(partIndexStr!, 10)
+
+  return atom((get) => {
+    const message = get(messageAtomFamily(messageId!))
+    const parts = message?.parts || []
+    const part = parts[partIndex]
+    const text = part?.type === "text" ? (part.text || "") : ""
+
+    // Return cached value if text hasn't changed (stable reference)
+    const cached = textPartCache.get(key)
+    if (cached === text) {
+      return cached
+    }
+
+    textPartCache.set(key, text)
+    return text
+  })
+})
+
+// ============================================================================
+// MESSAGE PARTS STRUCTURE - For AssistantMessageItem optimization
+// ============================================================================
+// Problem: AssistantMessageItem subscribes to the whole message object.
+// When ANY part changes (including text content), the whole component re-renders,
+// causing all IsolatedTextPart children to re-render.
+//
+// Solution: Create an atom that returns only the STRUCTURE of parts (types, states,
+// toolCallIds) without text content. This way AssistantMessageItem only re-renders
+// when the structure changes (new part added, tool state changed), not when text
+// content streams in.
+
+interface PartStructure {
+  type: string
+  toolCallId?: string
+  state?: string
+  // For tools we need input to determine rendering
+  inputJson?: string
+  // For tool results
+  hasOutput?: boolean
+  hasResult?: boolean
+  hasError?: boolean
+  // For text parts - whether text is non-empty (without including actual text)
+  hasText?: boolean
+}
+
+interface MessageStructure {
+  id: string
+  role: "user" | "assistant" | "system"
+  partsStructure: PartStructure[]
+  metadata?: any
+}
+
+// Cache for message structure
+const messageStructureCache = new Map<string, MessageStructure>()
+
+export const messageStructureAtomFamily = atomFamily((messageId: string) =>
+  atom((get) => {
+    const message = get(messageAtomFamily(messageId))
+    if (!message) return null
+
+    // Build structure without text content
+    const partsStructure: PartStructure[] = (message.parts || []).map((part: any) => {
+      const structure: PartStructure = {
+        type: part.type,
+      }
+      if (part.toolCallId) structure.toolCallId = part.toolCallId
+      if (part.state) structure.state = part.state
+      // For tools, include input as JSON for comparison
+      if (part.input) structure.inputJson = JSON.stringify(part.input)
+      if (part.output !== undefined) structure.hasOutput = true
+      if (part.result !== undefined) structure.hasResult = true
+      if (part.error !== undefined || part.errorText !== undefined) structure.hasError = true
+      // For text parts, track whether text is non-empty (without including actual text)
+      if (part.type === "text") structure.hasText = !!part.text?.trim()
+      return structure
+    })
+
+    const newStructure: MessageStructure = {
+      id: message.id,
+      role: message.role,
+      partsStructure,
+      metadata: message.metadata,
+    }
+
+    // Check if structure changed
+    const cached = messageStructureCache.get(messageId)
+    if (cached) {
+      // Compare structures
+      if (
+        cached.id === newStructure.id &&
+        cached.role === newStructure.role &&
+        cached.partsStructure.length === newStructure.partsStructure.length &&
+        cached.partsStructure.every((p, i) => {
+          const n = newStructure.partsStructure[i]
+          return (
+            p.type === n?.type &&
+            p.toolCallId === n?.toolCallId &&
+            p.state === n?.state &&
+            p.inputJson === n?.inputJson &&
+            p.hasOutput === n?.hasOutput &&
+            p.hasResult === n?.hasResult &&
+            p.hasError === n?.hasError &&
+            p.hasText === n?.hasText
+          )
+        }) &&
+        // Shallow compare metadata (for usage tracking)
+        cached.metadata === message.metadata
+      ) {
+        return cached
+      }
+    }
+
+    messageStructureCache.set(messageId, newStructure)
+    return newStructure
   })
 )
 
@@ -315,7 +452,8 @@ export const messageTokenDataAtom = atom((get) => {
   // Get the last message to check if its tokens changed
   const lastId = ids[ids.length - 1]
   const lastMsg = lastId ? get(messageAtomFamily(lastId)) : null
-  const lastMsgOutputTokens = (lastMsg?.metadata as any)?.usage?.outputTokens || 0
+  // Note: metadata has flat structure (metadata.outputTokens), not nested (metadata.usage.outputTokens)
+  const lastMsgOutputTokens = (lastMsg?.metadata as any)?.outputTokens || 0
 
   const cached = tokenDataCacheByChat.get(subChatId)
 
@@ -340,12 +478,15 @@ export const messageTokenDataAtom = atom((get) => {
   for (const id of ids) {
     const msg = get(messageAtomFamily(id))
     const metadata = msg?.metadata as any
-    if (metadata?.usage) {
-      inputTokens += metadata.usage.inputTokens || 0
-      outputTokens += metadata.usage.outputTokens || 0
-      cacheReadTokens += metadata.usage.cacheReadInputTokens || 0
-      cacheWriteTokens += metadata.usage.cacheCreationInputTokens || 0
-      reasoningTokens += metadata.usage.reasoningTokens || 0
+    // Note: metadata has flat structure from transform.ts (metadata.inputTokens, metadata.outputTokens)
+    // Extended fields like cacheReadInputTokens are not currently in MessageMetadata type
+    if (metadata) {
+      inputTokens += metadata.inputTokens || 0
+      outputTokens += metadata.outputTokens || 0
+      // These fields are not in current MessageMetadata but kept for future compatibility
+      cacheReadTokens += metadata.cacheReadInputTokens || 0
+      cacheWriteTokens += metadata.cacheCreationInputTokens || 0
+      reasoningTokens += metadata.reasoningTokens || 0
     }
   }
 
@@ -426,14 +567,20 @@ export const syncMessagesWithStatusAtom = atom(
   (get, set, payload: { messages: Message[]; status: string; subChatId?: string }) => {
     const { messages, status, subChatId } = payload
 
-    // Update current subChatId if provided
-    if (subChatId) {
+    // Update current subChatId if provided AND changed
+    // Avoid unnecessary set() calls - even though Jotai won't re-render for same primitive,
+    // this saves the overhead of the comparison check in subscribers
+    const prevSubChatId = get(currentSubChatIdAtom)
+    if (subChatId && subChatId !== prevSubChatId) {
       set(currentSubChatIdAtom, subChatId)
     }
-    const currentSubChatId = subChatId ?? get(currentSubChatIdAtom)
+    const currentSubChatId = subChatId ?? prevSubChatId
 
-    // Update status
-    set(chatStatusAtom, status)
+    // Update status only if changed
+    const prevStatus = get(chatStatusAtom)
+    if (status !== prevStatus) {
+      set(chatStatusAtom, status)
+    }
 
     const currentIds = get(messageIdsAtom)
     const currentRoles = get(messageRolesAtom)

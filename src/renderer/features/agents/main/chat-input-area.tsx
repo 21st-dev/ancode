@@ -1,15 +1,16 @@
 "use client"
 
-import { memo, useCallback, useRef, useState, useEffect } from "react"
+import { useAtom, useAtomValue } from "jotai"
+import { ChevronDown, Zap } from "lucide-react"
+import { memo, useCallback, useEffect, useRef, useState } from "react"
 import { createPortal } from "react-dom"
-import { useAtom, useSetAtom } from "jotai"
-import { ChevronDown } from "lucide-react"
 
 import { Button } from "../../../components/ui/button"
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "../../../components/ui/dropdown-menu"
 import {
@@ -18,6 +19,7 @@ import {
   CheckIcon,
   ClaudeCodeIcon,
   PlanIcon,
+  ThinkingIcon,
 } from "../../../components/ui/icons"
 import { Kbd } from "../../../components/ui/kbd"
 import {
@@ -25,31 +27,77 @@ import {
   PromptInputActions,
   PromptInputContextItems,
 } from "../../../components/ui/prompt-input"
+import { Switch } from "../../../components/ui/switch"
+import {
+  autoOfflineModeAtom,
+  customClaudeConfigAtom,
+  extendedThinkingEnabledAtom,
+  normalizeCustomClaudeConfig,
+  selectedOllamaModelAtom,
+  showOfflineModeFeaturesAtom
+} from "../../../lib/atoms"
+import { trpc } from "../../../lib/trpc"
 import { cn } from "../../../lib/utils"
-import { isPlanModeAtom, lastSelectedModelIdAtom } from "../atoms"
+import { isPlanModeAtom, lastSelectedModelIdAtom, type SubChatFileChange } from "../atoms"
 import { AgentsSlashCommand, COMMAND_PROMPTS, type SlashCommandOption } from "../commands"
 import { AgentSendButton } from "../components/agent-send-button"
+import type { UploadedFile, UploadedImage } from "../hooks/use-agents-file-upload"
 import {
+  clearSubChatDraft,
+  saveSubChatDraftWithAttachments,
+} from "../lib/drafts"
+import { CLAUDE_MODELS } from "../lib/models"
+import type { DiffTextContext, SelectedTextContext } from "../lib/queue-utils"
+import {
+  AgentsFileMention,
   AgentsMentionsEditor,
   type AgentsMentionsEditorHandle,
   type FileMentionOption,
 } from "../mentions"
-import { AgentsFileMention } from "../mentions"
 import { AgentContextIndicator, type MessageTokenData } from "../ui/agent-context-indicator"
+import { AgentDiffTextContextItem } from "../ui/agent-diff-text-context-item"
 import { AgentFileItem } from "../ui/agent-file-item"
 import { AgentImageItem } from "../ui/agent-image-item"
+import { AgentTextContextItem } from "../ui/agent-text-context-item"
 import { handlePasteEvent } from "../utils/paste-text"
-import {
-  saveSubChatDraft,
-  clearSubChatDraft,
-} from "../lib/drafts"
-import { type SubChatFileChange } from "../atoms"
 
-// Claude models (same as in active-chat.tsx)
-const claudeModels = [
-  { id: "sonnet", name: "Sonnet" },
-  { id: "opus", name: "Opus" },
-]
+// Hook to get available models (including offline models if Ollama is available and debug enabled)
+function useAvailableModels() {
+  const showOfflineFeatures = useAtomValue(showOfflineModeFeaturesAtom)
+  const { data: ollamaStatus } = trpc.ollama.getStatus.useQuery(undefined, {
+    refetchInterval: showOfflineFeatures ? 30000 : false,
+    enabled: showOfflineFeatures, // Only query Ollama when offline mode is enabled
+  })
+
+  const baseModels = CLAUDE_MODELS
+
+  const isOffline = ollamaStatus ? !ollamaStatus.internet.online : false
+  const hasOllama = ollamaStatus?.ollama.available && (ollamaStatus.ollama.models?.length ?? 0) > 0
+  const ollamaModels = ollamaStatus?.ollama.models || []
+  const recommendedModel = ollamaStatus?.ollama.recommendedModel
+
+  // Only show offline models if:
+  // 1. Debug flag is enabled (showOfflineFeatures)
+  // 2. Ollama is available with models
+  // 3. User is actually offline
+  if (showOfflineFeatures && hasOllama && isOffline) {
+    return {
+      models: baseModels,
+      ollamaModels,
+      recommendedModel,
+      isOffline,
+      hasOllama: true,
+    }
+  }
+
+  return {
+    models: baseModels,
+    ollamaModels: [] as string[],
+    recommendedModel: undefined as string | undefined,
+    isOffline,
+    hasOllama: false,
+  }
+}
 
 export interface ChatInputAreaProps {
   // Editor ref - passed from parent for external access
@@ -58,21 +106,26 @@ export interface ChatInputAreaProps {
   fileInputRef: React.RefObject<HTMLInputElement | null>
   // Core callbacks
   onSend: () => void
+  onForceSend: () => void // Opt+Enter: stop stream and send immediately, bypassing queue
   onStop: () => Promise<void>
-  onApprovePlan: () => void
   onCompact: () => void
   onCreateNewSubChat?: () => void
   // State from parent
   isStreaming: boolean
-  hasUnapprovedPlan: boolean
   isCompacting: boolean
   // File uploads
-  images: Array<{ id: string; filename: string; url?: string; isLoading?: boolean }>
-  files: Array<{ id: string; filename: string; url?: string; size?: number; isLoading?: boolean }>
+  images: UploadedImage[]
+  files: UploadedFile[]
   onAddAttachments: (files: File[]) => void
   onRemoveImage: (id: string) => void
   onRemoveFile: (id: string) => void
   isUploading: boolean
+  // Text context from selected assistant message text
+  textContexts: SelectedTextContext[]
+  onRemoveTextContext: (id: string) => void
+  // Diff text context from selected diff sidebar text
+  diffTextContexts?: DiffTextContext[]
+  onRemoveDiffTextContext?: (id: string) => void
   // Pre-computed token data for context indicator (avoids passing messages array)
   messageTokenData: MessageTokenData
   // Context
@@ -85,6 +138,14 @@ export interface ChatInputAreaProps {
   changedFiles: SubChatFileChange[]
   // Mobile
   isMobile?: boolean
+  // Queue - for sending from queue when input is empty
+  queueLength?: number
+  onSendFromQueue?: (itemId: string) => void
+  firstQueueItemId?: string
+  // Callback to notify parent when input has content (for custom text with questions)
+  onInputContentChange?: (hasContent: boolean) => void
+  // Callback to send message with question answer (Enter sends immediately, not to queue)
+  onSubmitWithQuestionAnswer?: () => void
 }
 
 /**
@@ -95,7 +156,6 @@ function arePropsEqual(prevProps: ChatInputAreaProps, nextProps: ChatInputAreaPr
   // Compare primitives and stable references first (fast path)
   if (
     prevProps.isStreaming !== nextProps.isStreaming ||
-    prevProps.hasUnapprovedPlan !== nextProps.hasUnapprovedPlan ||
     prevProps.isCompacting !== nextProps.isCompacting ||
     prevProps.isUploading !== nextProps.isUploading ||
     prevProps.subChatId !== nextProps.subChatId ||
@@ -120,18 +180,49 @@ function arePropsEqual(prevProps: ChatInputAreaProps, nextProps: ChatInputAreaPr
   // Compare callbacks by identity (they should be memoized in parent)
   if (
     prevProps.onSend !== nextProps.onSend ||
+    prevProps.onForceSend !== nextProps.onForceSend ||
     prevProps.onStop !== nextProps.onStop ||
-    prevProps.onApprovePlan !== nextProps.onApprovePlan ||
     prevProps.onCompact !== nextProps.onCompact ||
     prevProps.onCreateNewSubChat !== nextProps.onCreateNewSubChat ||
     prevProps.onAddAttachments !== nextProps.onAddAttachments ||
     prevProps.onRemoveImage !== nextProps.onRemoveImage ||
-    prevProps.onRemoveFile !== nextProps.onRemoveFile
+    prevProps.onRemoveFile !== nextProps.onRemoveFile ||
+    prevProps.onRemoveTextContext !== nextProps.onRemoveTextContext ||
+    prevProps.onInputContentChange !== nextProps.onInputContentChange ||
+    prevProps.onSubmitWithQuestionAnswer !== nextProps.onSubmitWithQuestionAnswer
   ) {
     return false
   }
 
+  // Compare textContexts array - by length and ids
+  if (!prevProps.textContexts || !nextProps.textContexts) {
+    return prevProps.textContexts === nextProps.textContexts
+  }
+  if (prevProps.textContexts.length !== nextProps.textContexts.length) {
+    return false
+  }
+  for (let i = 0; i < prevProps.textContexts.length; i++) {
+    if (prevProps.textContexts[i]?.id !== nextProps.textContexts[i]?.id) {
+      return false
+    }
+  }
+
+  // Compare diffTextContexts array - by length and ids
+  const prevDiff = prevProps.diffTextContexts || []
+  const nextDiff = nextProps.diffTextContexts || []
+  if (prevDiff.length !== nextDiff.length) {
+    return false
+  }
+  for (let i = 0; i < prevDiff.length; i++) {
+    if (prevDiff[i]?.id !== nextDiff[i]?.id) {
+      return false
+    }
+  }
+
   // Compare images array - by length and ids
+  if (!prevProps.images || !nextProps.images) {
+    return prevProps.images === nextProps.images
+  }
   if (prevProps.images.length !== nextProps.images.length) {
     return false
   }
@@ -142,6 +233,9 @@ function arePropsEqual(prevProps: ChatInputAreaProps, nextProps: ChatInputAreaPr
   }
 
   // Compare files array - by length and ids
+  if (!prevProps.files || !nextProps.files) {
+    return prevProps.files === nextProps.files
+  }
   if (prevProps.files.length !== nextProps.files.length) {
     return false
   }
@@ -162,6 +256,9 @@ function arePropsEqual(prevProps: ChatInputAreaProps, nextProps: ChatInputAreaPr
   }
 
   // Compare changedFiles - by length and filePaths
+  if (!prevProps.changedFiles || !nextProps.changedFiles) {
+    return prevProps.changedFiles === nextProps.changedFiles
+  }
   if (prevProps.changedFiles.length !== nextProps.changedFiles.length) {
     return false
   }
@@ -192,12 +289,11 @@ export const ChatInputArea = memo(function ChatInputArea({
   editorRef,
   fileInputRef,
   onSend,
+  onForceSend,
   onStop,
-  onApprovePlan,
   onCompact,
   onCreateNewSubChat,
   isStreaming,
-  hasUnapprovedPlan,
   isCompacting,
   images,
   files,
@@ -205,6 +301,10 @@ export const ChatInputArea = memo(function ChatInputArea({
   onRemoveImage,
   onRemoveFile,
   isUploading,
+  textContexts,
+  onRemoveTextContext,
+  diffTextContexts,
+  onRemoveDiffTextContext,
   messageTokenData,
   subChatId,
   parentChatId,
@@ -214,6 +314,11 @@ export const ChatInputArea = memo(function ChatInputArea({
   projectPath,
   changedFiles,
   isMobile = false,
+  queueLength = 0,
+  onSendFromQueue,
+  firstQueueItemId,
+  onInputContentChange,
+  onSubmitWithQuestionAnswer,
 }: ChatInputAreaProps) {
   // Local state - changes here don't re-render parent
   const [hasContent, setHasContent] = useState(false)
@@ -249,9 +354,34 @@ export const ChatInputArea = memo(function ChatInputArea({
   // Model dropdown state
   const [isModelDropdownOpen, setIsModelDropdownOpen] = useState(false)
   const [lastSelectedModelId, setLastSelectedModelId] = useAtom(lastSelectedModelIdAtom)
+  const [selectedOllamaModel, setSelectedOllamaModel] = useAtom(selectedOllamaModelAtom)
+  const availableModels = useAvailableModels()
+  const autoOfflineMode = useAtomValue(autoOfflineModeAtom)
+  const showOfflineFeatures = useAtomValue(showOfflineModeFeaturesAtom)
   const [selectedModel, setSelectedModel] = useState(
-    () => claudeModels.find((m) => m.id === lastSelectedModelId) || claudeModels[1],
+    () => availableModels.models.find((m) => m.id === lastSelectedModelId) || availableModels.models[1],
   )
+  const customClaudeConfig = useAtomValue(customClaudeConfigAtom)
+  const normalizedCustomClaudeConfig =
+    normalizeCustomClaudeConfig(customClaudeConfig)
+  const hasCustomClaudeConfig = Boolean(normalizedCustomClaudeConfig)
+
+  // Determine current Ollama model (selected or recommended)
+  const currentOllamaModel = selectedOllamaModel || availableModels.recommendedModel || availableModels.ollamaModels[0]
+
+  // Debug: log selected Ollama model
+  useEffect(() => {
+    if (availableModels.isOffline) {
+      console.log(`[Ollama UI] selectedOllamaModel atom value: ${selectedOllamaModel || "(null)"}, currentOllamaModel: ${currentOllamaModel}`)
+    }
+  }, [selectedOllamaModel, currentOllamaModel, availableModels.isOffline])
+
+  // Extended thinking (reasoning) toggle
+  const [thinkingEnabled, setThinkingEnabled] = useAtom(extendedThinkingEnabledAtom)
+
+  // Auto-switch model based on network status (only if offline features enabled)
+  // Note: When offline, we show Ollama models selector instead of Claude models
+  // The selectedOllamaModel atom is used to track which Ollama model is selected
 
   // Plan mode - global atom
   const [isPlanMode, setIsPlanMode] = useAtom(isPlanModeAtom)
@@ -269,16 +399,18 @@ export const ChatInputArea = memo(function ChatInputArea({
       if (e.metaKey && e.key === "/") {
         e.preventDefault()
         e.stopPropagation()
-        setIsModelDropdownOpen(true)
+        if (!hasCustomClaudeConfig) {
+          setIsModelDropdownOpen(true)
+        }
       }
     }
 
     window.addEventListener("keydown", handleKeyDown, true)
     return () => window.removeEventListener("keydown", handleKeyDown, true)
-  }, [])
+  }, [hasCustomClaudeConfig])
 
-  // Save draft on blur
-  const handleEditorBlur = useCallback(() => {
+  // Save draft on blur (with attachments and text contexts)
+  const handleEditorBlur = useCallback(async () => {
     setIsFocused(false)
 
     const draft = editorRef.current?.getValue() || ""
@@ -290,20 +422,48 @@ export const ChatInputArea = memo(function ChatInputArea({
 
     if (!chatId) return
 
-    if (draft.trim()) {
-      saveSubChatDraft(chatId, subChatIdValue, draft)
+    const hasContent =
+      draft.trim() ||
+      images.length > 0 ||
+      files.length > 0 ||
+      textContexts.length > 0 ||
+      (diffTextContexts?.length ?? 0) > 0
+
+    if (hasContent) {
+      await saveSubChatDraftWithAttachments(chatId, subChatIdValue, draft, {
+        images,
+        files,
+        textContexts,
+      })
     } else {
       clearSubChatDraft(chatId, subChatIdValue)
     }
-  }, [editorRef])
+  }, [editorRef, images, files, textContexts, diffTextContexts])
 
   // Content change handler
   const handleContentChange = useCallback((newHasContent: boolean) => {
     setHasContent(newHasContent)
+    onInputContentChange?.(newHasContent)
     // Sync the draft text ref for unmount save
     const draft = editorRef.current?.getValue() || ""
     currentDraftTextRef.current = draft
-  }, [editorRef])
+  }, [editorRef, onInputContentChange])
+
+  // Editor submit handler - handles Enter key with queue logic
+  // If input is empty and queue has items, stop stream and send first from queue
+  const handleEditorSubmit = useCallback(async () => {
+    const inputValue = editorRef.current?.getValue() || ""
+    const hasText = inputValue.trim().length > 0
+    const hasAttachments = images.length > 0 || files.length > 0 || textContexts.length > 0 || (diffTextContexts?.length ?? 0) > 0
+
+    if (!hasText && !hasAttachments && queueLength > 0 && onSendFromQueue && firstQueueItemId) {
+      // Input empty, queue has items - stop stream and send from queue
+      await onStop()
+      onSendFromQueue(firstQueueItemId)
+    } else {
+      onSend()
+    }
+  }, [editorRef, images, files, textContexts, diffTextContexts, queueLength, onSendFromQueue, firstQueueItemId, onStop, onSend])
 
   // Mention select handler
   const handleMentionSelect = useCallback((mention: FileMentionOption) => {
@@ -384,7 +544,8 @@ export const ChatInputArea = memo(function ChatInputArea({
           case "review":
           case "pr-comments":
           case "release-notes":
-          case "security-review": {
+          case "security-review":
+          case "commit": {
             const prompt =
               COMMAND_PROMPTS[command.name as keyof typeof COMMAND_PROMPTS]
             if (prompt) {
@@ -398,8 +559,12 @@ export const ChatInputArea = memo(function ChatInputArea({
         return
       }
 
-      // Handle repository commands - auto-send to agent
-      if (command.prompt) {
+      // Handle custom commands
+      if (command.argumentHint) {
+        // Command expects arguments - insert command and let user add args
+        editorRef.current?.setValue(`/${command.name} `)
+      } else if (command.prompt) {
+        // Command without arguments - send immediately
         editorRef.current?.setValue(command.prompt)
         setTimeout(() => onSend(), 0)
       }
@@ -462,7 +627,7 @@ export const ChatInputArea = memo(function ChatInputArea({
               maxHeight={200}
               onSubmit={onSend}
               contextItems={
-                images.length > 0 || files.length > 0 ? (
+                images.length > 0 || files.length > 0 || textContexts.length > 0 || (diffTextContexts?.length ?? 0) > 0 ? (
                   <div className="flex flex-wrap gap-[6px]">
                     {(() => {
                       // Build allImages array for gallery navigation
@@ -498,6 +663,25 @@ export const ChatInputArea = memo(function ChatInputArea({
                         onRemove={() => onRemoveFile(f.id)}
                       />
                     ))}
+                    {textContexts.map((tc) => (
+                      <AgentTextContextItem
+                        key={tc.id}
+                        text={tc.text}
+                        preview={tc.preview}
+                        onRemove={() => onRemoveTextContext(tc.id)}
+                      />
+                    ))}
+                    {diffTextContexts?.map((dtc) => (
+                      <AgentDiffTextContextItem
+                        key={dtc.id}
+                        text={dtc.text}
+                        preview={dtc.preview}
+                        filePath={dtc.filePath}
+                        lineNumber={dtc.lineNumber}
+                        lineType={dtc.lineType}
+                        onRemove={onRemoveDiffTextContext ? () => onRemoveDiffTextContext(dtc.id) : undefined}
+                      />
+                    ))}
                   </div>
                 ) : null
               }
@@ -525,9 +709,10 @@ export const ChatInputArea = memo(function ChatInputArea({
                   onSlashTrigger={handleSlashTrigger}
                   onCloseSlashTrigger={handleCloseSlashTrigger}
                   onContentChange={handleContentChange}
-                  onSubmit={onSend}
+                  onSubmit={onSubmitWithQuestionAnswer || handleEditorSubmit}
+                  onForceSubmit={onForceSend}
                   onShiftTab={() => setIsPlanMode((prev) => !prev)}
-                  placeholder="Plan, @ for context, / for commands"
+                  placeholder={isStreaming ? "Add to the queue" : "Plan, @ for context, / for commands"}
                   className={cn(
                     "bg-transparent max-h-[200px] overflow-y-auto p-1",
                     isMobile && "min-h-[56px]",
@@ -557,11 +742,11 @@ export const ChatInputArea = memo(function ChatInputArea({
                     <DropdownMenuTrigger asChild>
                       <button className="flex items-center gap-1.5 px-2 py-1 text-sm text-muted-foreground hover:text-foreground transition-colors rounded-md hover:bg-muted/50 outline-offset-2 focus-visible:outline focus-visible:outline-2 focus-visible:outline-ring/70">
                         {isPlanMode ? (
-                          <PlanIcon className="h-3.5 w-3.5" />
+                          <PlanIcon className="h-3.5 w-3.5 shrink-0" />
                         ) : (
-                          <AgentIcon className="h-3.5 w-3.5" />
+                          <AgentIcon className="h-3.5 w-3.5 shrink-0" />
                         )}
-                        <span>{isPlanMode ? "Plan" : "Agent"}</span>
+                        <span className="truncate">{isPlanMode ? "Plan" : "Agent"}</span>
                         <ChevronDown className="h-3 w-3 shrink-0 opacity-50" />
                       </button>
                     </DropdownMenuTrigger>
@@ -707,50 +892,129 @@ export const ChatInputArea = memo(function ChatInputArea({
                       )}
                   </DropdownMenu>
 
-                  {/* Model selector */}
-                  <DropdownMenu
-                    open={isModelDropdownOpen}
-                    onOpenChange={setIsModelDropdownOpen}
-                  >
-                    <DropdownMenuTrigger asChild>
-                      <button className="flex items-center gap-1.5 px-2 py-1 text-sm text-muted-foreground hover:text-foreground transition-colors rounded-md hover:bg-muted/50 outline-offset-2 focus-visible:outline focus-visible:outline-2 focus-visible:outline-ring/70">
-                        <ClaudeCodeIcon className="h-3.5 w-3.5" />
-                        <span>
-                          {selectedModel?.name}{" "}
-                          <span className="text-muted-foreground">4.5</span>
-                        </span>
-                        <ChevronDown className="h-3 w-3 shrink-0 opacity-50" />
-                      </button>
-                    </DropdownMenuTrigger>
-                    <DropdownMenuContent align="start" className="w-[150px]">
-                      {claudeModels.map((model) => {
-                        const isSelected = selectedModel?.id === model.id
-                        return (
-                          <DropdownMenuItem
-                            key={model.id}
-                            onClick={() => {
-                              setSelectedModel(model)
-                              setLastSelectedModelId(model.id)
-                            }}
-                            className="gap-2 justify-between"
-                          >
-                            <div className="flex items-center gap-1.5">
-                              <ClaudeCodeIcon className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
-                              <span>
-                                {model.name}{" "}
-                                <span className="text-muted-foreground">
-                                  4.5
+                  {/* Model selector - shows Ollama models when offline, Claude models when online */}
+                  {availableModels.isOffline && availableModels.hasOllama ? (
+                    // Offline mode: show Ollama model selector
+                    <DropdownMenu
+                      open={isModelDropdownOpen}
+                      onOpenChange={setIsModelDropdownOpen}
+                    >
+                      <DropdownMenuTrigger asChild>
+                        <button
+                          className="flex items-center gap-1.5 px-2 py-1 text-sm text-muted-foreground hover:text-foreground transition-colors rounded-md hover:bg-muted/50 outline-offset-2 focus-visible:outline focus-visible:outline-2 focus-visible:outline-ring/70 border border-border"
+                        >
+                          <Zap className="h-4 w-4 shrink-0" />
+                          <span className="truncate">{currentOllamaModel || "Select model"}</span>
+                          <ChevronDown className="h-3 w-3 shrink-0 opacity-50" />
+                        </button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="start" className="w-[240px]">
+                        {availableModels.ollamaModels.map((model) => {
+                          const isSelected = model === currentOllamaModel
+                          const isRecommended = model === availableModels.recommendedModel
+                          return (
+                            <DropdownMenuItem
+                              key={model}
+                              onClick={() => {
+                                console.log(`[Ollama UI] Setting selected model: ${model}`)
+                                setSelectedOllamaModel(model)
+                              }}
+                              className="gap-2 justify-between"
+                            >
+                              <div className="flex items-center gap-1.5">
+                                <Zap className="h-4 w-4 text-muted-foreground shrink-0" />
+                                <span>
+                                  {model}
+                                  {isRecommended && (
+                                    <span className="text-muted-foreground ml-1">(recommended)</span>
+                                  )}
                                 </span>
-                              </span>
-                            </div>
-                            {isSelected && (
-                              <CheckIcon className="h-3.5 w-3.5 shrink-0" />
+                              </div>
+                              {isSelected && (
+                                <CheckIcon className="h-3.5 w-3.5 shrink-0" />
+                              )}
+                            </DropdownMenuItem>
+                          )
+                        })}
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+                  ) : (
+                    // Online mode: show Claude model selector
+                    <DropdownMenu
+                      open={hasCustomClaudeConfig ? false : isModelDropdownOpen}
+                      onOpenChange={(open) => {
+                        if (!hasCustomClaudeConfig) {
+                          setIsModelDropdownOpen(open)
+                        }
+                      }}
+                    >
+                      <DropdownMenuTrigger asChild>
+                        <button
+                          disabled={hasCustomClaudeConfig}
+                          className={cn(
+                            "flex items-center gap-1.5 px-2 py-1 text-sm text-muted-foreground transition-colors rounded-md outline-offset-2 focus-visible:outline focus-visible:outline-2 focus-visible:outline-ring/70",
+                            hasCustomClaudeConfig
+                              ? "opacity-70 cursor-not-allowed"
+                              : "hover:text-foreground hover:bg-muted/50",
+                          )}
+                        >
+                          <ClaudeCodeIcon className="h-3.5 w-3.5 shrink-0" />
+                          <span className="truncate">
+                            {hasCustomClaudeConfig ? (
+                              "Custom Model"
+                            ) : (
+                              <>
+                                {selectedModel?.name}{" "}
+                                <span className="text-muted-foreground">4.5</span>
+                              </>
                             )}
-                          </DropdownMenuItem>
-                        )
-                      })}
-                    </DropdownMenuContent>
-                  </DropdownMenu>
+                          </span>
+                          <ChevronDown className="h-3 w-3 shrink-0 opacity-50" />
+                        </button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="start" className="w-[200px]">
+                        {availableModels.models.map((model) => {
+                          const isSelected = selectedModel?.id === model.id
+                          return (
+                            <DropdownMenuItem
+                              key={model.id}
+                              onClick={() => {
+                                setSelectedModel(model)
+                                setLastSelectedModelId(model.id)
+                              }}
+                              className="gap-2 justify-between"
+                            >
+                              <div className="flex items-center gap-1.5">
+                                <ClaudeCodeIcon className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+                                <span>
+                                  {model.name}{" "}
+                                  <span className="text-muted-foreground">4.5</span>
+                                </span>
+                              </div>
+                              {isSelected && (
+                                <CheckIcon className="h-3.5 w-3.5 shrink-0" />
+                              )}
+                            </DropdownMenuItem>
+                          )
+                        })}
+                        <DropdownMenuSeparator />
+                        <div
+                          className="flex items-center justify-between px-1.5 py-1.5 mx-1"
+                          onClick={(e) => e.stopPropagation()}
+                        >
+                          <div className="flex items-center gap-1.5">
+                            <ThinkingIcon className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+                            <span className="text-sm">Thinking</span>
+                          </div>
+                          <Switch
+                            checked={thinkingEnabled}
+                            onCheckedChange={setThinkingEnabled}
+                            className="scale-75"
+                          />
+                        </div>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+                  )}
                 </div>
 
                 <div className="flex items-center gap-0.5 ml-auto flex-shrink-0">
@@ -782,48 +1046,37 @@ export const ChatInputArea = memo(function ChatInputArea({
                     size="icon"
                     className="h-7 w-7 rounded-sm outline-offset-2 focus-visible:outline focus-visible:outline-2 focus-visible:outline-ring/70"
                     onClick={() => fileInputRef.current?.click()}
-                    disabled={
-                      isStreaming ||
-                      (images.length >= 5 && files.length >= 10)
-                    }
+                    disabled={images.length >= 5 && files.length >= 10}
                   >
                     <AttachIcon className="h-4 w-4" />
                   </Button>
 
-                  {/* Send/Stop button or Implement Plan button */}
+                  {/* Send/Stop button */}
                   <div className="ml-1">
-                    {/* Show "Implement plan" button when plan is ready and input is empty */}
-                    {hasUnapprovedPlan &&
-                    !hasContent &&
-                    images.length === 0 &&
-                    files.length === 0 &&
-                    !isStreaming ? (
-                      <Button
-                        onClick={onApprovePlan}
-                        size="sm"
-                        className="h-7 gap-1.5 rounded-lg"
-                      >
-                        Implement plan
-                        <Kbd className="text-primary-foreground/70">
-                          ⌘↵
-                        </Kbd>
-                      </Button>
-                    ) : (
-                      <AgentSendButton
-                        isStreaming={isStreaming}
-                        isSubmitting={false}
-                        disabled={
-                          (!hasContent &&
-                            images.length === 0 &&
-                            files.length === 0) ||
-                          isUploading ||
-                          isStreaming
+                    <AgentSendButton
+                      isStreaming={isStreaming}
+                      isSubmitting={false}
+                      disabled={
+                        (!hasContent &&
+                          images.length === 0 &&
+                          files.length === 0 &&
+                          textContexts.length === 0 &&
+                          (diffTextContexts?.length ?? 0) === 0 &&
+                          queueLength === 0) ||
+                        isUploading
+                      }
+                      hasContent={hasContent || images.length > 0 || files.length > 0 || textContexts.length > 0 || (diffTextContexts?.length ?? 0) > 0}
+                      onClick={() => {
+                        // If input is empty and queue has items, send first queue item
+                        if (!hasContent && images.length === 0 && files.length === 0 && queueLength > 0 && onSendFromQueue && firstQueueItemId) {
+                          onSendFromQueue(firstQueueItemId)
+                        } else {
+                          onSend()
                         }
-                        onClick={onSend}
-                        onStop={onStop}
-                        isPlanMode={isPlanMode}
-                      />
-                    )}
+                      }}
+                      onStop={onStop}
+                      isPlanMode={isPlanMode}
+                    />
                   </div>
                 </div>
               </PromptInputActions>
@@ -869,8 +1122,7 @@ export const ChatInputArea = memo(function ChatInputArea({
         onSelect={handleSlashSelect}
         searchText={slashSearchText}
         position={slashPosition}
-        teamId={teamId}
-        repository={repository}
+        projectPath={projectPath}
         isPlanMode={isPlanMode}
       />
     </div>

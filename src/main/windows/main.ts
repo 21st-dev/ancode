@@ -6,11 +6,14 @@ import {
   app,
   clipboard,
   session,
+  nativeImage,
 } from "electron"
 import { join } from "path"
+import { readFileSync, existsSync, writeFileSync, mkdirSync } from "fs"
 import { createIPCHandler } from "trpc-electron/main"
 import { createAppRouter } from "../lib/trpc/routers"
 import { getAuthManager, handleAuthCode, getBaseUrl } from "../index"
+import { registerGitWatcherIPC } from "../lib/git/watcher"
 
 // Register IPC handlers for window operations (only once)
 let ipcHandlersRegistered = false
@@ -22,17 +25,92 @@ function registerIpcHandlers(getWindow: () => BrowserWindow | null): void {
   // App info
   ipcMain.handle("app:version", () => app.getVersion())
   ipcMain.handle("app:isPackaged", () => app.isPackaged)
-  // Note: Update checking is now handled by auto-updater module (lib/auto-updater.ts)
-  ipcMain.handle("app:set-badge", (_event, count: number | null) => {
-    if (process.platform === "darwin") {
-      app.dock.setBadge(count ? String(count) : "")
+
+  // Windows: Frame preference persistence
+  ipcMain.handle("window:set-frame-preference", (_event, useNativeFrame: boolean) => {
+    try {
+      const settingsPath = join(app.getPath("userData"), "window-settings.json")
+      const settingsDir = app.getPath("userData")
+      mkdirSync(settingsDir, { recursive: true })
+      writeFileSync(settingsPath, JSON.stringify({ useNativeFrame }, null, 2))
+      return true
+    } catch (error) {
+      console.error("[Main] Failed to save frame preference:", error)
+      return false
     }
   })
+
+  // Windows: Get current window frame state
+  ipcMain.handle("window:get-frame-state", () => {
+    if (process.platform !== "win32") return false
+    try {
+      const settingsPath = join(app.getPath("userData"), "window-settings.json")
+      if (existsSync(settingsPath)) {
+        const settings = JSON.parse(readFileSync(settingsPath, "utf-8"))
+        return settings.useNativeFrame === true
+      }
+      return false // Default: frameless
+    } catch {
+      return false
+    }
+  })
+
+  // Note: Update checking is now handled by auto-updater module (lib/auto-updater.ts)
+  ipcMain.handle("app:set-badge", (_event, count: number | null) => {
+    const win = getWindow()
+    if (process.platform === "darwin") {
+      app.dock.setBadge(count ? String(count) : "")
+    } else if (process.platform === "win32" && win) {
+      // Windows: Update title with count as fallback
+      if (count !== null && count > 0) {
+        win.setTitle(`1Code (${count})`)
+      } else {
+        win.setTitle("1Code")
+        win.setOverlayIcon(null, "")
+      }
+    }
+  })
+
+  // Windows: Badge overlay icon
+  ipcMain.handle("app:set-badge-icon", (_event, imageData: string | null) => {
+    const win = getWindow()
+    if (process.platform === "win32" && win) {
+      if (imageData) {
+        const image = nativeImage.createFromDataURL(imageData)
+        win.setOverlayIcon(image, "New messages")
+      } else {
+        win.setOverlayIcon(null, "")
+      }
+    }
+  })
+
   ipcMain.handle(
     "app:show-notification",
     (_event, options: { title: string; body: string }) => {
-      const { Notification } = require("electron")
-      new Notification(options).show()
+      try {
+        const { Notification } = require("electron")
+        const iconPath = join(__dirname, "../../../build/icon.ico")
+        const icon = existsSync(iconPath) ? nativeImage.createFromPath(iconPath) : undefined
+
+        const notification = new Notification({
+          title: options.title,
+          body: options.body,
+          icon,
+          ...(process.platform === "win32" && { silent: false }),
+        })
+
+        notification.show()
+
+        notification.on("click", () => {
+          const win = getWindow()
+          if (win) {
+            if (win.isMinimized()) win.restore()
+            win.focus()
+          }
+        })
+      } catch (error) {
+        console.error("[Main] Failed to show notification:", error)
+      }
     },
   )
 
@@ -190,6 +268,9 @@ function registerIpcHandlers(getWindow: () => BrowserWindow | null): void {
       throw error
     }
   })
+
+  // Register git watcher IPC handlers
+  registerGitWatcherIPC(getWindow)
 }
 
 // Current window reference
@@ -226,11 +307,33 @@ export function getWindow(): BrowserWindow | null {
 }
 
 /**
+ * Read window frame preference from settings file (Windows only)
+ * Returns true if native frame should be used, false for frameless
+ */
+function getUseNativeFramePreference(): boolean {
+  if (process.platform !== "win32") return false
+
+  try {
+    const settingsPath = join(app.getPath("userData"), "window-settings.json")
+    if (existsSync(settingsPath)) {
+      const settings = JSON.parse(readFileSync(settingsPath, "utf-8"))
+      return settings.useNativeFrame === true
+    }
+    return false // Default: frameless (dark title bar)
+  } catch {
+    return false
+  }
+}
+
+/**
  * Create the main application window
  */
 export function createMainWindow(): BrowserWindow {
   // Register IPC handlers before creating window
   registerIpcHandlers(getWindow)
+
+  // Read Windows frame preference
+  const useNativeFrame = getUseNativeFramePreference()
 
   const window = new BrowserWindow({
     width: 1400,
@@ -246,6 +349,11 @@ export function createMainWindow(): BrowserWindow {
     titleBarStyle: process.platform === "darwin" ? "hiddenInset" : "default",
     trafficLightPosition:
       process.platform === "darwin" ? { x: 15, y: 12 } : undefined,
+    // Windows: Use native frame or frameless based on user preference
+    ...(process.platform === "win32" && {
+      frame: useNativeFrame,
+      autoHideMenuBar: true,
+    }),
     webPreferences: {
       preload: join(__dirname, "../preload/index.js"),
       nodeIntegration: false,
