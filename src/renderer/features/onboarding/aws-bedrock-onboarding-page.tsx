@@ -31,10 +31,16 @@ export function AwsBedrockOnboardingPage() {
   const [deviceCode, setDeviceCode] = useState("")
   const [userCode, setUserCode] = useState("")
   const [verificationUrl, setVerificationUrl] = useState("")
+  const [isAuthenticated, setIsAuthenticated] = useState(false)
 
   // Check AWS connection status
-  const { data: awsStatus } = trpc.awsSso.getStatus.useQuery(undefined, {
-    refetchInterval: 2000,
+  const { data: awsStatus, refetch: refetchStatus } = trpc.awsSso.getStatus.useQuery(undefined, {
+    refetchInterval: isAuthenticated ? 2000 : false, // Poll after auth
+  })
+
+  // Fetch accounts after authentication
+  const { data: accounts } = trpc.awsSso.listAccounts.useQuery(undefined, {
+    enabled: isAuthenticated,
   })
 
   // Mutations
@@ -64,7 +70,13 @@ export function AwsBedrockOnboardingPage() {
         if (result.status === "success") {
           clearInterval(interval)
           setShowDeviceCode(false)
+          setIsAuthenticated(true)
           toast.success("Successfully authenticated with AWS!")
+
+          // Complete onboarding - user can configure account/role in Settings
+          setTimeout(() => {
+            setAwsBedrockOnboardingCompleted(true)
+          }, 1000)
         } else if (result.status === "expired" || result.status === "denied") {
           clearInterval(interval)
           setShowDeviceCode(false)
