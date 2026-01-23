@@ -1,5 +1,5 @@
-import http from "http"
-import crypto from "crypto"
+import * as http from "http"
+import * as crypto from "crypto"
 
 export interface OAuthCallbackResult {
   code: string
