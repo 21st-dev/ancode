@@ -6,6 +6,8 @@ import { app } from "electron"
 import { stripVTControlCharacters } from "node:util"
 import { getDevyardConfig } from "../devyard-config"
 import { eq } from "drizzle-orm"
+import { getDatabase, claudeCodeSettings } from "../db"
+import { decrypt } from "../aws/sso-service"
 
 // Cache the shell environment
 let cachedShellEnv: Record<string, string> | null = null
@@ -39,10 +41,6 @@ export interface AwsCredentials {
  */
 export function getAwsCredentials(): AwsCredentials | null {
   try {
-    // Lazy import to avoid circular dependencies
-    const { getDatabase, claudeCodeSettings } = require("../../db")
-    const { decrypt } = require("../../aws/sso-service")
-
     const db = getDatabase()
     const settings = db
       .select()
