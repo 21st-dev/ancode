@@ -547,6 +547,9 @@ export const pendingPlanApprovalsAtom = atom<Set<string>>(new Set())
 // Map<toolUseId, result>
 export const askUserQuestionResultsAtom = atom<Map<string, unknown>>(new Map())
 
+// Create-agent form visibility - set to true when /create-agent command is triggered
+export const showCreateAgentFormAtom = atom<boolean>(false)
+
 // Unified undo stack for workspace and sub-chat archivation
 // Supports Cmd+Z to restore the last archived item (workspace or sub-chat)
 export type UndoItem =

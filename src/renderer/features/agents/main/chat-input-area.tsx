@@ -2,7 +2,7 @@
 
 import { memo, useCallback, useRef, useState, useEffect } from "react"
 import { createPortal } from "react-dom"
-import { useAtom, useAtomValue } from "jotai"
+import { useAtom, useAtomValue, useSetAtom } from "jotai"
 import { ChevronDown, WifiOff } from "lucide-react"
 
 import { Button } from "../../../components/ui/button"
@@ -28,7 +28,7 @@ import {
   PromptInputContextItems,
 } from "../../../components/ui/prompt-input"
 import { cn } from "../../../lib/utils"
-import { isPlanModeAtom, lastSelectedModelIdAtom } from "../atoms"
+import { isPlanModeAtom, lastSelectedModelIdAtom, showCreateAgentFormAtom } from "../atoms"
 import { AgentsSlashCommand, COMMAND_PROMPTS, type SlashCommandOption } from "../commands"
 import { AgentSendButton } from "../components/agent-send-button"
 import {
@@ -346,6 +346,9 @@ export const ChatInputArea = memo(function ChatInputArea({
   const [slashSearchText, setSlashSearchText] = useState("")
   const [slashPosition, setSlashPosition] = useState({ top: 0, left: 0 })
 
+  // Create-agent form trigger
+  const setShowCreateAgentForm = useSetAtom(showCreateAgentFormAtom)
+
   // Mode dropdown state
   const [modeDropdownOpen, setModeDropdownOpen] = useState(false)
   const [modeTooltip, setModeTooltip] = useState<{
@@ -554,6 +557,10 @@ export const ChatInputArea = memo(function ChatInputArea({
             // Trigger context compaction
             onCompact()
             break
+          case "create-agent":
+            // Show the create-agent form
+            setShowCreateAgentForm(true)
+            break
           // Prompt-based commands - auto-send to agent
           case "review":
           case "pr-comments":
@@ -579,7 +586,7 @@ export const ChatInputArea = memo(function ChatInputArea({
         setTimeout(() => onSend(), 0)
       }
     },
-    [isPlanMode, setIsPlanMode, onSend, onCreateNewSubChat, onCompact, editorRef],
+    [isPlanMode, setIsPlanMode, onSend, onCreateNewSubChat, onCompact, editorRef, setShowCreateAgentForm],
   )
 
   // Paste handler for images and plain text

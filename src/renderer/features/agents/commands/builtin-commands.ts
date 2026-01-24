@@ -84,6 +84,13 @@ export const BUILTIN_SLASH_COMMANDS: SlashCommandOption[] = [
     description: "Compact conversation context to reduce token usage",
     category: "builtin",
   },
+  {
+    id: "builtin:create-agent",
+    name: "create-agent",
+    command: "/create-agent",
+    description: "Create a custom Claude Code agent",
+    category: "builtin",
+  },
   // Prompt-based commands
   {
     id: "builtin:review",

@@ -693,10 +693,13 @@ export const AgentsFileMention = memo(function AgentsFileMention({
   })
 
   // Fetch custom agents from filesystem (cached for 5 minutes)
-  const { data: customAgents = [], isFetching: isFetchingAgents } = trpc.agents.listEnabled.useQuery(undefined, {
-    enabled: isOpen,
-    staleTime: 5 * 60 * 1000, // 5 minutes - agents don't change frequently
-  })
+  const { data: customAgents = [], isFetching: isFetchingAgents } = trpc.agents.listEnabled.useQuery(
+    projectPath ? { cwd: projectPath } : undefined,
+    {
+      enabled: isOpen,
+      staleTime: 5 * 60 * 1000, // 5 minutes - agents don't change frequently
+    }
+  )
 
   // Debounce search text (300ms to match canvas implementation)
   useEffect(() => {

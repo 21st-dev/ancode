@@ -104,6 +104,7 @@ import {
   pendingPrMessageAtom,
   pendingReviewMessageAtom,
   pendingUserQuestionsAtom,
+  showCreateAgentFormAtom,
   QUESTIONS_SKIPPED_MESSAGE,
   selectedAgentChatIdAtom,
   selectedCommitAtom,
@@ -164,6 +165,7 @@ import { AgentToolCall } from "../ui/agent-tool-call"
 import { AgentToolRegistry } from "../ui/agent-tool-registry"
 import { AgentUserMessageBubble } from "../ui/agent-user-message-bubble"
 import { AgentUserQuestion, type AgentUserQuestionHandle } from "../ui/agent-user-question"
+import { CreateAgentForm, type CreateAgentFormData } from "../ui/create-agent-form"
 import { AgentsHeaderControls } from "../ui/agents-header-controls"
 import { ChatTitleEditor } from "../ui/chat-title-editor"
 import { MobileChatHeader } from "../ui/mobile-chat-header"
@@ -2372,6 +2374,13 @@ const ChatViewInner = memo(function ChatViewInner({
     pendingUserQuestionsAtom,
   )
 
+  // Create-agent form visibility
+  const [showCreateAgentForm, setShowCreateAgentForm] = useAtom(showCreateAgentFormAtom)
+
+  const handleCreateAgentCancel = useCallback(() => {
+    setShowCreateAgentForm(false)
+  }, [setShowCreateAgentForm])
+
   // Track whether chat input has content (for custom text with questions)
   const [inputHasContent, setInputHasContent] = useState(false)
 
@@ -3262,6 +3271,48 @@ const ChatViewInner = memo(function ChatViewInner({
     addToQueue,
   ])
 
+  // Handle create-agent form submission - constructs prompt and sends
+  const handleCreateAgentSubmit = useCallback(
+    (data: CreateAgentFormData) => {
+      setShowCreateAgentForm(false)
+
+      const toolsList = data.tools.length === 12
+        ? "all tools (inherit from parent)"
+        : data.tools.join(", ")
+
+      const modelStr = data.model === "inherit" ? "inherit (same as parent)" : data.model
+
+      const prompt = `Create a Claude Code custom agent with the following configuration:
+
+- **Name**: ${data.name}
+- **Scope**: ${data.scope === "project" ? "Project-level (save to .claude/agents/)" : "User-level (save to ~/.claude/agents/)"}
+- **Tools**: ${toolsList}
+- **Model**: ${modelStr}
+
+**Description of what the agent should do:**
+${data.description}
+
+Please create the agent markdown file with proper YAML frontmatter (name, description, tools, model) and a detailed system prompt based on the description above. Write the file to the correct location:
+${data.scope === "project" ? "`.claude/agents/" + data.name + ".md`" : "`~/.claude/agents/" + data.name + ".md`"}
+
+The file format should be:
+\`\`\`markdown
+---
+name: <agent-name>
+description: <when Claude should delegate to this agent>
+tools: <comma-separated tool list>
+model: <model>
+---
+
+<system prompt content here>
+\`\`\``
+
+      editorRef.current?.setValue(prompt)
+      setTimeout(() => handleSend(), 0)
+    },
+    [setShowCreateAgentForm, editorRef, handleSend],
+  )
+
   // Queue handlers for sending queued messages
   const handleSendFromQueue = useCallback(async (itemId: string) => {
     const item = popItemFromQueue(subChatId, itemId)
@@ -3735,8 +3786,21 @@ const ChatViewInner = memo(function ChatViewInner({
         </div>
       )}
 
+      {/* Create-agent form - shows in same position as AgentUserQuestion */}
+      {showCreateAgentForm && !(pendingQuestions?.subChatId === subChatId) && (
+        <div className="px-4 relative z-20">
+          <div className="w-full px-2 max-w-2xl mx-auto">
+            <CreateAgentForm
+              onSubmit={handleCreateAgentSubmit}
+              onCancel={handleCreateAgentCancel}
+              hasProjectPath={!!projectPath}
+            />
+          </div>
+        </div>
+      )}
+
       {/* Stacked cards container - queue + status */}
-      {!(pendingQuestions?.subChatId === subChatId) &&
+      {!(pendingQuestions?.subChatId === subChatId) && !showCreateAgentForm &&
         (queue.length > 0 || changedFilesForSubChat.length > 0) && (
           <div className="px-2 -mb-6 relative z-10">
             <div className="w-full max-w-2xl mx-auto px-2">
