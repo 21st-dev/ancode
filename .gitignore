@@ -30,3 +30,6 @@ electron.vite.config.*.mjs
 
 # Claude binary (downloaded at build time)
 resources/bin/
+
+# Claude Code local config
+.claude/
