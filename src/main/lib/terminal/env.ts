@@ -1,10 +1,13 @@
-import { execFile } from "node:child_process"
-import { promisify } from "node:util"
 import os from "node:os"
+import {
+  platform,
+  getDefaultShell as platformGetDefaultShell,
+  detectShell as platformDetectShell,
+  detectLocale as platformDetectLocale,
+} from "../platform"
 
-const execFileAsync = promisify(execFile)
-
-export const FALLBACK_SHELL = os.platform() === "win32" ? "cmd.exe" : "/bin/sh"
+export const FALLBACK_SHELL =
+  platform.platform === "win32" ? "cmd.exe" : "/bin/sh"
 export const SHELL_CRASH_THRESHOLD_MS = 1000
 
 // Global cache for shell detection (computed once per process lifetime)
@@ -20,14 +23,8 @@ let localeDetectionPromise: Promise<string> | null = null
  * For hot paths - returns cached value or fast fallback
  */
 export function getDefaultShell(): string {
-  const platform = os.platform()
-
-  if (platform === "win32") {
-    return process.env.COMSPEC || "powershell.exe"
-  }
-
   // Use SHELL env var (most reliable on Unix)
-  if (process.env.SHELL) {
+  if (platform.platform !== "win32" && process.env.SHELL) {
     return process.env.SHELL
   }
 
@@ -44,34 +41,15 @@ export function getDefaultShell(): string {
     })
   }
 
-  // Return fast fallback - detection will update cache for next call
-  return "/bin/zsh"
+  // Return platform default as fast fallback
+  return platformGetDefaultShell()
 }
 
 /**
  * Async shell detection (used to populate cache)
  */
 async function detectShellAsync(): Promise<string> {
-  try {
-    const uid = process.getuid?.()
-    if (uid !== undefined) {
-      const { stdout: passwd } = await execFileAsync(
-        "sh",
-        ["-c", `getent passwd ${uid} 2>/dev/null || dscl . -read /Users/$(whoami) UserShell 2>/dev/null`],
-        { timeout: 1000 },
-      )
-      // getent format: user:x:uid:gid:name:home:shell
-      // dscl format: UserShell: /bin/zsh
-      const match = passwd.match(/UserShell:\s*(.+)/) || passwd.match(/:([^:]+)$/)
-      if (match?.[1]) {
-        return match[1].trim()
-      }
-    }
-  } catch {
-    // Ignore
-  }
-
-  return "/bin/zsh"
+  return platformDetectShell()
 }
 
 /**
@@ -108,21 +86,7 @@ export function getLocale(baseEnv: Record<string, string>): string {
  * Async locale detection (used to populate cache)
  */
 async function detectLocaleAsync(): Promise<string> {
-  try {
-    const { stdout: result } = await execFileAsync(
-      "sh",
-      ["-c", "locale 2>/dev/null | grep LANG= | cut -d= -f2"],
-      { timeout: 1000 },
-    )
-    const trimmed = result.trim()
-    if (trimmed?.includes("UTF-8")) {
-      return trimmed
-    }
-  } catch {
-    // Ignore - will use fallback
-  }
-
-  return "en_US.UTF-8"
+  return platformDetectLocale()
 }
 
 /**
@@ -348,8 +312,8 @@ export function buildSafeEnv(
   env: Record<string, string>,
   options?: { platform?: NodeJS.Platform }
 ): Record<string, string> {
-  const platform = options?.platform ?? os.platform()
-  const isWindows = platform === "win32"
+  const currentPlatform = options?.platform ?? os.platform()
+  const isWindows = currentPlatform === "win32"
   const safe: Record<string, string> = {}
 
   for (const [key, value] of Object.entries(env)) {

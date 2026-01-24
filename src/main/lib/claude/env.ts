@@ -4,6 +4,13 @@ import path from "node:path"
 import os from "node:os"
 import { app } from "electron"
 import { stripVTControlCharacters } from "node:util"
+import {
+  platform,
+  buildExtendedPath,
+  getDefaultShell,
+  isWindows,
+  isMacOS,
+} from "../platform"
 
 // Cache the shell environment
 let cachedShellEnv: Record<string, string> | null = null
@@ -37,14 +44,14 @@ export function getBundledClaudeBinaryPath(): string {
   }
 
   const isDev = !app.isPackaged
-  const platform = process.platform
+  const currentPlatform = process.platform
   const arch = process.arch
 
   // Only log verbose info on first call
   if (process.env.DEBUG_CLAUDE_BINARY) {
     console.log("[claude-binary] ========== BUNDLED BINARY PATH ==========")
     console.log("[claude-binary] isDev:", isDev)
-    console.log("[claude-binary] platform:", platform)
+    console.log("[claude-binary] platform:", currentPlatform)
     console.log("[claude-binary] arch:", arch)
     console.log("[claude-binary] appPath:", app.getAppPath())
   }
@@ -52,14 +59,18 @@ export function getBundledClaudeBinaryPath(): string {
   // In dev: apps/desktop/resources/bin/{platform}-{arch}/claude
   // In production: {resourcesPath}/bin/claude
   const resourcesPath = isDev
-    ? path.join(app.getAppPath(), "resources/bin", `${platform}-${arch}`)
+    ? path.join(
+        app.getAppPath(),
+        "resources/bin",
+        `${currentPlatform}-${arch}`
+      )
     : path.join(process.resourcesPath, "bin")
 
   if (process.env.DEBUG_CLAUDE_BINARY) {
     console.log("[claude-binary] resourcesPath:", resourcesPath)
   }
 
-  const binaryName = platform === "win32" ? "claude.exe" : "claude"
+  const binaryName = currentPlatform === "win32" ? "claude.exe" : "claude"
   const binaryPath = path.join(resourcesPath, binaryName)
 
   if (process.env.DEBUG_CLAUDE_BINARY) {
@@ -71,8 +82,13 @@ export function getBundledClaudeBinaryPath(): string {
 
   // Always log if binary doesn't exist (critical error)
   if (!exists) {
-    console.error("[claude-binary] WARNING: Binary not found at path:", binaryPath)
-    console.error("[claude-binary] Run 'bun run claude:download' to download it")
+    console.error(
+      "[claude-binary] WARNING: Binary not found at path:",
+      binaryPath
+    )
+    console.error(
+      "[claude-binary] Run 'bun run claude:download' to download it"
+    )
   } else if (process.env.DEBUG_CLAUDE_BINARY) {
     const stats = fs.statSync(binaryPath)
     const sizeMB = (stats.size / 1024 / 1024).toFixed(1)
@@ -112,8 +128,21 @@ function parseEnvOutput(output: string): Record<string, string> {
 }
 
 /**
- * Load full shell environment using interactive login shell.
- * This captures PATH, HOME, and all shell profile configurations.
+ * Strip sensitive keys from environment
+ */
+function stripSensitiveKeys(env: Record<string, string>): void {
+  for (const key of STRIPPED_ENV_KEYS) {
+    if (key in env) {
+      console.log(`[claude-env] Stripped ${key} from shell environment`)
+      delete env[key]
+    }
+  }
+}
+
+/**
+ * Load full shell environment.
+ * - Windows: Derives PATH from process.env + common install locations (no shell spawn)
+ * - macOS/Linux: Spawns interactive login shell to capture PATH from shell profiles
  * Results are cached for the lifetime of the process.
  */
 export function getClaudeShellEnvironment(): Record<string, string> {
@@ -121,7 +150,27 @@ export function getClaudeShellEnvironment(): Record<string, string> {
     return { ...cachedShellEnv }
   }
 
-  const shell = process.env.SHELL || "/bin/zsh"
+  // Windows: use platform provider to build environment
+  if (isWindows()) {
+    console.log(
+      "[claude-env] Windows detected, deriving PATH without shell invocation"
+    )
+
+    // Use platform provider to build environment
+    const env = platform.buildEnvironment()
+
+    // Strip sensitive keys
+    stripSensitiveKeys(env)
+
+    console.log(
+      `[claude-env] Built Windows environment with ${Object.keys(env).length} vars`
+    )
+    cachedShellEnv = env
+    return { ...env }
+  }
+
+  // macOS/Linux: spawn interactive login shell to get full environment
+  const shell = getDefaultShell()
   const command = `echo -n "${DELIMITER}"; env; echo -n "${DELIMITER}"; exit`
 
   try {
@@ -139,46 +188,23 @@ export function getClaudeShellEnvironment(): Record<string, string> {
     })
 
     const env = parseEnvOutput(output)
-
-    // Strip keys that could interfere with Claude's auth resolution
-    for (const key of STRIPPED_ENV_KEYS) {
-      if (key in env) {
-        console.log(`[claude-env] Stripped ${key} from shell environment`)
-        delete env[key]
-      }
-    }
+    stripSensitiveKeys(env)
 
     console.log(
-      `[claude-env] Loaded ${Object.keys(env).length} environment variables from shell`,
+      `[claude-env] Loaded ${Object.keys(env).length} environment variables from shell`
     )
     cachedShellEnv = env
     return { ...env }
   } catch (error) {
     console.error("[claude-env] Failed to load shell environment:", error)
 
-    // Fallback: return minimal required env
-    const home = os.homedir()
-    const fallbackPath = [
-      `${home}/.local/bin`,
-      "/opt/homebrew/bin",
-      "/usr/local/bin",
-      "/usr/bin",
-      "/bin",
-      "/usr/sbin",
-      "/sbin",
-    ].join(":")
+    // Fallback: use platform provider
+    const env = platform.buildEnvironment()
+    stripSensitiveKeys(env)
 
-    const fallback: Record<string, string> = {
-      HOME: home,
-      USER: os.userInfo().username,
-      PATH: fallbackPath,
-      SHELL: process.env.SHELL || "/bin/zsh",
-      TERM: "xterm-256color",
-    }
-
-    console.log("[claude-env] Using fallback environment")
-    cachedShellEnv = fallback
-    return { ...fallback }
+    console.log("[claude-env] Using fallback environment from platform provider")
+    cachedShellEnv = env
+    return { ...env }
   }
 }
 
@@ -212,11 +238,17 @@ export function buildClaudeEnv(options?: {
     env.PATH = shellPath
   }
 
-  // 3. Ensure critical vars are present
-  if (!env.HOME) env.HOME = os.homedir()
-  if (!env.USER) env.USER = os.userInfo().username
-  if (!env.SHELL) env.SHELL = "/bin/zsh"
+  // 3. Ensure critical vars are present using platform provider
+  const platformEnv = platform.buildEnvironment()
+  if (!env.HOME) env.HOME = platformEnv.HOME
+  if (!env.USER) env.USER = platformEnv.USER
   if (!env.TERM) env.TERM = "xterm-256color"
+  if (!env.SHELL) env.SHELL = getDefaultShell()
+
+  // Windows-specific: ensure USERPROFILE is set
+  if (isWindows() && !env.USERPROFILE) {
+    env.USERPROFILE = os.homedir()
+  }
 
   // 4. Add custom overrides
   if (options?.ghToken) {
@@ -250,17 +282,17 @@ export function clearClaudeEnvCache(): void {
  */
 export function logClaudeEnv(
   env: Record<string, string>,
-  prefix: string = "",
+  prefix: string = ""
 ): void {
   console.log(`${prefix}[claude-env] HOME: ${env.HOME}`)
   console.log(`${prefix}[claude-env] USER: ${env.USER}`)
   console.log(
-    `${prefix}[claude-env] PATH includes homebrew: ${env.PATH?.includes("/opt/homebrew")}`,
+    `${prefix}[claude-env] PATH includes homebrew: ${env.PATH?.includes("/opt/homebrew")}`
   )
   console.log(
-    `${prefix}[claude-env] PATH includes /usr/local/bin: ${env.PATH?.includes("/usr/local/bin")}`,
+    `${prefix}[claude-env] PATH includes /usr/local/bin: ${env.PATH?.includes("/usr/local/bin")}`
   )
   console.log(
-    `${prefix}[claude-env] ANTHROPIC_AUTH_TOKEN: ${env.ANTHROPIC_AUTH_TOKEN ? "set" : "not set"}`,
+    `${prefix}[claude-env] ANTHROPIC_AUTH_TOKEN: ${env.ANTHROPIC_AUTH_TOKEN ? "set" : "not set"}`
   )
 }

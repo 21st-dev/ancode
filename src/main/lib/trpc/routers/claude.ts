@@ -1915,7 +1915,7 @@ ${prompt}
       if (config.projects) {
         for (const [projectPath, projectConfig] of Object.entries(config.projects)) {
           if (projectConfig.mcpServers && Object.keys(projectConfig.mcpServers).length > 0) {
-            const groupName = projectPath.split('/').pop() || projectPath
+            const groupName = path.basename(projectPath) || projectPath
             // Ensure tokens are fresh before fetching tools
             const freshServers = await ensureMcpTokensFresh(projectConfig.mcpServers, projectPath)
             groups.push({
