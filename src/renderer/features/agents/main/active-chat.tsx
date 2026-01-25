@@ -4379,6 +4379,8 @@ export function ChatView({
     previewClosedByDetails: boolean
     // What closed Preview (non-Details sidebars)
     previewClosedBy: "terminal" | "diff" | "plan" | null
+    // What closed Diff (non-Details sidebars)
+    diffClosedBy: "preview" | null
   }>({
     detailsClosedBy: null,
     planClosedByDetails: false,
@@ -4386,6 +4388,7 @@ export function ChatView({
     diffClosedByDetails: false,
     previewClosedByDetails: false,
     previewClosedBy: null,
+    diffClosedBy: null,
   })
 
   // Track previous states to detect opens/closes
@@ -4575,16 +4578,18 @@ export function ChatView({
     }
   }, [diffDisplayMode])
 
-  // Handle Diff + Details sidebar conflict (side-peek mode only)
+  // Handle Diff + Details/Preview sidebar conflict (side-peek mode only)
   // - If Diff opens in side-peek while Details is open: switch Diff to center-peek (dialog) mode
   // - If user manually switches Diff to side-peek while Details is open: close Details and remember
   // - If Details opens while Diff is in side-peek mode: close Diff and remember
-  const prevDiffStateRef = useRef<{ isOpen: boolean; mode: string; detailsOpen: boolean }>({
+  // - If Preview opens while Diff is in side-peek mode: close Diff and remember
+  const prevDiffStateRef = useRef<{ isOpen: boolean; mode: string; detailsOpen: boolean; previewOpen: boolean }>({
     isOpen: isDiffSidebarOpen,
     mode: diffDisplayMode,
     detailsOpen: isDetailsSidebarOpen,
+    previewOpen: isNewPreviewSidebarOpen,
   })
-  // Flag to skip center-peek switch when restoring Diff after Details closes
+  // Flag to skip center-peek switch when restoring Diff after Details/Preview closes
   const isRestoringDiffRef = useRef(false)
   useEffect(() => {
     const prev = prevDiffStateRef.current
@@ -4593,6 +4598,8 @@ export function ChatView({
     const wasSidePeek = prev.isOpen && prev.mode === "side-peek"
     const detailsJustOpened = isDetailsSidebarOpen && !prev.detailsOpen
     const detailsJustClosed = !isDetailsSidebarOpen && prev.detailsOpen
+    const previewJustOpened = isNewPreviewSidebarOpen && !prev.previewOpen
+    const previewJustClosed = !isNewPreviewSidebarOpen && prev.previewOpen
     const diffSidePeekJustClosed = wasSidePeek && !isNowSidePeek
 
     if (isNowSidePeek && isDetailsSidebarOpen) {
@@ -4612,6 +4619,11 @@ export function ChatView({
         setIsDetailsSidebarOpen(false)
       }
     }
+    // Preview just opened while Diff is in side-peek → close Diff and remember
+    else if (previewJustOpened && isNowSidePeek) {
+      auto.diffClosedBy = "preview"
+      setIsDiffSidebarOpen(false)
+    }
     // Diff just opened in side-peek mode → close Preview sidebar
     else if (isNowSidePeek && !wasSidePeek && isNewPreviewSidebarOpen) {
       auto.previewClosedBy = "diff"
@@ -4628,6 +4640,15 @@ export function ChatView({
         setIsNewPreviewSidebarOpen(true)
       }
     }
+    // Preview closed → restore Diff if we closed it (in side-peek mode)
+    else if (previewJustClosed && auto.diffClosedBy === "preview") {
+      auto.diffClosedBy = null
+      isRestoringDiffRef.current = true
+      setIsDiffSidebarOpen(true)
+      requestAnimationFrame(() => {
+        isRestoringDiffRef.current = false
+      })
+    }
     // Details closed → restore Diff if we closed it (in side-peek mode, not switching to dialog)
     else if (detailsJustClosed && auto.diffClosedByDetails) {
       auto.diffClosedByDetails = false
@@ -4639,7 +4660,7 @@ export function ChatView({
       })
     }
 
-    prevDiffStateRef.current = { isOpen: isDiffSidebarOpen, mode: diffDisplayMode, detailsOpen: isDetailsSidebarOpen }
+    prevDiffStateRef.current = { isOpen: isDiffSidebarOpen, mode: diffDisplayMode, detailsOpen: isDetailsSidebarOpen, previewOpen: isNewPreviewSidebarOpen }
   }, [isDiffSidebarOpen, diffDisplayMode, isDetailsSidebarOpen, isNewPreviewSidebarOpen, setDiffDisplayMode, setIsDetailsSidebarOpen, setIsDiffSidebarOpen, setIsNewPreviewSidebarOpen])
 
   // Hide traffic lights when full-page diff is open (they would overlap with content)
