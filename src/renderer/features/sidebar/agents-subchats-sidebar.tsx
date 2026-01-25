@@ -967,16 +967,18 @@ export function AgentsSubChatsSidebar({
       />
       <Tooltip delayDuration={500}>
         <TooltipTrigger asChild>
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={onClose}
-            tabIndex={-1}
-            className="h-6 w-6 p-0 hover:bg-foreground/10 transition-[background-color,transform] duration-150 ease-out active:scale-[0.97] text-foreground flex-shrink-0 rounded-md"
-            aria-label="Close sidebar"
-          >
-            <IconDoubleChevronLeft className="h-4 w-4" />
-          </Button>
+          <span className="inline-flex">
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={onClose}
+              tabIndex={-1}
+              className="h-6 w-6 p-0 hover:bg-foreground/10 transition-[background-color,transform] duration-150 ease-out active:scale-[0.97] text-foreground flex-shrink-0 rounded-md"
+              aria-label="Close sidebar"
+            >
+              <IconDoubleChevronLeft className="h-4 w-4" />
+            </Button>
+          </span>
         </TooltipTrigger>
         <TooltipContent side="bottom">Close chats pane</TooltipContent>
       </Tooltip>
@@ -1028,20 +1030,22 @@ export function AgentsSubChatsSidebar({
               {onBackToChats && (
                 <Tooltip delayDuration={500}>
                   <TooltipTrigger asChild>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      onClick={onBackToChats}
-                      tabIndex={-1}
-                      className="h-6 w-6 p-0 hover:bg-foreground/10 transition-[background-color,transform] duration-150 ease-out active:scale-[0.97] flex-shrink-0 rounded-md"
-                      aria-label="Toggle agents sidebar"
-                      style={{
-                        // @ts-expect-error - WebKit-specific property
-                        WebkitAppRegion: "no-drag",
-                      }}
-                    >
-                      <AlignJustify className="h-4 w-4" />
-                    </Button>
+                    <span className="inline-flex">
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        onClick={onBackToChats}
+                        tabIndex={-1}
+                        className="h-6 w-6 p-0 hover:bg-foreground/10 transition-[background-color,transform] duration-150 ease-out active:scale-[0.97] flex-shrink-0 rounded-md"
+                        aria-label="Toggle agents sidebar"
+                        style={{
+                          // @ts-expect-error - WebKit-specific property
+                          WebkitAppRegion: "no-drag",
+                        }}
+                      >
+                        <AlignJustify className="h-4 w-4" />
+                      </Button>
+                    </span>
                   </TooltipTrigger>
                   <TooltipContent>Open chats sidebar</TooltipContent>
                 </Tooltip>
@@ -1121,14 +1125,16 @@ export function AgentsSubChatsSidebar({
           >
             <Tooltip delayDuration={500}>
               <TooltipTrigger asChild>
-                <Button
-                  onClick={handleCreateNew}
-                  variant="outline"
-                  size="sm"
-                  className="h-7 px-2 w-full hover:bg-foreground/10 transition-[background-color,transform] duration-150 ease-out active:scale-[0.97] text-foreground rounded-lg"
-                >
-                  <span className="text-sm font-medium">New Chat</span>
-                </Button>
+                <span className="inline-flex w-full">
+                  <Button
+                    onClick={handleCreateNew}
+                    variant="outline"
+                    size="sm"
+                    className="h-7 px-2 w-full hover:bg-foreground/10 transition-[background-color,transform] duration-150 ease-out active:scale-[0.97] text-foreground rounded-lg"
+                  >
+                    <span className="text-sm font-medium">New Chat</span>
+                  </Button>
+                </span>
               </TooltipTrigger>
             <TooltipContent side="right">
               Create a new chat

@@ -785,14 +785,16 @@ export function PreviewSidebar({ chatId, worktreePath, onElementSelect, onScreen
         <div className="flex items-center gap-2 px-3 h-10 bg-tl-background border-b border-border/50">
           <Tooltip>
             <TooltipTrigger asChild>
-              <Button
-                variant="ghost"
-                size="icon"
-                onClick={() => setIsOpen(false)}
-                className="h-6 w-6 p-0 hover:bg-foreground/10 active:scale-[0.97] rounded-md"
-              >
-                <IconDoubleChevronRight className="h-4 w-4" />
-              </Button>
+              <span className="inline-flex">
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  onClick={() => setIsOpen(false)}
+                  className="h-6 w-6 p-0 hover:bg-foreground/10 active:scale-[0.97] rounded-md"
+                >
+                  <IconDoubleChevronRight className="h-4 w-4" />
+                </Button>
+              </span>
             </TooltipTrigger>
             <TooltipContent side="bottom">Close preview</TooltipContent>
           </Tooltip>
@@ -809,30 +811,34 @@ export function PreviewSidebar({ chatId, worktreePath, onElementSelect, onScreen
             {/* Navigation */}
             <Tooltip>
               <TooltipTrigger asChild>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  onClick={handleBack}
-                  disabled={!state.selectedUrl}
-                  className="h-6 w-6 p-0 hover:bg-foreground/10"
-                >
-                  <ChevronLeft className="h-4 w-4" />
-                </Button>
+                <span className="inline-flex">
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    onClick={handleBack}
+                    disabled={!state.selectedUrl}
+                    className="h-6 w-6 p-0 hover:bg-foreground/10"
+                  >
+                    <ChevronLeft className="h-4 w-4" />
+                  </Button>
+                </span>
               </TooltipTrigger>
               <TooltipContent>Back</TooltipContent>
             </Tooltip>
 
             <Tooltip>
               <TooltipTrigger asChild>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  onClick={handleForward}
-                  disabled={!state.selectedUrl}
-                  className="h-6 w-6 p-0 hover:bg-foreground/10"
-                >
-                  <ChevronRight className="h-4 w-4" />
-                </Button>
+                <span className="inline-flex">
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    onClick={handleForward}
+                    disabled={!state.selectedUrl}
+                    className="h-6 w-6 p-0 hover:bg-foreground/10"
+                  >
+                    <ChevronRight className="h-4 w-4" />
+                  </Button>
+                </span>
               </TooltipTrigger>
               <TooltipContent>Forward</TooltipContent>
             </Tooltip>
@@ -866,63 +872,71 @@ export function PreviewSidebar({ chatId, worktreePath, onElementSelect, onScreen
 
             <Tooltip>
               <TooltipTrigger asChild>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  onClick={handleRefresh}
-                  disabled={!state.selectedUrl}
-                  className="h-6 w-6 p-0 hover:bg-foreground/10"
-                >
-                  <RefreshCw className="h-3.5 w-3.5" />
-                </Button>
+                <span className="inline-flex">
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    onClick={handleRefresh}
+                    disabled={!state.selectedUrl}
+                    className="h-6 w-6 p-0 hover:bg-foreground/10"
+                  >
+                    <RefreshCw className="h-3.5 w-3.5" />
+                  </Button>
+                </span>
               </TooltipTrigger>
               <TooltipContent>Refresh</TooltipContent>
             </Tooltip>
 
             <Tooltip>
               <TooltipTrigger asChild>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  onClick={handleOpenExternal}
-                  disabled={!state.selectedUrl}
-                  className="h-6 w-6 p-0 hover:bg-foreground/10"
-                >
-                  <ExternalLink className="h-3.5 w-3.5" />
-                </Button>
+                <span className="inline-flex">
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    onClick={handleOpenExternal}
+                    disabled={!state.selectedUrl}
+                    className="h-6 w-6 p-0 hover:bg-foreground/10"
+                  >
+                    <ExternalLink className="h-3.5 w-3.5" />
+                  </Button>
+                </span>
               </TooltipTrigger>
               <TooltipContent>Open in browser</TooltipContent>
             </Tooltip>
 
             <Tooltip>
               <TooltipTrigger asChild>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  onClick={handleDevTools}
-                  disabled={!state.selectedUrl}
-                  className="h-6 w-6 p-0 hover:bg-foreground/10"
-                >
-                  <Bug className="h-3.5 w-3.5" />
-                </Button>
+                <span className="inline-flex">
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    onClick={handleDevTools}
+                    disabled={!state.selectedUrl}
+                    className="h-6 w-6 p-0 hover:bg-foreground/10"
+                  >
+                    <Bug className="h-3.5 w-3.5" />
+                  </Button>
+                </span>
               </TooltipTrigger>
               <TooltipContent>Developer tools</TooltipContent>
             </Tooltip>
 
             <Tooltip>
               <TooltipTrigger asChild>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  onClick={handleToggleSelector}
-                  disabled={!state.selectedUrl}
-                  className={cn(
-                    "h-6 w-6 p-0 hover:bg-foreground/10",
-                    isSelectorActive && "bg-primary/20 text-primary"
-                  )}
-                >
-                  <MousePointer2 className="h-3.5 w-3.5" />
-                </Button>
+                <span className="inline-flex">
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    onClick={handleToggleSelector}
+                    disabled={!state.selectedUrl}
+                    className={cn(
+                      "h-6 w-6 p-0 hover:bg-foreground/10",
+                      isSelectorActive && "bg-primary/20 text-primary"
+                    )}
+                  >
+                    <MousePointer2 className="h-3.5 w-3.5" />
+                  </Button>
+                </span>
               </TooltipTrigger>
               <TooltipContent>
                 {isSelectorActive ? "Cancel element selection" : "Select element"}
@@ -931,15 +945,17 @@ export function PreviewSidebar({ chatId, worktreePath, onElementSelect, onScreen
 
             <Tooltip>
               <TooltipTrigger asChild>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  onClick={handleScreenshotCapture}
-                  disabled={!state.selectedUrl}
-                  className="h-6 w-6 p-0 hover:bg-foreground/10"
-                >
-                  <Camera className="h-3.5 w-3.5" />
-                </Button>
+                <span className="inline-flex">
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    onClick={handleScreenshotCapture}
+                    disabled={!state.selectedUrl}
+                    className="h-6 w-6 p-0 hover:bg-foreground/10"
+                  >
+                    <Camera className="h-3.5 w-3.5" />
+                  </Button>
+                </span>
               </TooltipTrigger>
               <TooltipContent>Capture screenshot</TooltipContent>
             </Tooltip>
@@ -1008,15 +1024,17 @@ export function PreviewSidebar({ chatId, worktreePath, onElementSelect, onScreen
               <span className="text-sm font-medium">Output</span>
               <Tooltip>
                 <TooltipTrigger asChild>
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    onClick={handleCopyLogs}
-                    disabled={state.output.length === 0}
-                    className="h-6 w-6"
-                  >
-                    <Copy className="h-3.5 w-3.5" />
-                  </Button>
+                  <span className="inline-flex">
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      onClick={handleCopyLogs}
+                      disabled={state.output.length === 0}
+                      className="h-6 w-6"
+                    >
+                      <Copy className="h-3.5 w-3.5" />
+                    </Button>
+                  </span>
                 </TooltipTrigger>
                 <TooltipContent>Copy logs</TooltipContent>
               </Tooltip>
