@@ -493,22 +493,6 @@ export const RunningServersSection = memo(function RunningServersSection({
   const prevPopoverOpen = useRef(false)
   const buttonRef = useRef<HTMLButtonElement>(null)
 
-  // Fetch port count for badge - no polling needed, subscription handles updates
-  const { data: ports = [], refetch } = trpc.terminal.getAllPorts.useQuery(undefined, {
-    // No refetchInterval - subscription provides updates with "background" mode (slow scanning)
-  })
-
-  // Subscribe to port changes with "background" mode (slow scanning for badge)
-  // When popover opens, the RunningServersPopover's subscription will upgrade to "active" mode
-  trpc.terminal.portChanges.useSubscription(
-    { mode: "background" },
-    {
-      onData: () => {
-        refetch()
-      },
-    }
-  )
-
   // Handle tooltip blocking when popover closes
   useEffect(() => {
     if (prevPopoverOpen.current && !popoverOpen) {
@@ -520,8 +504,6 @@ export const RunningServersSection = memo(function RunningServersSection({
     }
     prevPopoverOpen.current = popoverOpen
   }, [popoverOpen])
-
-  const portCount = ports.length
 
   return (
     <Tooltip
@@ -538,27 +520,17 @@ export const RunningServersSection = memo(function RunningServersSection({
               ref={buttonRef}
               type="button"
               className={cn(
-                "flex items-center justify-center rounded-md text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-[background-color,color,transform] duration-150 ease-out active:scale-[0.97] outline-offset-2 focus-visible:outline focus-visible:outline-2 focus-visible:outline-ring/70 relative",
+                "flex items-center justify-center rounded-md text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-[background-color,color,transform] duration-150 ease-out active:scale-[0.97] outline-offset-2 focus-visible:outline focus-visible:outline-2 focus-visible:outline-ring/70",
                 isMobile ? "h-10 w-10" : "h-7 w-7"
               )}
               suppressHydrationWarning
             >
               <ServerIcon className="h-4 w-4" />
-              {/* Badge for active server count */}
-              {portCount > 0 && (
-                <span className="absolute -top-0.5 -right-0.5 flex items-center justify-center min-w-[14px] h-[14px] px-1 text-[10px] font-medium bg-emerald-500 text-white rounded-full">
-                  {portCount > 9 ? "9+" : portCount}
-                </span>
-              )}
             </button>
           </RunningServersPopover>
         </div>
       </TooltipTrigger>
-      <TooltipContent>
-        {portCount > 0
-          ? `${portCount} server${portCount > 1 ? "s" : ""} running`
-          : "Running Servers"}
-      </TooltipContent>
+      <TooltipContent>Running Servers</TooltipContent>
     </Tooltip>
   )
 })
@@ -572,6 +544,8 @@ export const RunningServersMenuItem = memo(function RunningServersMenuItem({
   onCloseMenu,
 }: RunningServersMenuItemProps) {
   const [killingPids, setKillingPids] = useState<Set<number>>(new Set())
+  const [searchQuery, setSearchQuery] = useState("")
+  const [selectedKeys, setSelectedKeys] = useState<Set<string>>(new Set())
 
   // Fetch all ports
   const { data: ports = [], refetch } = trpc.terminal.getAllPorts.useQuery(undefined, {})
@@ -586,16 +560,41 @@ export const RunningServersMenuItem = memo(function RunningServersMenuItem({
     }
   )
 
-  // Sort ports - prioritize dev servers like Vite
-  const sortedPorts = useMemo(() => {
-    const result = [...ports]
+  // Filter and sort ports
+  const filteredPorts = useMemo(() => {
+    let result = [...ports]
+
+    // Filter by search query if present
+    if (searchQuery.trim()) {
+      const query = searchQuery.toLowerCase()
+      result = result.filter(
+        (port) =>
+          port.port.toString().includes(query) ||
+          port.processName.toLowerCase().includes(query)
+      )
+    }
+
+    // Sort by priority (Vite first), then by most recently detected
     result.sort((a, b) => {
       const priorityA = getServerPriority(a)
       const priorityB = getServerPriority(b)
       if (priorityA !== priorityB) return priorityA - priorityB
       return b.detectedAt - a.detectedAt
     })
+
     return result
+  }, [ports, searchQuery])
+
+  // Clear selection when ports change (in case a selected process was killed)
+  useEffect(() => {
+    const validKeys = new Set(ports.map((p) => getServerKey(p)))
+    setSelectedKeys((prev) => {
+      const next = new Set<string>()
+      for (const key of prev) {
+        if (validKeys.has(key)) next.add(key)
+      }
+      return next.size === prev.size ? prev : next
+    })
   }, [ports])
 
   // Kill process mutation
@@ -604,6 +603,18 @@ export const RunningServersMenuItem = memo(function RunningServersMenuItem({
       setKillingPids((prev) => {
         const next = new Set(prev)
         next.delete(variables.pid)
+        return next
+      })
+      // Clear selections for any ports that belonged to this PID
+      setSelectedKeys((prev) => {
+        const keysToRemove = ports
+          .filter((p) => p.pid === variables.pid)
+          .map((p) => getServerKey(p))
+        if (keysToRemove.length === 0) return prev
+        const next = new Set(prev)
+        for (const key of keysToRemove) {
+          next.delete(key)
+        }
         return next
       })
     },
@@ -634,21 +645,60 @@ export const RunningServersMenuItem = memo(function RunningServersMenuItem({
     window.open(url, "_blank")
   }, [])
 
+  const handleToggleSelect = useCallback((key: string) => {
+    setSelectedKeys((prev) => {
+      const next = new Set(prev)
+      if (next.has(key)) {
+        next.delete(key)
+      } else {
+        next.add(key)
+      }
+      return next
+    })
+  }, [])
+
+  const handleStopSelected = useCallback(() => {
+    // Map selected keys back to unique PIDs
+    const pidsToKill = new Set<number>()
+    for (const key of selectedKeys) {
+      const server = ports.find((p) => getServerKey(p) === key)
+      if (server) pidsToKill.add(server.pid)
+    }
+    for (const pid of pidsToKill) {
+      setKillingPids((prev) => new Set(prev).add(pid))
+      killProcess.mutate({ pid })
+    }
+    toast.success(`Stopping ${selectedKeys.size} server${selectedKeys.size > 1 ? "s" : ""}`)
+  }, [selectedKeys, ports, killProcess])
+
+  const handleSelectAll = useCallback(() => {
+    const allKeys = new Set(filteredPorts.map((p) => getServerKey(p)))
+    setSelectedKeys((prev) => {
+      const allSelected = filteredPorts.every((p) => prev.has(getServerKey(p)))
+      if (allSelected) {
+        const next = new Set(prev)
+        for (const p of filteredPorts) {
+          next.delete(getServerKey(p))
+        }
+        return next
+      }
+      return new Set([...prev, ...allKeys])
+    })
+  }, [filteredPorts])
+
   const portCount = ports.length
+  const hasSelection = selectedKeys.size > 0
+  const allFilteredSelected =
+    filteredPorts.length > 0 && filteredPorts.every((p) => selectedKeys.has(getServerKey(p)))
 
   return (
     <DropdownMenuSub>
       <DropdownMenuSubTrigger className="gap-2">
         <ServerIcon className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
-        <span className="flex-1">Running Servers</span>
-        {portCount > 0 && (
-          <span className="flex items-center justify-center min-w-[18px] h-[18px] px-1.5 text-[10px] font-medium bg-emerald-500 text-white rounded-full">
-            {portCount > 9 ? "9+" : portCount}
-          </span>
-        )}
+        <span className="flex-1">Servers</span>
       </DropdownMenuSubTrigger>
       <DropdownMenuSubContent
-        className="w-[280px] p-0"
+        className="w-[320px] p-0"
         sideOffset={6}
         alignOffset={-4}
       >
@@ -663,24 +713,123 @@ export const RunningServersMenuItem = memo(function RunningServersMenuItem({
             </span>
           </div>
 
+          {/* Search bar */}
+          {portCount > 0 && (
+            <div className="px-2 py-2 border-b border-border">
+              <div className="relative">
+                <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
+                <input
+                  type="text"
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  placeholder="Filter by port or name..."
+                  className="w-full h-7 pl-7 pr-7 text-sm bg-muted/50 border border-border rounded-md placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring"
+                  onClick={(e) => e.stopPropagation()}
+                  onKeyDown={(e) => e.stopPropagation()}
+                />
+                {searchQuery && (
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      setSearchQuery("")
+                    }}
+                    className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                  >
+                    <X className="h-3.5 w-3.5" />
+                  </button>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* Selection actions bar */}
+          {portCount > 0 && (
+            <div className="flex items-center justify-between px-2 py-1.5 border-b border-border bg-muted/20">
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation()
+                  handleSelectAll()
+                }}
+                className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors"
+              >
+                <div
+                  className={cn(
+                    "flex items-center justify-center h-3.5 w-3.5 rounded border transition-colors",
+                    allFilteredSelected
+                      ? "bg-primary border-primary text-primary-foreground"
+                      : "border-muted-foreground/40"
+                  )}
+                >
+                  {allFilteredSelected && <Check className="h-2.5 w-2.5" />}
+                </div>
+                {allFilteredSelected ? "Deselect all" : "Select all"}
+              </button>
+              {hasSelection && (
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    handleStopSelected()
+                  }}
+                  className="flex items-center gap-1 px-2 py-0.5 text-xs font-medium text-red-500 hover:text-red-400 hover:bg-red-500/10 rounded transition-colors"
+                >
+                  <Square className="h-2.5 w-2.5 fill-current" />
+                  Stop {selectedKeys.size}
+                </button>
+              )}
+            </div>
+          )}
+
           {/* Server list */}
-          <div className="max-h-[240px] overflow-y-auto">
+          <div className="max-h-[280px] overflow-y-auto">
             {portCount === 0 ? (
               <div className="px-3 py-4 text-center text-sm text-muted-foreground">
                 No servers running
               </div>
+            ) : filteredPorts.length === 0 ? (
+              <div className="px-3 py-4 text-center text-sm text-muted-foreground">
+                No matches found
+              </div>
             ) : (
               <div className="py-1">
-                {sortedPorts.map((server) => {
+                {filteredPorts.map((server) => {
                   const serverKey = getServerKey(server)
-                  const address = formatAddress(server.address, server.port)
                   const isKilling = killingPids.has(server.pid)
+                  const isSelected = selectedKeys.has(serverKey)
 
                   return (
                     <div
                       key={serverKey}
-                      className="flex items-center gap-2 px-2 py-1.5 hover:bg-muted/50 rounded-md group"
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        handleToggleSelect(serverKey)
+                      }}
+                      className={cn(
+                        "flex items-center gap-2 px-2 py-1.5 hover:bg-muted/50 rounded-md group cursor-pointer",
+                        isSelected && "bg-muted/30"
+                      )}
                     >
+                      {/* Checkbox */}
+                      {(hasSelection || portCount > 1) && (
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            handleToggleSelect(serverKey)
+                          }}
+                          className={cn(
+                            "flex items-center justify-center h-4 w-4 rounded border transition-colors shrink-0",
+                            isSelected
+                              ? "bg-primary border-primary text-primary-foreground"
+                              : "border-muted-foreground/40 hover:border-muted-foreground"
+                          )}
+                        >
+                          {isSelected && <Check className="h-3 w-3" />}
+                        </button>
+                      )}
+
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-2">
                           <span className="text-sm font-medium text-foreground truncate">
@@ -692,7 +841,10 @@ export const RunningServersMenuItem = memo(function RunningServersMenuItem({
                         </div>
                       </div>
 
-                      <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                      <div className={cn(
+                        "flex items-center gap-1 transition-opacity",
+                        hasSelection ? "opacity-100" : "opacity-0 group-hover:opacity-100"
+                      )}>
                         {/* Open in browser */}
                         <Tooltip delayDuration={300}>
                           <TooltipTrigger asChild>
