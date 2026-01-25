@@ -22,18 +22,26 @@ import { Copy, Check, RefreshCw } from "lucide-react"
 import { Button } from "../../ui/button"
 import { cn } from "../../../lib/utils"
 
-// Hook to detect narrow screen
+// Hook to detect narrow screen (debounced to prevent excessive re-renders)
 function useIsNarrowScreen(): boolean {
-  const [isNarrow, setIsNarrow] = useState(false)
+  const [isNarrow, setIsNarrow] = useState(() => window.innerWidth <= 768)
 
   useEffect(() => {
+    let timeoutId: ReturnType<typeof setTimeout>
+
     const checkWidth = () => {
-      setIsNarrow(window.innerWidth <= 768)
+      clearTimeout(timeoutId)
+      timeoutId = setTimeout(() => {
+        const newIsNarrow = window.innerWidth <= 768
+        setIsNarrow(prev => (prev !== newIsNarrow ? newIsNarrow : prev))
+      }, 150)
     }
 
-    checkWidth()
     window.addEventListener("resize", checkWidth)
-    return () => window.removeEventListener("resize", checkWidth)
+    return () => {
+      clearTimeout(timeoutId)
+      window.removeEventListener("resize", checkWidth)
+    }
   }, [])
 
   return isNarrow

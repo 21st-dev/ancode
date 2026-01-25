@@ -208,6 +208,28 @@ export function AgentsSubChatsSidebar({
   )
   const [loadingSubChats] = useAtom(loadingSubChatsAtom)
   const subChatFiles = useAtomValue(subChatFilesAtom)
+
+  // Memoized stats calculation to avoid expensive reduce() in render loops
+  const subChatStats = useMemo(() => {
+    const stats = new Map<string, { fileCount: number; additions: number; deletions: number }>()
+    subChatFiles.forEach((fileChanges, subChatId) => {
+      if (fileChanges.length > 0) {
+        stats.set(
+          subChatId,
+          fileChanges.reduce(
+            (acc, f) => ({
+              fileCount: acc.fileCount + 1,
+              additions: acc.additions + f.additions,
+              deletions: acc.deletions + f.deletions,
+            }),
+            { fileCount: 0, additions: 0, deletions: 0 }
+          )
+        )
+      }
+    })
+    return stats
+  }, [subChatFiles])
+
   const selectedTeamId = useAtomValue(selectedTeamIdAtom)
   const [selectedChatId, setSelectedChatId] = useAtom(selectedAgentChatIdAtom)
   const previousChatId = useAtomValue(previousAgentChatIdAtom)
@@ -1217,18 +1239,7 @@ export function AgentsSubChatsSidebar({
                           const draftText = getDraftText(subChat.id)
                           const hasPendingQuestion = pendingQuestionsMap.has(subChat.id)
                           const hasPendingPlan = pendingPlanApprovals.has(subChat.id)
-                          const fileChanges = subChatFiles.get(subChat.id) || []
-                          const stats =
-                            fileChanges.length > 0
-                              ? fileChanges.reduce(
-                                  (acc, f) => ({
-                                    fileCount: acc.fileCount + 1,
-                                    additions: acc.additions + f.additions,
-                                    deletions: acc.deletions + f.deletions,
-                                  }),
-                                  { fileCount: 0, additions: 0, deletions: 0 },
-                                )
-                              : null
+                          const stats = subChatStats.get(subChat.id) ?? null
 
                           return (
                             <ContextMenu key={subChat.id}>
@@ -1491,18 +1502,7 @@ export function AgentsSubChatsSidebar({
                           const draftText = getDraftText(subChat.id)
                           const hasPendingQuestion = pendingQuestionsMap.has(subChat.id)
                           const hasPendingPlan = pendingPlanApprovals.has(subChat.id)
-                          const fileChanges = subChatFiles.get(subChat.id) || []
-                          const stats =
-                            fileChanges.length > 0
-                              ? fileChanges.reduce(
-                                  (acc, f) => ({
-                                    fileCount: acc.fileCount + 1,
-                                    additions: acc.additions + f.additions,
-                                    deletions: acc.deletions + f.deletions,
-                                  }),
-                                  { fileCount: 0, additions: 0, deletions: 0 },
-                                )
-                              : null
+                          const stats = subChatStats.get(subChat.id) ?? null
 
                           return (
                             <ContextMenu key={subChat.id}>

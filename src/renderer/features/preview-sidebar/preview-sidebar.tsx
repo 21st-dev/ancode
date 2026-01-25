@@ -253,6 +253,10 @@ export function PreviewSidebar({ chatId, worktreePath, onElementSelect, onScreen
   const webviewContainerRef = useRef<HTMLDivElement>(null)
   const panelContainerRef = useRef<HTMLDivElement>(null)
 
+  // Output buffering for performance (batches rapid terminal updates)
+  const outputBufferRef = useRef<string[]>([])
+  const flushTimeoutRef = useRef<ReturnType<typeof setTimeout>>()
+
   // Fetch dev credentials for fill login dropdown
   const { data: credentials } = trpc.devCredentials.list.useQuery(undefined, {
     enabled: isOpen,
@@ -311,26 +315,51 @@ export function PreviewSidebar({ chatId, worktreePath, onElementSelect, onScreen
     }
   }, [initialSession])
 
+  // Flush buffered output to state (batches rapid terminal updates for performance)
+  const flushOutputBuffer = useCallback(() => {
+    if (outputBufferRef.current.length === 0) return
+
+    const buffer = outputBufferRef.current
+    outputBufferRef.current = []
+
+    setState(s => {
+      const output = [...s.output, ...buffer].slice(-1000)
+      let detectedUrls = s.detectedUrls
+      let hasNew = false
+
+      // Parse URLs from all buffered lines
+      for (const line of buffer) {
+        const result = parseAndMergeUrls(line, detectedUrls)
+        if (result.hasNew) {
+          detectedUrls = result.urls
+          hasNew = true
+        }
+      }
+
+      return {
+        ...s,
+        output,
+        ...(hasNew && {
+          detectedUrls,
+          selectedUrl: s.selectedUrl || detectedUrls[0]?.url || null,
+        }),
+      }
+    })
+  }, [setState])
+
   // Handle terminal stream events (started, data, exit)
   const handleStream = useCallback(
     (event: TerminalStreamEvent) => {
       if (event.type === "started") {
         setIsRunning(true)
       } else if (event.type === "data" && event.data) {
-        setState(s => {
-          const output = [...s.output, event.data!].slice(-1000)
-          const { urls, hasNew } = parseAndMergeUrls(event.data!, s.detectedUrls)
-
-          return {
-            ...s,
-            output,
-            ...(hasNew && {
-              detectedUrls: urls,
-              selectedUrl: s.selectedUrl || urls[0]?.url || null,
-            }),
-          }
-        })
+        // Buffer output and debounce state updates for performance
+        outputBufferRef.current.push(event.data)
+        clearTimeout(flushTimeoutRef.current)
+        flushTimeoutRef.current = setTimeout(flushOutputBuffer, 50)
       } else if (event.type === "exit") {
+        // Flush any remaining output before exit message
+        flushOutputBuffer()
         setIsRunning(false)
         setState(s => ({
           ...s,
@@ -338,7 +367,7 @@ export function PreviewSidebar({ chatId, worktreePath, onElementSelect, onScreen
         }))
       }
     },
-    [setState]
+    [setState, flushOutputBuffer]
   )
 
   // Always subscribe when sidebar is open - subscription receives lifecycle events

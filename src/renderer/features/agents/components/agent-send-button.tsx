@@ -1,5 +1,6 @@
 "use client"
 
+import { useMemo } from "react"
 import { Button } from "../../../components/ui/button"
 import { ArrowUp, Loader2 } from "lucide-react"
 import {
@@ -125,8 +126,8 @@ export function AgentSendButton({
     return <ArrowUp className="size-4" />
   }
 
-  // Determine tooltip content
-  const getTooltipContent = () => {
+  // Memoized tooltip content to avoid creating new JSX on every render
+  const tooltipContent = useMemo(() => {
     // Voice input mode
     if (isVoiceMode) {
       if (isTranscribing) return "Transcribing..."
@@ -190,7 +191,7 @@ export function AgentSendButton({
         </div>
       </div>
     )
-  }
+  }, [isVoiceMode, isTranscribing, isRecording, voiceHotkey, isStreaming, hasContent, stopHotkey.primary, stopHotkey.alt, isSubmitting])
 
   // Determine aria-label
   const getAriaLabel = () => {
@@ -275,7 +276,7 @@ export function AgentSendButton({
           </Button>
         </span>
       </TooltipTrigger>
-      <TooltipContent side="left">{getTooltipContent()}</TooltipContent>
+      <TooltipContent side="left">{tooltipContent}</TooltipContent>
     </Tooltip>
   )
 }
