@@ -517,6 +517,8 @@ export function PreviewSidebar({ chatId, worktreePath, onElementSelect }: Previe
 
     const handleWillNavigate = (e: Event) => {
       const event = e as unknown as { url: string; preventDefault: () => void }
+      // Skip about:blank (used for initialization)
+      if (event.url === "about:blank") return
       if (!isLocalUrl(event.url)) {
         event.preventDefault()
         window.desktopApi?.openExternal(event.url)
@@ -525,10 +527,12 @@ export function PreviewSidebar({ chatId, worktreePath, onElementSelect }: Previe
 
     const handleDidNavigate = (e: Event) => {
       const event = e as unknown as { url: string }
+      // Skip about:blank (used for initialization)
+      if (event.url === "about:blank") return
       if (!isLocalUrl(event.url) && baseUrlRef.current) {
         window.desktopApi?.openExternal(event.url)
         webview.src = baseUrlRef.current
-      } else if (isLocalUrl(event.url) && event.url !== "about:blank") {
+      } else if (isLocalUrl(event.url)) {
         // Persist the current URL so it's restored when switching worktrees
         setStateRef.current(s => ({ ...s, currentUrl: event.url }))
       }
