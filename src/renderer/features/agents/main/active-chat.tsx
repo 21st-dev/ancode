@@ -63,7 +63,9 @@ import { apiFetch } from "../../../lib/api-fetch"
 import {
   customClaudeConfigAtom,
   isDesktopAtom, isFullscreenAtom,
+  mcpApprovalDialogOpenAtom,
   normalizeCustomClaudeConfig,
+  pendingMcpApprovalsAtom,
   selectedOllamaModelAtom,
   soundNotificationsEnabledAtom
 } from "../../../lib/atoms"
@@ -4729,6 +4731,22 @@ export function ChatView({
 
   // Subscribe to GitWatcher for real-time file system monitoring (chokidar on main process)
   useGitWatcher(worktreePath)
+
+  // Check for pending plugin MCP server approvals
+  const setPendingMcpApprovals = useSetAtom(pendingMcpApprovalsAtom)
+  const setMcpApprovalDialogOpen = useSetAtom(mcpApprovalDialogOpenAtom)
+  const { data: pendingApprovals } = trpc.claude.getPendingPluginMcpApprovals.useQuery(
+    { projectPath: originalProjectPath },
+    { enabled: !!originalProjectPath }
+  )
+
+  // Show MCP approval dialog when there are pending approvals
+  useEffect(() => {
+    if (pendingApprovals && pendingApprovals.length > 0) {
+      setPendingMcpApprovals(pendingApprovals)
+      setMcpApprovalDialogOpen(true)
+    }
+  }, [pendingApprovals, setPendingMcpApprovals, setMcpApprovalDialogOpen])
 
   // Extract port, repository, and quick setup flag from meta
   const meta = agentChat?.meta as {

@@ -29,7 +29,7 @@ export interface PluginMcpConfig {
 // Cache for plugin discovery results
 let pluginCache: { plugins: PluginInfo[]; timestamp: number } | null = null
 let mcpCache: { configs: PluginMcpConfig[]; timestamp: number } | null = null
-const CACHE_TTL_MS = 5000 // 5 seconds
+const CACHE_TTL_MS = 30000 // 30 seconds - plugins don't change often during a session
 
 /**
  * Clear plugin caches (for testing/manual invalidation)
@@ -42,7 +42,7 @@ export function clearPluginCache() {
 /**
  * Discover all installed plugins from ~/.claude/plugins/marketplaces/
  * Returns array of plugin info with paths to their component directories
- * Results are cached for 5 seconds to avoid repeated filesystem scans
+ * Results are cached for 30 seconds to avoid repeated filesystem scans
  */
 export async function discoverInstalledPlugins(): Promise<PluginInfo[]> {
   // Return cached result if still valid
@@ -136,7 +136,7 @@ export function getPluginComponentPaths(plugin: PluginInfo) {
 /**
  * Discover MCP server configs from all installed plugins
  * Reads .mcp.json from each plugin directory
- * Results are cached for 5 seconds to avoid repeated filesystem scans
+ * Results are cached for 30 seconds to avoid repeated filesystem scans
  */
 export async function discoverPluginMcpServers(): Promise<PluginMcpConfig[]> {
   // Return cached result if still valid
