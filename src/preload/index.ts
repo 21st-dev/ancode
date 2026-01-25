@@ -21,11 +21,6 @@ if (process.env.FORCE_ANALYTICS === "true") {
   contextBridge.exposeInMainWorld("__FORCE_ANALYTICS__", true)
 }
 
-// Expose webUtils for file drag-and-drop path resolution
-contextBridge.exposeInMainWorld("webUtils", {
-  getPathForFile: (file: File) => webUtils.getPathForFile(file),
-})
-
 // Expose desktop-specific APIs
 contextBridge.exposeInMainWorld("desktopApi", {
   // Platform info
