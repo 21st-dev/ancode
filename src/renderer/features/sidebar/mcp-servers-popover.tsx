@@ -318,22 +318,13 @@ export const McpServersSection = memo(function McpServersSection({
   const prevPopoverOpen = useRef(false)
   const buttonRef = useRef<HTMLButtonElement>(null)
 
-  // Fetch MCP config for badge count
+  // Fetch MCP config to check if any servers are configured
   const { data, isLoading } = trpc.claude.getAllMcpConfig.useQuery(undefined, {
     staleTime: 60 * 1000, // 1 minute
     refetchOnWindowFocus: false,
   })
 
   const groups = (data?.groups || []) as MCPGroup[]
-
-  // Count connected servers
-  const connectedCount = useMemo(() => {
-    return groups.reduce((count, group) => {
-      return (
-        count + group.mcpServers.filter((s) => s.status === "connected").length
-      )
-    }, 0)
-  }, [groups])
 
   // Count total servers
   const totalCount = useMemo(() => {
@@ -369,38 +360,17 @@ export const McpServersSection = memo(function McpServersSection({
               ref={buttonRef}
               type="button"
               className={cn(
-                "flex items-center justify-center rounded-md text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-[background-color,color,transform] duration-150 ease-out active:scale-[0.97] outline-offset-2 focus-visible:outline focus-visible:outline-2 focus-visible:outline-ring/70 relative",
+                "flex items-center justify-center rounded-md text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-[background-color,color,transform] duration-150 ease-out active:scale-[0.97] outline-offset-2 focus-visible:outline focus-visible:outline-2 focus-visible:outline-ring/70",
                 isMobile ? "h-10 w-10" : "h-7 w-7"
               )}
               suppressHydrationWarning
             >
               <OriginalMCPIcon className="h-4 w-4" />
-              {/* Badge for connected count */}
-              {!isLoading && totalCount > 0 && (
-                <span
-                  className={cn(
-                    "absolute -top-0.5 -right-0.5 flex items-center justify-center min-w-[14px] h-[14px] px-1 text-[10px] font-medium text-white rounded-full",
-                    connectedCount === totalCount
-                      ? "bg-emerald-500"
-                      : connectedCount > 0
-                        ? "bg-yellow-500"
-                        : "bg-red-500"
-                  )}
-                >
-                  {connectedCount > 9 ? "9+" : connectedCount}
-                </span>
-              )}
             </button>
           </McpServersPopover>
         </div>
       </TooltipTrigger>
-      <TooltipContent>
-        {isLoading
-          ? "Loading MCP servers..."
-          : totalCount > 0
-            ? `${connectedCount}/${totalCount} MCP server${totalCount > 1 ? "s" : ""} connected`
-            : "MCP Servers"}
-      </TooltipContent>
+      <TooltipContent>MCP Servers</TooltipContent>
     </Tooltip>
   )
 })
