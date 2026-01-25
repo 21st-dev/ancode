@@ -134,7 +134,7 @@ export const AgentsSlashCommand = memo(function AgentsSlashCommand({
     }
 
     // Filter out disabled commands
-    if (disabledCommands && disabledCommands.length > 0) {
+    if (disabledCommands?.length) {
       builtinFiltered = builtinFiltered.filter(
         (cmd) => !disabledCommands.includes(cmd.name),
       )
@@ -151,8 +151,10 @@ export const AgentsSlashCommand = memo(function AgentsSlashCommand({
       )
     }
 
-    // Return custom commands first, then builtin
-    return [...customFiltered, ...builtinFiltered]
+    // Sort all commands by name length (shorter = closer match)
+    return [...customFiltered, ...builtinFiltered].sort(
+      (a, b) => a.name.length - b.name.length,
+    )
   }, [debouncedSearchText, customCommands, isPlanMode, disabledCommands])
 
   // Track previous values for smarter selection reset
