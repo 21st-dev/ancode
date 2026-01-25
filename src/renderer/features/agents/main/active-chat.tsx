@@ -2364,18 +2364,22 @@ const ChatViewInner = memo(function ChatViewInner({
   )
 
   // Share the addPreviewElementContext function with ChatView via atom
+  // Only the active subchat should export its handler to avoid routing to wrong subchat
   const setAddPreviewElementContextFn = useSetAtom(addPreviewElementContextFnAtom)
   useEffect(() => {
+    if (!isActive) return
     setAddPreviewElementContextFn(() => addPreviewElementContext)
     return () => setAddPreviewElementContextFn(null)
-  }, [addPreviewElementContext, setAddPreviewElementContextFn])
+  }, [isActive, addPreviewElementContext, setAddPreviewElementContextFn])
 
   // Share the handleAddAttachments function with ChatView via atom (for screenshot capture)
+  // Only the active subchat should export its handler to avoid routing to wrong subchat
   const setHandleAddAttachmentsFn = useSetAtom(handleAddAttachmentsFnAtom)
   useEffect(() => {
+    if (!isActive) return
     setHandleAddAttachmentsFn(() => handleAddAttachments)
     return () => setHandleAddAttachmentsFn(null)
-  }, [handleAddAttachments, setHandleAddAttachmentsFn])
+  }, [isActive, handleAddAttachments, setHandleAddAttachmentsFn])
 
   // Wrapper for addTextContext that handles TextSelectionSource
   const addTextContext = useCallback((text: string, source: TextSelectionSource) => {
