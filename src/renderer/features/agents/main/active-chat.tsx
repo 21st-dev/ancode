@@ -14,6 +14,7 @@ import {
   CursorIcon,
   ExpandIcon,
   IconCloseSidebarRight,
+  IconDoubleChevronRight,
   IconOpenSidebarRight,
   IconSpinner,
   IconTextUndo,
@@ -39,6 +40,7 @@ import { atom, useAtom, useAtomValue, useSetAtom } from "jotai"
 import {
   ArrowDown,
   ChevronDown,
+  Eye,
   ListTree,
   TerminalSquare
 } from "lucide-react"
@@ -121,6 +123,7 @@ import {
   setLoading,
   subChatFilesAtom,
   undoStackAtom,
+  addPreviewElementContextFnAtom,
   type SelectedCommit
 } from "../atoms"
 import { AgentSendButton } from "../components/agent-send-button"
@@ -133,6 +136,7 @@ import { useDesktopNotifications } from "../hooks/use-desktop-notifications"
 import { useFocusInputOnEnter } from "../hooks/use-focus-input-on-enter"
 import { useHaptic } from "../hooks/use-haptic"
 import { useTextContextSelection } from "../hooks/use-text-context-selection"
+import { usePreviewElementSelection } from "../hooks/use-preview-element-selection"
 import { usePastedTextFiles } from "../hooks/use-pasted-text-files"
 import { useToggleFocusOnCmdEsc } from "../hooks/use-toggle-focus-on-cmd-esc"
 import {
@@ -191,6 +195,7 @@ import { generateCommitToPrMessage, generatePrMessage, generateReviewMessage } f
 import { ChatInputArea } from "./chat-input-area"
 import { IsolatedMessagesSection } from "./isolated-messages-section"
 import { DetailsSidebar } from "../../details-sidebar/details-sidebar"
+import { PreviewSidebar, previewSidebarOpenAtom } from "../../preview-sidebar"
 import {
   detailsSidebarOpenAtom,
   unifiedSidebarEnabledAtom,
@@ -2183,6 +2188,16 @@ const ChatViewInner = memo(function ChatViewInner({
     pastedTextsRef,
   } = usePastedTextFiles(subChatId)
 
+  // Preview element contexts (elements selected from preview sidebar)
+  const {
+    previewElementContexts,
+    addPreviewElementContext,
+    removePreviewElementContext,
+    clearPreviewElementContexts,
+    previewElementContextsRef,
+    setPreviewElementContextsFromDraft,
+  } = usePreviewElementSelection()
+
   // File contents cache - stores content for file mentions (keyed by mentionId)
   // This content gets added to the prompt when sending, without showing a separate card
   const fileContentsRef = useRef<Map<string, string>>(new Map())
@@ -2257,6 +2272,12 @@ const ChatViewInner = memo(function ChatViewInner({
       } else {
         clearTextContexts()
       }
+      // Restore preview element contexts
+      if (savedDraft.previewElementContexts.length > 0) {
+        setPreviewElementContextsFromDraft(savedDraft.previewElementContexts)
+      } else {
+        clearPreviewElementContexts()
+      }
     } else if (
       prevSubChatIdForDraftRef.current &&
       prevSubChatIdForDraftRef.current !== subChatId
@@ -2265,6 +2286,7 @@ const ChatViewInner = memo(function ChatViewInner({
       editorRef.current?.clear()
       clearAll()
       clearTextContexts()
+      clearPreviewElementContexts()
     }
 
     prevSubChatIdForDraftRef.current = subChatId
@@ -2274,8 +2296,10 @@ const ChatViewInner = memo(function ChatViewInner({
     setImagesFromDraft,
     setFilesFromDraft,
     setTextContextsFromDraft,
+    setPreviewElementContextsFromDraft,
     clearAll,
     clearTextContexts,
+    clearPreviewElementContexts,
   ])
 
   // Use subChatId as stable key to prevent HMR-induced duplicate resume requests
@@ -2327,6 +2351,23 @@ const ChatViewInner = memo(function ChatViewInner({
       { method: "DELETE", credentials: "include" },
     )
   }, [subChatId])
+
+  // Handler for preview element selection from preview sidebar
+  const handlePreviewElementSelect = useCallback(
+    (html: string, componentName: string | null, filePath: string | null) => {
+      addPreviewElementContext(html, componentName, filePath)
+      // Focus chat input after adding context
+      editorRef.current?.focus()
+    },
+    [addPreviewElementContext]
+  )
+
+  // Share the addPreviewElementContext function with ChatView via atom
+  const setAddPreviewElementContextFn = useSetAtom(addPreviewElementContextFnAtom)
+  useEffect(() => {
+    setAddPreviewElementContextFn(() => addPreviewElementContext)
+    return () => setAddPreviewElementContextFn(null)
+  }, [addPreviewElementContext, setAddPreviewElementContextFn])
 
   // Wrapper for addTextContext that handles TextSelectionSource
   const addTextContext = useCallback((text: string, source: TextSelectionSource) => {
@@ -3295,6 +3336,7 @@ const ChatViewInner = memo(function ChatViewInner({
       }
       clearAll()
       clearTextContexts()
+      clearPreviewElementContexts()
       return
     }
 
@@ -3430,6 +3472,7 @@ const ChatViewInner = memo(function ChatViewInner({
     clearAll()
     clearTextContexts()
     clearDiffTextContexts()
+    clearPreviewElementContexts()
     clearPastedTexts()
     clearFileContents()
 
@@ -3492,6 +3535,7 @@ const ChatViewInner = memo(function ChatViewInner({
     onAutoRename,
     clearAll,
     clearTextContexts,
+    clearPreviewElementContexts,
     clearPastedTexts,
     teamId,
     addToQueue,
@@ -4087,6 +4131,8 @@ const ChatViewInner = memo(function ChatViewInner({
         pastedTexts={pastedTexts}
         onAddPastedText={addPastedText}
         onRemovePastedText={removePastedText}
+        previewElementContexts={previewElementContexts}
+        onRemovePreviewElementContext={removePreviewElementContext}
         onCacheFileContent={cacheFileContent}
         messageTokenData={messageTokenData}
         subChatId={subChatId}
@@ -4162,11 +4208,24 @@ export function ChatView({
   const setFilteredDiffFiles = useSetAtom(filteredDiffFilesAtom)
   const { notifyAgentComplete } = useDesktopNotifications()
 
+  // Get addPreviewElementContext function from ChatViewInner via atom
+  const addPreviewElementContextFn = useAtomValue(addPreviewElementContextFnAtom)
+  const handlePreviewElementSelect = useCallback(
+    (html: string, componentName: string | null, filePath: string | null) => {
+      addPreviewElementContextFn?.(html, componentName, filePath)
+    },
+    [addPreviewElementContextFn]
+  )
+
   // Check if any chat has unseen changes
   const hasAnyUnseenChanges = unseenChanges.size > 0
   const [, forceUpdate] = useState({})
   const [isPreviewSidebarOpen, setIsPreviewSidebarOpen] = useAtom(
     agentsPreviewSidebarOpenAtom,
+  )
+  // New Preview sidebar state (with dev server and browser preview)
+  const [isNewPreviewSidebarOpen, setIsNewPreviewSidebarOpen] = useAtom(
+    previewSidebarOpenAtom,
   )
   // Per-chat diff sidebar state - each chat remembers its own open/close state
   const diffSidebarAtom = useMemo(
@@ -6074,6 +6133,23 @@ Make sure to preserve all functionality from both branches when resolving confli
                       </span>
                     </PreviewSetupHoverCard>
                   ))}
+                {/* New Preview Button - shows when preview sidebar is closed (desktop only) */}
+                {isDesktop && !isMobileFullscreen && !isNewPreviewSidebarOpen && (
+                  <Tooltip delayDuration={500}>
+                    <TooltipTrigger asChild>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        onClick={() => setIsNewPreviewSidebarOpen(true)}
+                        className="h-6 w-6 p-0 hover:bg-foreground/10 transition-colors text-foreground flex-shrink-0 rounded-md ml-2"
+                        aria-label="Open preview"
+                      >
+                        <Eye className="h-4 w-4" />
+                      </Button>
+                    </TooltipTrigger>
+                    <TooltipContent side="bottom">Preview</TooltipContent>
+                  </Tooltip>
+                )}
                 {/* Overview/Terminal Button - shows when sidebar is closed and worktree exists (desktop only) */}
                 {!isMobileFullscreen &&
                   worktreePath && (
@@ -6442,6 +6518,15 @@ Make sure to preserve all functionality from both branches when resolving confli
             chatId={chatId}
             cwd={worktreePath}
             workspaceId={chatId}
+          />
+        )}
+
+        {/* New Preview Sidebar - with dev server and browser preview (desktop only) */}
+        {isDesktop && !isMobileFullscreen && worktreePath && (
+          <PreviewSidebar
+            chatId={chatId}
+            worktreePath={worktreePath}
+            onElementSelect={handlePreviewElementSelect}
           />
         )}
 

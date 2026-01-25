@@ -229,6 +229,21 @@ export const agentsPreviewSidebarOpenAtom = atomWithWindowStorage<boolean>(
   { getOnInit: true },
 )
 
+// New Preview sidebar (right) - simple empty preview panel
+export const newPreviewSidebarOpenAtom = atomWithStorage<boolean>(
+  "new-preview-sidebar-open",
+  false,
+  undefined,
+  { getOnInit: true },
+)
+
+export const newPreviewSidebarWidthAtom = atomWithStorage<number>(
+  "new-preview-sidebar-width",
+  400,
+  undefined,
+  { getOnInit: true },
+)
+
 // Diff sidebar (right) width (global - same width for all chats)
 export const agentsDiffSidebarWidthAtom = atomWithStorage<number>(
   "agents-diff-sidebar-width",
@@ -773,3 +788,13 @@ export const workspaceDiffCacheAtomFamily = atomFamily((chatId: string) =>
     },
   ),
 )
+
+// Callback atom for preview element selection
+// Set by ChatViewInner, called by ChatView when element is selected in PreviewSidebar
+export type AddPreviewElementContextFn = (
+  html: string,
+  componentName: string | null,
+  filePath: string | null
+) => void
+
+export const addPreviewElementContextFnAtom = atom<AddPreviewElementContextFn | null>(null)

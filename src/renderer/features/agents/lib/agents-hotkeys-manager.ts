@@ -26,6 +26,7 @@ const SHORTCUT_TO_ACTION_MAP: Record<ShortcutActionId, string> = {
   "show-shortcuts": "open-shortcuts",
   "open-settings": "open-settings",
   "toggle-sidebar": "toggle-sidebar",
+  "toggle-details": "toggle-details",
   "undo-archive": "undo-archive",
   "new-workspace": "create-new-agent",
   "search-workspaces": "search-workspaces",
@@ -43,6 +44,7 @@ const SHORTCUT_TO_ACTION_MAP: Record<ShortcutActionId, string> = {
   "stop-generation": "stop-generation",
   "switch-model": "switch-model",
   "toggle-terminal": "toggle-terminal",
+  "toggle-preview": "toggle-preview",
   "open-diff": "open-diff",
   "create-pr": "create-pr",
 }
@@ -100,11 +102,13 @@ function matchesHotkey(e: KeyboardEvent, hotkey: string): boolean {
 export interface AgentsHotkeysManagerConfig {
   setSelectedChatId?: (id: string | null) => void
   setSidebarOpen?: (open: boolean | ((prev: boolean) => boolean)) => void
+  setPreviewOpen?: (open: boolean | ((prev: boolean) => boolean)) => void
   setSettingsDialogOpen?: (open: boolean) => void
   setSettingsActiveTab?: (tab: SettingsTab) => void
   toggleChatSearch?: () => void
   selectedChatId?: string | null
   customHotkeysConfig?: CustomHotkeysConfig
+  isDesktop?: boolean
 }
 
 export interface UseAgentsHotkeysOptions {
@@ -129,6 +133,7 @@ export function useAgentsHotkeys(
     (): AgentActionContext => ({
       setSelectedChatId: config.setSelectedChatId,
       setSidebarOpen: config.setSidebarOpen,
+      setPreviewOpen: config.setPreviewOpen,
       setSettingsDialogOpen: config.setSettingsDialogOpen,
       setSettingsActiveTab: config.setSettingsActiveTab,
       toggleChatSearch: config.toggleChatSearch,
@@ -137,6 +142,7 @@ export function useAgentsHotkeys(
     [
       config.setSelectedChatId,
       config.setSidebarOpen,
+      config.setPreviewOpen,
       config.setSettingsDialogOpen,
       config.setSettingsActiveTab,
       config.toggleChatSearch,
@@ -228,11 +234,22 @@ export function useAgentsHotkeys(
         handleHotkeyAction("toggle-chat-search")
         return
       }
+
+      // Check toggle-preview hotkey (desktop only)
+      if (config.isDesktop) {
+        const togglePreviewHotkey = getHotkeyForAction("toggle-preview")
+        if (togglePreviewHotkey && matchesHotkey(e, togglePreviewHotkey)) {
+          e.preventDefault()
+          e.stopPropagation()
+          handleHotkeyAction("toggle-preview")
+          return
+        }
+      }
     }
 
     window.addEventListener("keydown", handleKeyDown, true)
     return () => window.removeEventListener("keydown", handleKeyDown, true)
-  }, [enabled, handleHotkeyAction, getHotkeyForAction])
+  }, [enabled, handleHotkeyAction, getHotkeyForAction, config.isDesktop])
 
   // General hotkey handler for remaining actions
   const actionsWithHotkeys = useMemo(
@@ -244,7 +261,8 @@ export function useAgentsHotkeys(
           action.id !== "toggle-sidebar" &&
           action.id !== "open-shortcuts" &&
           action.id !== "open-settings" &&
-          action.id !== "toggle-chat-search",
+          action.id !== "toggle-chat-search" &&
+          action.id !== "toggle-preview",
       ),
     [],
   )

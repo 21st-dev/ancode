@@ -65,6 +65,9 @@ export class TerminalManager extends EventEmitter {
 
 		portManager.registerSession(session, workspaceId || "")
 
+		// Emit started event so subscribers know a session was created
+		this.emit(`started:${paneId}`, session.cwd)
+
 		return {
 			isNew: true,
 			serializedState: "",
@@ -193,11 +196,41 @@ export class TerminalManager extends EventEmitter {
 			return
 		}
 
-		if (session.isAlive) {
-			session.pty.kill()
-		} else {
+		if (!session.isAlive) {
 			this.sessions.delete(paneId)
+			return
 		}
+
+		// Send SIGTERM first
+		try {
+			session.pty.kill("SIGTERM")
+		} catch (error) {
+			console.error(`[TerminalManager] Failed to send SIGTERM to ${paneId}:`, error)
+		}
+
+		// Wait for graceful shutdown, then escalate to SIGKILL
+		await new Promise<void>((resolve) => {
+			const checkInterval = setInterval(() => {
+				if (!session.isAlive) {
+					clearInterval(checkInterval)
+					clearTimeout(forceKillTimeout)
+					resolve()
+				}
+			}, 100)
+
+			const forceKillTimeout = setTimeout(() => {
+				clearInterval(checkInterval)
+				if (session.isAlive) {
+					try {
+						session.pty.kill("SIGKILL")
+					} catch (error) {
+						console.error(`[TerminalManager] Failed to send SIGKILL to ${paneId}:`, error)
+					}
+				}
+				// Give SIGKILL a moment to take effect
+				setTimeout(resolve, 100)
+			}, 2000)
+		})
 	}
 
 	detach(params: { paneId: string; serializedState?: string }): void {

@@ -72,7 +72,7 @@ function PropertyRow({
       {/* Value column - flexible */}
       <div className="flex-1 min-w-0 pl-2 truncate">
         {copyable ? (
-          <Tooltip open={showCopied ? true : undefined}>
+          <Tooltip key={showCopied ? "copied" : "default"} open={showCopied || undefined}>
             <TooltipTrigger asChild>
               {valueSpan}
             </TooltipTrigger>

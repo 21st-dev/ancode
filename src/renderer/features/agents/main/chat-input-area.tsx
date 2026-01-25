@@ -47,7 +47,7 @@ import {
   saveSubChatDraftWithAttachments,
 } from "../lib/drafts"
 import { CLAUDE_MODELS } from "../lib/models"
-import type { DiffTextContext, SelectedTextContext } from "../lib/queue-utils"
+import type { DiffTextContext, PreviewElementContext, SelectedTextContext } from "../lib/queue-utils"
 import {
   AgentsFileMention,
   AgentsMentionsEditor,
@@ -56,6 +56,7 @@ import {
 } from "../mentions"
 import { AgentContextIndicator, type MessageTokenData } from "../ui/agent-context-indicator"
 import { AgentDiffTextContextItem } from "../ui/agent-diff-text-context-item"
+import { AgentPreviewElementItem } from "../ui/agent-preview-element-item"
 import { AgentFileItem } from "../ui/agent-file-item"
 import { AgentImageItem } from "../ui/agent-image-item"
 import { AgentPastedTextItem } from "../ui/agent-pasted-text-item"
@@ -132,6 +133,9 @@ export interface ChatInputAreaProps {
   pastedTexts?: PastedTextFile[]
   onAddPastedText?: (text: string) => Promise<void>
   onRemovePastedText?: (id: string) => void
+  // Preview element context from selected element in preview sidebar
+  previewElementContexts?: PreviewElementContext[]
+  onRemovePreviewElementContext?: (id: string) => void
   // Callback to cache file content for dropped text files (content added to prompt on send)
   onCacheFileContent?: (mentionId: string, content: string) => void
   // Pre-computed token data for context indicator (avoids passing messages array)
@@ -198,6 +202,7 @@ function arePropsEqual(prevProps: ChatInputAreaProps, nextProps: ChatInputAreaPr
     prevProps.onRemoveTextContext !== nextProps.onRemoveTextContext ||
     prevProps.onAddPastedText !== nextProps.onAddPastedText ||
     prevProps.onRemovePastedText !== nextProps.onRemovePastedText ||
+    prevProps.onRemovePreviewElementContext !== nextProps.onRemovePreviewElementContext ||
     prevProps.onCacheFileContent !== nextProps.onCacheFileContent ||
     prevProps.onInputContentChange !== nextProps.onInputContentChange ||
     prevProps.onSubmitWithQuestionAnswer !== nextProps.onSubmitWithQuestionAnswer
@@ -268,6 +273,18 @@ function arePropsEqual(prevProps: ChatInputAreaProps, nextProps: ChatInputAreaPr
     }
   }
 
+  // Compare previewElementContexts array - by length and ids
+  const prevPreview = prevProps.previewElementContexts || []
+  const nextPreview = nextProps.previewElementContexts || []
+  if (prevPreview.length !== nextPreview.length) {
+    return false
+  }
+  for (let i = 0; i < prevPreview.length; i++) {
+    if (prevPreview[i]?.id !== nextPreview[i]?.id) {
+      return false
+    }
+  }
+
   // Compare messageTokenData - only re-render when token counts actually change
   // This is much more stable than comparing messages array reference
   if (
@@ -331,6 +348,8 @@ export const ChatInputArea = memo(function ChatInputArea({
   pastedTexts = [],
   onAddPastedText,
   onRemovePastedText,
+  previewElementContexts = [],
+  onRemovePreviewElementContext,
   onCacheFileContent,
   messageTokenData,
   subChatId,
@@ -454,18 +473,20 @@ export const ChatInputArea = memo(function ChatInputArea({
       images.length > 0 ||
       files.length > 0 ||
       textContexts.length > 0 ||
-      (diffTextContexts?.length ?? 0) > 0
+      (diffTextContexts?.length ?? 0) > 0 ||
+      previewElementContexts.length > 0
 
     if (hasContent) {
       await saveSubChatDraftWithAttachments(chatId, subChatIdValue, draft, {
         images,
         files,
         textContexts,
+        previewElementContexts,
       })
     } else {
       clearSubChatDraft(chatId, subChatIdValue)
     }
-  }, [editorRef, images, files, textContexts, diffTextContexts])
+  }, [editorRef, images, files, textContexts, diffTextContexts, previewElementContexts])
 
   // Content change handler
   const handleContentChange = useCallback((newHasContent: boolean) => {
@@ -481,7 +502,7 @@ export const ChatInputArea = memo(function ChatInputArea({
   const handleEditorSubmit = useCallback(async () => {
     const inputValue = editorRef.current?.getValue() || ""
     const hasText = inputValue.trim().length > 0
-    const hasAttachments = images.length > 0 || files.length > 0 || textContexts.length > 0 || (diffTextContexts?.length ?? 0) > 0
+    const hasAttachments = images.length > 0 || files.length > 0 || textContexts.length > 0 || (diffTextContexts?.length ?? 0) > 0 || previewElementContexts.length > 0
 
     if (!hasText && !hasAttachments && queueLength > 0 && onSendFromQueue && firstQueueItemId) {
       // Input empty, queue has items - stop stream and send from queue
@@ -490,7 +511,7 @@ export const ChatInputArea = memo(function ChatInputArea({
     } else {
       onSend()
     }
-  }, [editorRef, images, files, textContexts, diffTextContexts, queueLength, onSendFromQueue, firstQueueItemId, onStop, onSend])
+  }, [editorRef, images, files, textContexts, diffTextContexts, previewElementContexts, queueLength, onSendFromQueue, firstQueueItemId, onStop, onSend])
 
   // Mention select handler
   const handleMentionSelect = useCallback((mention: FileMentionOption) => {
@@ -744,7 +765,7 @@ export const ChatInputArea = memo(function ChatInputArea({
               maxHeight={200}
               onSubmit={onSend}
               contextItems={
-                images.length > 0 || files.length > 0 || textContexts.length > 0 || (diffTextContexts?.length ?? 0) > 0 || pastedTexts.length > 0 ? (
+                images.length > 0 || files.length > 0 || textContexts.length > 0 || (diffTextContexts?.length ?? 0) > 0 || pastedTexts.length > 0 || previewElementContexts.length > 0 ? (
                   <div className="flex flex-wrap gap-[6px]">
                     {(() => {
                       // Build allImages array for gallery navigation
@@ -807,6 +828,16 @@ export const ChatInputArea = memo(function ChatInputArea({
                         size={pt.size}
                         preview={pt.preview}
                         onRemove={onRemovePastedText ? () => onRemovePastedText(pt.id) : undefined}
+                      />
+                    ))}
+                    {previewElementContexts.map((pec) => (
+                      <AgentPreviewElementItem
+                        key={pec.id}
+                        html={pec.html}
+                        componentName={pec.componentName}
+                        filePath={pec.filePath}
+                        preview={pec.preview}
+                        onRemove={onRemovePreviewElementContext ? () => onRemovePreviewElementContext(pec.id) : undefined}
                       />
                     ))}
                   </div>
@@ -1189,10 +1220,11 @@ export const ChatInputArea = memo(function ChatInputArea({
                           files.length === 0 &&
                           textContexts.length === 0 &&
                           (diffTextContexts?.length ?? 0) === 0 &&
+                          previewElementContexts.length === 0 &&
                           queueLength === 0) ||
                         isUploading
                       }
-                      hasContent={hasContent || images.length > 0 || files.length > 0 || textContexts.length > 0 || (diffTextContexts?.length ?? 0) > 0}
+                      hasContent={hasContent || images.length > 0 || files.length > 0 || textContexts.length > 0 || (diffTextContexts?.length ?? 0) > 0 || previewElementContexts.length > 0}
                       onClick={() => {
                         // If input is empty and queue has items, send first queue item
                         if (!hasContent && images.length === 0 && files.length === 0 && queueLength > 0 && onSendFromQueue && firstQueueItemId) {

@@ -1,6 +1,10 @@
 import { EventEmitter } from "node:events"
 import type { DetectedPort } from "./types"
-import { getListeningPortsForPids, getProcessTree } from "./port-scanner"
+import {
+	getListeningPortsForPids,
+	getProcessTree,
+	getAllListeningPorts,
+} from "./port-scanner"
 import type { TerminalSession } from "./types"
 
 // How often to poll for port changes (in ms)
@@ -8,6 +12,9 @@ const SCAN_INTERVAL_MS = 2500
 
 // Ports to ignore (common system ports that are usually not dev servers)
 const IGNORED_PORTS = new Set([22, 80, 443, 5432, 3306, 6379, 27017])
+
+// Special pane ID for ports not associated with a terminal session
+const SYSTEM_PANE_ID = "__system__"
 
 interface RegisteredSession {
 	session: TerminalSession
@@ -24,6 +31,10 @@ class PortManager extends EventEmitter {
 	constructor() {
 		super()
 		this.startPeriodicScan()
+		// Run initial scan immediately
+		this.scanAllSessions().catch((error) => {
+			console.error("[PortManager] Initial scan error:", error)
+		})
 	}
 
 	/**
@@ -80,39 +91,65 @@ class PortManager extends EventEmitter {
 	}
 
 	/**
-	 * Scan all registered sessions for ports
+	 * Scan all listening ports on the system
+	 * Associates ports with terminal sessions when possible,
+	 * otherwise marks them as system ports
 	 */
 	private async scanAllSessions(): Promise<void> {
 		if (this.isScanning) return
 		this.isScanning = true
 
 		try {
-			const panePortMap = new Map<
-				string,
-				{ workspaceId: string; pids: number[] }
-			>()
+			// Get all listening ports on the system
+			const allPorts = await getAllListeningPorts()
+			// Debug: log found ports
+			if (allPorts.length > 0) {
+				console.log(`[PortManager] Found ${allPorts.length} listening ports`)
+			}
 
+			// Build a map of PID -> paneId for terminal sessions
+			const pidToPaneMap = new Map<number, { paneId: string; workspaceId: string }>()
 			for (const [paneId, { session, workspaceId }] of this.sessions) {
 				if (!session.isAlive) continue
 
 				try {
-					const pid = session.pty.pid
-					const pids = await getProcessTree(pid)
-					if (pids.length > 0) {
-						panePortMap.set(paneId, { workspaceId, pids })
+					const pids = await getProcessTree(session.pty.pid)
+					for (const pid of pids) {
+						pidToPaneMap.set(pid, { paneId, workspaceId })
 					}
 				} catch {
 					// Session may have exited
 				}
 			}
 
-			for (const [paneId, { workspaceId, pids }] of panePortMap) {
-				const portInfos = await getListeningPortsForPids(pids)
-				this.updatePortsForPane(paneId, workspaceId, portInfos)
+			// Group ports by pane (or system for unassociated ports)
+			const panePortMap = new Map<
+				string,
+				{ workspaceId: string; ports: typeof allPorts }
+			>()
+
+			for (const portInfo of allPorts) {
+				if (IGNORED_PORTS.has(portInfo.port)) continue
+
+				const sessionInfo = pidToPaneMap.get(portInfo.pid)
+				const paneId = sessionInfo?.paneId ?? SYSTEM_PANE_ID
+				const workspaceId = sessionInfo?.workspaceId ?? ""
+
+				if (!panePortMap.has(paneId)) {
+					panePortMap.set(paneId, { workspaceId, ports: [] })
+				}
+				panePortMap.get(paneId)!.ports.push(portInfo)
 			}
 
+			// Update ports for each pane
+			for (const [paneId, { workspaceId, ports }] of panePortMap) {
+				this.updatePortsForPane(paneId, workspaceId, ports)
+			}
+
+			// Remove ports for panes that no longer have any
+			const activePaneIds = new Set(panePortMap.keys())
 			for (const [key, port] of this.ports) {
-				if (!this.sessions.has(port.paneId)) {
+				if (!activePaneIds.has(port.paneId)) {
 					this.ports.delete(key)
 					this.emit("port:remove", port)
 				}

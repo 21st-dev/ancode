@@ -154,6 +154,12 @@ export const ALL_SHORTCUT_ACTIONS: ShortcutAction[] = [
     defaultKeys: ["cmd", "J"],
   },
   {
+    id: "toggle-preview",
+    label: "Toggle preview",
+    category: "agents",
+    defaultKeys: ["cmd", "R"],
+  },
+  {
     id: "open-diff",
     label: "Open diff",
     category: "agents",

@@ -4,7 +4,8 @@ import { z } from "zod"
 import { router, publicProcedure } from "../index"
 import { observable } from "@trpc/server/observable"
 import { terminalManager } from "../../terminal/manager"
-import type { TerminalEvent } from "../../terminal/types"
+import { portManager } from "../../terminal/port-manager"
+import type { TerminalEvent, DetectedPort } from "../../terminal/types"
 import { TRPCError } from "@trpc/server"
 
 export const terminalRouter = router({
@@ -188,22 +189,98 @@ export const terminalRouter = router({
 		.input(z.string().min(1))
 		.subscription(({ input: paneId }) => {
 			return observable<TerminalEvent>((emit) => {
+				const onStarted = (cwd: string) => {
+					emit.next({ type: "started", cwd })
+				}
+
 				const onData = (data: string) => {
 					emit.next({ type: "data", data })
 				}
 
 				const onExit = (exitCode: number, signal?: number) => {
 					emit.next({ type: "exit", exitCode, signal })
-					emit.complete()
 				}
 
+				terminalManager.on(`started:${paneId}`, onStarted)
 				terminalManager.on(`data:${paneId}`, onData)
 				terminalManager.on(`exit:${paneId}`, onExit)
 
 				return () => {
+					terminalManager.off(`started:${paneId}`, onStarted)
 					terminalManager.off(`data:${paneId}`, onData)
 					terminalManager.off(`exit:${paneId}`, onExit)
 				}
 			})
 		}),
+
+	// ===== Port Management =====
+
+	/**
+	 * Get all detected ports across all terminal sessions
+	 */
+	getAllPorts: publicProcedure.query(() => {
+		return portManager.getAllPorts()
+	}),
+
+	/**
+	 * Get ports for a specific workspace
+	 */
+	getPortsByWorkspace: publicProcedure
+		.input(z.object({ workspaceId: z.string() }))
+		.query(({ input }) => {
+			return portManager.getPortsByWorkspace(input.workspaceId)
+		}),
+
+	/**
+	 * Kill a process by PID (sends SIGTERM, then SIGKILL after timeout)
+	 */
+	killProcessByPid: publicProcedure
+		.input(z.object({ pid: z.number() }))
+		.mutation(async ({ input }) => {
+			try {
+				process.kill(input.pid, "SIGTERM")
+				// Give it 2 seconds to terminate gracefully, then force kill
+				await new Promise((resolve) => setTimeout(resolve, 2000))
+				try {
+					// Check if process is still running
+					process.kill(input.pid, 0)
+					// Still running, force kill
+					process.kill(input.pid, "SIGKILL")
+				} catch {
+					// Process already exited, which is good
+				}
+				return { success: true }
+			} catch (err) {
+				throw new TRPCError({
+					code: "INTERNAL_SERVER_ERROR",
+					message:
+						err instanceof Error ? err.message : "Failed to kill process",
+				})
+			}
+		}),
+
+	/**
+	 * Subscribe to port changes (add/remove events)
+	 */
+	portChanges: publicProcedure.subscription(() => {
+		return observable<{ type: "add" | "remove"; port: DetectedPort }>(
+			(emit) => {
+				const onPortAdd = (port: DetectedPort) => {
+					emit.next({ type: "add", port })
+				}
+
+				const onPortRemove = (port: DetectedPort) => {
+					emit.next({ type: "remove", port })
+				}
+
+				portManager.on("port:add", onPortAdd)
+				portManager.on("port:remove", onPortRemove)
+
+				return () => {
+					portManager.off("port:add", onPortAdd)
+					portManager.off("port:remove", onPortRemove)
+				}
+			},
+		)
+	}),
 })

@@ -34,6 +34,8 @@ export {
   mobileDeviceAtomFamily,
   agentsPreviewSidebarWidthAtom,
   agentsPreviewSidebarOpenAtom,
+  newPreviewSidebarOpenAtom,
+  newPreviewSidebarWidthAtom,
 
   // Diff atoms
   agentsDiffSidebarWidthAtom,
@@ -561,6 +563,12 @@ export const agentsLoginModalOpenAtom = atom<boolean>(false)
 
 // Help popover
 export const agentsHelpPopoverOpenAtom = atom<boolean>(false)
+
+// Running servers popover (desktop only)
+export const runningServersPopoverOpenAtom = atom<boolean>(false)
+
+// MCP servers popover (desktop only)
+export const mcpServersPopoverOpenAtom = atom<boolean>(false)
 
 // Quick switch dialog - Agents
 export const agentsQuickSwitchOpenAtom = atom<boolean>(false)

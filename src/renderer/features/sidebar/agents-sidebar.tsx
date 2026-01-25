@@ -25,6 +25,8 @@ import {
   showWorkspaceIconAtom,
 } from "../../lib/atoms"
 import { ArchivePopover } from "../agents/ui/archive-popover"
+import { RunningServersSection } from "./running-servers-popover"
+import { McpServersSection } from "./mcp-servers-popover"
 import { ChevronDown, MoreHorizontal } from "lucide-react"
 // import { useRouter } from "next/navigation" // Desktop doesn't use next/navigation
 // import { useCombinedAuth } from "@/lib/hooks/use-combined-auth"
@@ -113,6 +115,7 @@ import { Checkbox } from "../../components/ui/checkbox"
 import { useHaptic } from "./hooks/use-haptic"
 import { TypewriterText } from "../../components/ui/typewriter-text"
 import { exportChat, copyChat, type ExportFormat } from "../agents/lib/export-chat"
+import { runningDevServersAtom } from "../preview-sidebar"
 
 // Feedback URL: uses env variable for hosted version, falls back to public Discord for open source
 const FEEDBACK_URL =
@@ -405,6 +408,7 @@ const AgentChatItem = React.memo(function AgentChatItem({
   hasUnseenChanges,
   hasPendingPlan,
   hasPendingQuestion,
+  hasRunningDevServer,
   isMultiSelectMode,
   isChecked,
   isFocused,
@@ -451,6 +455,7 @@ const AgentChatItem = React.memo(function AgentChatItem({
   hasUnseenChanges: boolean
   hasPendingPlan: boolean
   hasPendingQuestion: boolean
+  hasRunningDevServer: boolean
   isMultiSelectMode: boolean
   isChecked: boolean
   isFocused: boolean
@@ -638,6 +643,12 @@ const AgentChatItem = React.memo(function AgentChatItem({
               <div className="flex items-center gap-1.5 text-[11px] text-muted-foreground/60 min-w-0">
                 <span className="truncate flex-1 min-w-0">{displayText}</span>
                 <div className="flex items-center gap-1.5 flex-shrink-0">
+                  {hasRunningDevServer && (
+                    <span className="relative flex h-2 w-2" title="Dev server running">
+                      <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-blue-400 opacity-75" />
+                      <span className="relative inline-flex rounded-full h-2 w-2 bg-blue-500" />
+                    </span>
+                  )}
                   {stats && (stats.additions > 0 || stats.deletions > 0) && (
                     <>
                       <span className="text-green-600 dark:text-green-400">
@@ -803,6 +814,7 @@ interface ChatListSectionProps {
   unseenChanges: Set<string>
   workspacePendingPlans: Set<string>
   workspacePendingQuestions: Set<string>
+  runningDevServers: Set<string>
   isMultiSelectMode: boolean
   selectedChatIds: Set<string>
   isMobileFullscreen: boolean
@@ -844,6 +856,7 @@ const ChatListSection = React.memo(function ChatListSection({
   unseenChanges,
   workspacePendingPlans,
   workspacePendingQuestions,
+  runningDevServers,
   isMultiSelectMode,
   selectedChatIds,
   isMobileFullscreen,
@@ -913,6 +926,7 @@ const ChatListSection = React.memo(function ChatListSection({
           const stats = workspaceFileStats.get(chat.id)
           const hasPendingPlan = workspacePendingPlans.has(chat.id)
           const hasPendingQuestion = workspacePendingQuestions.has(chat.id)
+          const hasRunningDevServer = runningDevServers.has(chat.id)
           const isLastInFilteredChats = globalIndex === filteredChats.length - 1
           const isJustCreated = justCreatedIds.has(chat.id)
 
@@ -930,6 +944,7 @@ const ChatListSection = React.memo(function ChatListSection({
               hasUnseenChanges={unseenChanges.has(chat.id)}
               hasPendingPlan={hasPendingPlan}
               hasPendingQuestion={hasPendingQuestion}
+              hasRunningDevServer={hasRunningDevServer}
               isMultiSelectMode={isMultiSelectMode}
               isChecked={isChecked}
               isFocused={isFocused}
@@ -1475,6 +1490,7 @@ export function AgentsSidebar({
   // Read unseen changes from global atoms
   const unseenChanges = useAtomValue(agentsUnseenChangesAtom)
   const justCreatedIds = useAtomValue(justCreatedIdsAtom)
+  const runningDevServers = useAtomValue(runningDevServersAtom)
 
   // Haptic feedback
   const { trigger: triggerHaptic } = useHaptic()
@@ -2642,6 +2658,7 @@ export function AgentsSidebar({
                 unseenChanges={unseenChanges}
                 workspacePendingPlans={workspacePendingPlans}
                 workspacePendingQuestions={workspacePendingQuestions}
+                runningDevServers={runningDevServers}
                 isMultiSelectMode={isMultiSelectMode}
                 selectedChatIds={selectedChatIds}
                 isMobileFullscreen={isMobileFullscreen}
@@ -2683,6 +2700,7 @@ export function AgentsSidebar({
                 unseenChanges={unseenChanges}
                 workspacePendingPlans={workspacePendingPlans}
                 workspacePendingQuestions={workspacePendingQuestions}
+                runningDevServers={runningDevServers}
                 isMultiSelectMode={isMultiSelectMode}
                 selectedChatIds={selectedChatIds}
                 isMobileFullscreen={isMobileFullscreen}
@@ -2807,6 +2825,12 @@ export function AgentsSidebar({
 
                 {/* Help Button - isolated component to prevent sidebar re-renders */}
                 <HelpSection isMobile={isMobileFullscreen} />
+
+                {/* Running Servers Button - desktop only */}
+                {isDesktop && <RunningServersSection isMobile={isMobileFullscreen} />}
+
+                {/* MCP Servers Button - desktop only */}
+                {isDesktop && <McpServersSection isMobile={isMobileFullscreen} />}
 
                 {/* Archive Button - isolated component to prevent sidebar re-renders */}
                 <ArchiveSection archivedChatsCount={archivedChatsCount} />
