@@ -77,7 +77,9 @@ import { appStore } from "../../../lib/jotai-store"
 import { api } from "../../../lib/mock-api"
 import { trpc, trpcClient } from "../../../lib/trpc"
 import { cn } from "../../../lib/utils"
+import { BUILTIN_SLASH_COMMANDS } from "../commands"
 import { isDesktopApp } from "../../../lib/utils/platform"
+import { useResolvedHotkeyDisplay } from "../../../lib/hotkeys"
 import { ChangesPanel } from "../../changes"
 import { DiffCenterPeekDialog } from "../../changes/components/diff-center-peek-dialog"
 import { DiffFullPageView } from "../../changes/components/diff-full-page-view"
@@ -122,6 +124,7 @@ import {
   pendingBuildPlanSubChatIdAtom,
   pendingPlanApprovalsAtom,
   planEditRefetchTriggerAtomFamily,
+  workspaceDiffCacheAtomFamily,
   pendingPrMessageAtom,
   pendingReviewMessageAtom,
   pendingUserQuestionsAtom,
@@ -146,6 +149,7 @@ import { useDesktopNotifications } from "../hooks/use-desktop-notifications"
 import { useFocusInputOnEnter } from "../hooks/use-focus-input-on-enter"
 import { useHaptic } from "../hooks/use-haptic"
 import { useTextContextSelection } from "../hooks/use-text-context-selection"
+import { usePastedTextFiles } from "../hooks/use-pasted-text-files"
 import { useToggleFocusOnCmdEsc } from "../hooks/use-toggle-focus-on-cmd-esc"
 import {
   clearSubChatDraft,
@@ -205,6 +209,11 @@ import { autoRenameAgentChat } from "../utils/auto-rename"
 import { generateCommitToPrMessage, generatePrMessage, generateReviewMessage } from "../utils/pr-message"
 import { ChatInputArea } from "./chat-input-area"
 import { IsolatedMessagesSection } from "./isolated-messages-section"
+import { DetailsSidebar } from "../../details-sidebar/details-sidebar"
+import {
+  detailsSidebarOpenAtom,
+  unifiedSidebarEnabledAtom,
+} from "../../details-sidebar/atoms"
 const clearSubChatSelectionAtom = atom(null, () => {})
 const isSubChatMultiSelectModeAtom = atom(false)
 const selectedSubChatIdsAtom = atom(new Set<string>())
@@ -1635,7 +1644,7 @@ interface DiffSidebarRendererProps {
   isDesktop: boolean
   isFullscreen: boolean
   setDiffDisplayMode: (mode: "side-peek" | "center-peek" | "full-page") => void
-  handleCommitToPr: () => void
+  handleCommitToPr: (selectedPaths?: string[]) => void
   isCommittingToPr: boolean
   subChatsWithFiles: Array<{ id: string; name: string; filePaths: string[]; fileCount: number }>
   setDiffStats: (stats: { isLoading: boolean; hasChanges: boolean; fileCount: number; additions: number; deletions: number }) => void
@@ -2183,6 +2192,30 @@ const ChatViewInner = memo(function ChatViewInner({
     setTextContextsFromDraft,
     setDiffTextContextsFromDraft,
   } = useTextContextSelection()
+
+  // Pasted text files (large pasted text saved as files)
+  const {
+    pastedTexts,
+    addPastedText,
+    removePastedText,
+    clearPastedTexts,
+    pastedTextsRef,
+  } = usePastedTextFiles(subChatId)
+
+  // File contents cache - stores content for file mentions (keyed by mentionId)
+  // This content gets added to the prompt when sending, without showing a separate card
+  const fileContentsRef = useRef<Map<string, string>>(new Map())
+  const cacheFileContent = useCallback((mentionId: string, content: string) => {
+    fileContentsRef.current.set(mentionId, content)
+  }, [])
+  const clearFileContents = useCallback(() => {
+    fileContentsRef.current.clear()
+  }, [])
+
+  // Clear file contents cache when switching subChats to prevent stale data
+  useEffect(() => {
+    fileContentsRef.current.clear()
+  }, [subChatId])
 
   // Quick comment state
   const [quickCommentState, setQuickCommentState] = useState<{
@@ -2817,6 +2850,14 @@ const ChatViewInner = memo(function ChatViewInner({
     // Update store mode synchronously BEFORE sending (transport reads from store)
     useAgentSubChatStore.getState().updateSubChatMode(subChatId, "agent")
 
+    // Sync mode to database for sidebar indicator (getPendingPlanApprovals)
+    if (!subChatId.startsWith("temp-")) {
+      updateSubChatModeMutation.mutate({ subChatId, mode: "agent" })
+    }
+
+    // Update ref BEFORE setIsPlanMode to prevent useEffect from triggering duplicate mutation
+    lastIsPlanModeRef.current = false
+
     // Update React state (for UI)
     setIsPlanMode(false)
 
@@ -2829,7 +2870,7 @@ const ChatViewInner = memo(function ChatViewInner({
       role: "user",
       parts: [{ type: "text", text: "Build plan" }],
     })
-  }, [subChatId, setIsPlanMode, scrollToBottom])
+  }, [subChatId, setIsPlanMode, scrollToBottom, updateSubChatModeMutation])
 
   // Handle pending "Build plan" from sidebar
   useEffect(() => {
@@ -2886,7 +2927,7 @@ const ChatViewInner = memo(function ChatViewInner({
 
   // Track plan Edit completions to trigger sidebar refetch
   const triggerPlanEditRefetch = useSetAtom(
-    useMemo(() => planEditRefetchTriggerAtomFamily(parentChatId), [parentChatId])
+    useMemo(() => planEditRefetchTriggerAtomFamily(subChatId), [subChatId])
   )
   const lastPlanEditCountRef = useRef(0)
 
@@ -3246,11 +3287,13 @@ const ChatViewInner = memo(function ChatViewInner({
     const currentImages = imagesRef.current
     const currentFiles = filesRef.current
     const currentTextContexts = textContextsRef.current
+    const currentPastedTexts = pastedTextsRef.current
     const hasImages =
       currentImages.filter((img) => !img.isLoading && img.url).length > 0
     const hasTextContexts = currentTextContexts.length > 0
+    const hasPastedTexts = currentPastedTexts.length > 0
 
-    if (!hasText && !hasImages && !hasTextContexts) return
+    if (!hasText && !hasImages && !hasTextContexts && !hasPastedTexts) return
 
     // If streaming, add to queue instead of sending directly
     if (isStreamingRef.current) {
@@ -3287,6 +3330,36 @@ const ChatViewInner = memo(function ChatViewInner({
     }
 
     const text = inputValue.trim()
+
+    // Expand custom slash commands with arguments (e.g. "/Apex my argument")
+    // This mirrors the logic in new-chat-form.tsx
+    let finalText = text
+    const slashMatch = text.match(/^\/(\S+)\s*(.*)$/s)
+    if (slashMatch) {
+      const [, commandName, args] = slashMatch
+      const builtinNames = new Set(
+        BUILTIN_SLASH_COMMANDS.map((cmd) => cmd.name),
+      )
+      if (!builtinNames.has(commandName)) {
+        try {
+          const commands = await trpcClient.commands.list.query({
+            projectPath,
+          })
+          const cmd = commands.find(
+            (c) => c.name.toLowerCase() === commandName.toLowerCase(),
+          )
+          if (cmd) {
+            const { content } = await trpcClient.commands.getContent.query({
+              path: cmd.path,
+            })
+            finalText = content.replace(/\$ARGUMENTS/g, args.trim())
+          }
+        } catch (error) {
+          console.error("Failed to expand custom slash command:", error)
+        }
+      }
+    }
+
     // Clear editor and draft from localStorage
     editorRef.current?.clear()
     if (parentChatId) {
@@ -3296,14 +3369,14 @@ const ChatViewInner = memo(function ChatViewInner({
     // Track message sent
     trackMessageSent({
       workspaceId: subChatId,
-      messageLength: text.length,
+      messageLength: finalText.length,
       mode: isPlanModeRef.current ? "plan" : "agent",
     })
 
     // Trigger auto-rename on first message in a new sub-chat
     if (messagesLengthRef.current === 0 && !hasTriggeredRenameRef.current) {
       hasTriggeredRenameRef.current = true
-      onAutoRename(text || "Image message", subChatId)
+      onAutoRename(finalText || "Image message", subChatId)
     }
 
     // Build message parts: images first, then files, then text
@@ -3337,7 +3410,7 @@ const ChatViewInner = memo(function ChatViewInner({
     const currentDiffTextContexts = diffTextContextsRef.current
     let mentionPrefix = ""
 
-    if (currentTextContexts.length > 0 || currentDiffTextContexts.length > 0) {
+    if (currentTextContexts.length > 0 || currentDiffTextContexts.length > 0 || currentPastedTexts.length > 0) {
       const quoteMentions = currentTextContexts.map((tc) => {
         const preview = tc.preview.replace(/[:\[\]]/g, "") // Sanitize preview
         const encodedText = utf8ToBase64(tc.text) // Base64 encode full text
@@ -3351,16 +3424,40 @@ const ChatViewInner = memo(function ChatViewInner({
         return `@[${MENTION_PREFIXES.DIFF}${dtc.filePath}:${lineNum}:${preview}:${encodedText}]`
       })
 
-      mentionPrefix = [...quoteMentions, ...diffMentions].join(" ") + " "
+      // Add pasted text as pasted mentions (format: pasted:size:preview|filepath)
+      // Using | as separator since filepath can contain colons
+      const pastedTextMentions = currentPastedTexts.map((pt) => {
+        // Sanitize preview to remove special characters that break mention parsing
+        const sanitizedPreview = pt.preview.replace(/[:\[\]|]/g, "")
+        return `@[${MENTION_PREFIXES.PASTED}${pt.size}:${sanitizedPreview}|${pt.filePath}]`
+      })
+
+      mentionPrefix = [...quoteMentions, ...diffMentions, ...pastedTextMentions].join(" ") + " "
     }
 
-    if (text || mentionPrefix) {
-      parts.push({ type: "text", text: mentionPrefix + (text || "") })
+    if (finalText || mentionPrefix) {
+      parts.push({ type: "text", text: mentionPrefix + (finalText || "") })
+    }
+
+    // Add cached file contents as hidden parts (sent to agent but not displayed in UI)
+    // These are from dropped text files - content is embedded so agent sees it immediately
+    if (fileContentsRef.current.size > 0) {
+      for (const [mentionId, content] of fileContentsRef.current.entries()) {
+        // Extract file path from mentionId (file:local:path or file:external:path)
+        const filePath = mentionId.replace(/^file:(local|external):/, "")
+        parts.push({
+          type: "file-content",
+          filePath,
+          content,
+        })
+      }
     }
 
     clearAll()
     clearTextContexts()
     clearDiffTextContexts()
+    clearPastedTexts()
+    clearFileContents()
 
     // Optimistic update: immediately update chat's updated_at and resort array for instant sidebar resorting
     if (teamId) {
@@ -3421,6 +3518,7 @@ const ChatViewInner = memo(function ChatViewInner({
     onAutoRename,
     clearAll,
     clearTextContexts,
+    clearPastedTexts,
     teamId,
     addToQueue,
   ])
@@ -3590,6 +3688,35 @@ model: <model>
     }
 
     const text = inputValue.trim()
+
+    // Expand custom slash commands with arguments (e.g. "/Apex my argument")
+    let finalText = text
+    const slashMatch = text.match(/^\/(\S+)\s*(.*)$/s)
+    if (slashMatch) {
+      const [, commandName, args] = slashMatch
+      const builtinNames = new Set(
+        BUILTIN_SLASH_COMMANDS.map((cmd) => cmd.name),
+      )
+      if (!builtinNames.has(commandName)) {
+        try {
+          const commands = await trpcClient.commands.list.query({
+            projectPath,
+          })
+          const cmd = commands.find(
+            (c) => c.name.toLowerCase() === commandName.toLowerCase(),
+          )
+          if (cmd) {
+            const { content } = await trpcClient.commands.getContent.query({
+              path: cmd.path,
+            })
+            finalText = content.replace(/\$ARGUMENTS/g, args.trim())
+          }
+        } catch (error) {
+          console.error("Failed to expand custom slash command:", error)
+        }
+      }
+    }
+
     // Clear editor and draft from localStorage
     editorRef.current?.clear()
     if (parentChatId) {
@@ -3599,7 +3726,7 @@ model: <model>
     // Track message sent
     trackMessageSent({
       workspaceId: subChatId,
-      messageLength: text.length,
+      messageLength: finalText.length,
       mode: isPlanModeRef.current ? "plan" : "agent",
     })
 
@@ -3629,8 +3756,8 @@ model: <model>
         })),
     ]
 
-    if (text) {
-      parts.push({ type: "text", text })
+    if (finalText) {
+      parts.push({ type: "text", text: finalText })
     }
 
     // Clear attachments
@@ -3721,20 +3848,14 @@ model: <model>
     }
   }
 
-  // Check if there's an unapproved plan (ExitPlanMode without subsequent "Build plan" or "Implement plan")
+  // Check if there's an unapproved plan (in plan mode with completed ExitPlanMode)
   const hasUnapprovedPlan = useMemo(() => {
-    // Traverse messages from end to find unapproved ExitPlanMode
+    // If already in agent mode, plan is approved (mode is the source of truth)
+    if (!isPlanMode) return false
+
+    // Look for completed ExitPlanMode in messages
     for (let i = messages.length - 1; i >= 0; i--) {
       const msg = messages[i]
-
-      // If user message says "Build plan" or "Implement plan", plan is already approved
-      if (msg.role === "user") {
-        const text = msg.parts?.find((p: any) => p.type === "text")?.text || ""
-        const normalizedText = text.trim().toLowerCase()
-        if (normalizedText === "build plan" || normalizedText === "implement plan") {
-          return false
-        }
-      }
 
       // If assistant message with completed ExitPlanMode, we found an unapproved plan
       if (msg.role === "assistant" && msg.parts) {
@@ -3748,7 +3869,7 @@ model: <model>
       }
     }
     return false
-  }, [messages])
+  }, [messages, isPlanMode])
 
   // Keep ref in sync for use in initializeScroll (which runs in useLayoutEffect)
   hasUnapprovedPlanRef.current = hasUnapprovedPlan
@@ -4089,6 +4210,10 @@ model: <model>
         onRemoveTextContext={removeTextContext}
         diffTextContexts={diffTextContexts}
         onRemoveDiffTextContext={removeDiffTextContext}
+        pastedTexts={pastedTexts}
+        onAddPastedText={addPastedText}
+        onRemovePastedText={removePastedText}
+        onCacheFileContent={cacheFileContent}
         messageTokenData={messageTokenData}
         subChatId={subChatId}
         parentChatId={parentChatId}
@@ -4159,6 +4284,8 @@ export function ChatView({
   const setJustCreatedIds = useSetAtom(justCreatedIdsAtom)
   const selectedChatId = useAtomValue(selectedAgentChatIdAtom)
   const setUndoStack = useSetAtom(undoStackAtom)
+  const setSelectedFilePath = useSetAtom(selectedDiffFilePathAtom)
+  const setFilteredDiffFiles = useSetAtom(filteredDiffFilesAtom)
   const { notifyAgentComplete } = useDesktopNotifications()
 
   // Check if any chat has unseen changes
@@ -4213,6 +4340,14 @@ export function ChatView({
   )
   const [currentPlanPath, setCurrentPlanPath] = useAtom(currentPlanPathAtom)
 
+  // Details sidebar state (unified sidebar that combines all right sidebars)
+  const isUnifiedSidebarEnabled = useAtomValue(unifiedSidebarEnabledAtom)
+  const [isDetailsSidebarOpen, setIsDetailsSidebarOpen] = useAtom(detailsSidebarOpenAtom)
+
+  // Resolved hotkeys for tooltips
+  const toggleDetailsHotkey = useResolvedHotkeyDisplay("toggle-details")
+  const toggleTerminalHotkey = useResolvedHotkeyDisplay("toggle-terminal")
+
   // Close plan sidebar when switching to a sub-chat that has no plan
   const prevSubChatIdRef = useRef(activeSubChatIdForPlan)
   useEffect(() => {
@@ -4248,40 +4383,145 @@ export function ChatView({
     [chatId],
   )
   const [isTerminalSidebarOpen, setIsTerminalSidebarOpen] = useAtom(terminalSidebarAtom)
-  const [diffStats, setDiffStatsRaw] = useState({
-    fileCount: 0,
-    additions: 0,
-    deletions: 0,
-    isLoading: true,
-    hasChanges: false,
+
+  // Mutual exclusion: Details sidebar vs Plan/Terminal/Diff(side-peek) sidebars
+  // When one opens, close the conflicting ones and remember for restoration
+
+  // Track what was auto-closed and by whom for restoration
+  const autoClosedStateRef = useRef<{
+    // What closed Details
+    detailsClosedBy: "plan" | "terminal" | "diff" | null
+    // What Details closed
+    planClosedByDetails: boolean
+    terminalClosedByDetails: boolean
+    diffClosedByDetails: boolean
+  }>({
+    detailsClosedBy: null,
+    planClosedByDetails: false,
+    terminalClosedByDetails: false,
+    diffClosedByDetails: false,
   })
-  // Smart setter that only updates if values actually changed
+
+  // Track previous states to detect opens/closes
+  const prevSidebarStatesRef = useRef({
+    details: isDetailsSidebarOpen,
+    plan: isPlanSidebarOpen && !!currentPlanPath,
+    terminal: isTerminalSidebarOpen,
+  })
+
+  useEffect(() => {
+    const prev = prevSidebarStatesRef.current
+    const auto = autoClosedStateRef.current
+    const isPlanOpen = isPlanSidebarOpen && !!currentPlanPath
+
+    // Detect state changes
+    const detailsJustOpened = isDetailsSidebarOpen && !prev.details
+    const detailsJustClosed = !isDetailsSidebarOpen && prev.details
+    const planJustOpened = isPlanOpen && !prev.plan
+    const planJustClosed = !isPlanOpen && prev.plan
+    const terminalJustOpened = isTerminalSidebarOpen && !prev.terminal
+    const terminalJustClosed = !isTerminalSidebarOpen && prev.terminal
+
+    // Details opened → close conflicting sidebars and remember
+    if (detailsJustOpened) {
+      if (isPlanOpen) {
+        auto.planClosedByDetails = true
+        setIsPlanSidebarOpen(false)
+      }
+      if (isTerminalSidebarOpen) {
+        auto.terminalClosedByDetails = true
+        setIsTerminalSidebarOpen(false)
+      }
+    }
+    // Details closed → restore what it closed
+    else if (detailsJustClosed) {
+      if (auto.planClosedByDetails) {
+        auto.planClosedByDetails = false
+        setIsPlanSidebarOpen(true)
+      }
+      if (auto.terminalClosedByDetails) {
+        auto.terminalClosedByDetails = false
+        setIsTerminalSidebarOpen(true)
+      }
+    }
+    // Plan opened → close Details and remember
+    else if (planJustOpened && isDetailsSidebarOpen) {
+      auto.detailsClosedBy = "plan"
+      setIsDetailsSidebarOpen(false)
+    }
+    // Plan closed → restore Details if we closed it
+    else if (planJustClosed && auto.detailsClosedBy === "plan") {
+      auto.detailsClosedBy = null
+      setIsDetailsSidebarOpen(true)
+    }
+    // Terminal opened → close Details and remember
+    else if (terminalJustOpened && isDetailsSidebarOpen) {
+      auto.detailsClosedBy = "terminal"
+      setIsDetailsSidebarOpen(false)
+    }
+    // Terminal closed → restore Details if we closed it
+    else if (terminalJustClosed && auto.detailsClosedBy === "terminal") {
+      auto.detailsClosedBy = null
+      setIsDetailsSidebarOpen(true)
+    }
+
+    prevSidebarStatesRef.current = {
+      details: isDetailsSidebarOpen,
+      plan: isPlanOpen,
+      terminal: isTerminalSidebarOpen,
+    }
+  }, [
+    isDetailsSidebarOpen,
+    isPlanSidebarOpen,
+    currentPlanPath,
+    isTerminalSidebarOpen,
+    setIsDetailsSidebarOpen,
+    setIsPlanSidebarOpen,
+    setIsTerminalSidebarOpen,
+  ])
+
+  // Diff data cache - stored in atoms to persist across workspace switches
+  const diffCacheAtom = useMemo(
+    () => workspaceDiffCacheAtomFamily(chatId),
+    [chatId],
+  )
+  const [diffCache, setDiffCache] = useAtom(diffCacheAtom)
+
+  // Extract diff data from cache
+  const diffStats = diffCache.diffStats
+  const parsedFileDiffs = diffCache.parsedFileDiffs as ParsedDiffFile[] | null
+  const prefetchedFileContents = diffCache.prefetchedFileContents
+  const diffContent = diffCache.diffContent
+
+  // Smart setters that update the cache
   const setDiffStats = useCallback((val: any) => {
-    setDiffStatsRaw((prev: typeof diffStats) => {
-      // Handle function updates
-      const newVal = typeof val === 'function' ? val(prev) : val
+    setDiffCache((prev) => {
+      const newVal = typeof val === 'function' ? val(prev.diffStats) : val
       // Only update if something changed
       if (
-        prev.fileCount === newVal.fileCount &&
-        prev.additions === newVal.additions &&
-        prev.deletions === newVal.deletions &&
-        prev.isLoading === newVal.isLoading &&
-        prev.hasChanges === newVal.hasChanges
+        prev.diffStats.fileCount === newVal.fileCount &&
+        prev.diffStats.additions === newVal.additions &&
+        prev.diffStats.deletions === newVal.deletions &&
+        prev.diffStats.isLoading === newVal.isLoading &&
+        prev.diffStats.hasChanges === newVal.hasChanges
       ) {
         return prev // Return same reference to prevent re-render
       }
-      return newVal
+      return { ...prev, diffStats: newVal }
     })
-  }, [])
-  // Store raw diff content to pass to AgentDiffView (avoids double fetch)
-  const [diffContent, setDiffContent] = useState<string | null>(null)
-  // Store pre-parsed file diffs (avoids double parsing in AgentDiffView)
-  // Server returns extended type with fileLang, isNewFile, isDeletedFile
-  const [parsedFileDiffs, setParsedFileDiffs] = useState<ParsedDiffFile[] | null>(null)
-  // Store prefetched file contents for instant diff view opening
-  const [prefetchedFileContents, setPrefetchedFileContents] = useState<
-    Record<string, string>
-  >({})
+  }, [setDiffCache])
+
+  const setParsedFileDiffs = useCallback((files: ParsedDiffFile[] | null) => {
+    setDiffCache((prev) => ({ ...prev, parsedFileDiffs: files as any }))
+  }, [setDiffCache])
+
+  const setPrefetchedFileContents = useCallback((contents: Record<string, string>) => {
+    setDiffCache((prev) => ({ ...prev, prefetchedFileContents: contents }))
+  }, [setDiffCache])
+
+  const setDiffContent = useCallback((content: string | null) => {
+    setDiffCache((prev) => ({ ...prev, diffContent: content }))
+  }, [setDiffCache])
   const [diffMode, setDiffMode] = useAtom(diffViewModeAtom)
   const [diffDisplayMode, setDiffDisplayMode] = useAtom(diffViewDisplayModeAtom)
   const subChatsSidebarMode = useAtomValue(agentsSubChatsSidebarModeAtom)
@@ -4294,6 +4534,62 @@ export function ChatView({
       appStore.set(agentsDiffSidebarWidthAtom, 400)
     }
   }, [diffDisplayMode])
+
+  // Handle Diff + Details sidebar conflict (side-peek mode only)
+  // - If Diff opens in side-peek while Details is open: switch Diff to center-peek (dialog) mode
+  // - If user manually switches Diff to side-peek while Details is open: close Details and remember
+  // - If Details opens while Diff is in side-peek mode: close Diff and remember
+  const prevDiffStateRef = useRef<{ isOpen: boolean; mode: string; detailsOpen: boolean }>({
+    isOpen: isDiffSidebarOpen,
+    mode: diffDisplayMode,
+    detailsOpen: isDetailsSidebarOpen,
+  })
+  // Flag to skip center-peek switch when restoring Diff after Details closes
+  const isRestoringDiffRef = useRef(false)
+  useEffect(() => {
+    const prev = prevDiffStateRef.current
+    const auto = autoClosedStateRef.current
+    const isNowSidePeek = isDiffSidebarOpen && diffDisplayMode === "side-peek"
+    const wasSidePeek = prev.isOpen && prev.mode === "side-peek"
+    const detailsJustOpened = isDetailsSidebarOpen && !prev.detailsOpen
+    const detailsJustClosed = !isDetailsSidebarOpen && prev.detailsOpen
+    const diffSidePeekJustClosed = wasSidePeek && !isNowSidePeek
+
+    if (isNowSidePeek && isDetailsSidebarOpen) {
+      // Details just opened while Diff is in side-peek → close Diff and remember
+      if (detailsJustOpened) {
+        auto.diffClosedByDetails = true
+        setIsDiffSidebarOpen(false)
+      }
+      // Diff just opened in side-peek mode → switch to dialog (don't close Details)
+      // Skip if we're restoring Diff after Details closed
+      else if (!prev.isOpen && !isRestoringDiffRef.current) {
+        setDiffDisplayMode("center-peek")
+      }
+      // User manually switched to side-peek while Diff was already open → close Details and remember
+      else if (prev.isOpen && prev.mode !== "side-peek") {
+        auto.detailsClosedBy = "diff"
+        setIsDetailsSidebarOpen(false)
+      }
+    }
+    // Diff side-peek closed → restore Details if we closed it
+    else if (diffSidePeekJustClosed && auto.detailsClosedBy === "diff") {
+      auto.detailsClosedBy = null
+      setIsDetailsSidebarOpen(true)
+    }
+    // Details closed → restore Diff if we closed it (in side-peek mode, not switching to dialog)
+    else if (detailsJustClosed && auto.diffClosedByDetails) {
+      auto.diffClosedByDetails = false
+      isRestoringDiffRef.current = true
+      setIsDiffSidebarOpen(true)
+      // Reset flag after state update
+      requestAnimationFrame(() => {
+        isRestoringDiffRef.current = false
+      })
+    }
+
+    prevDiffStateRef.current = { isOpen: isDiffSidebarOpen, mode: diffDisplayMode, detailsOpen: isDetailsSidebarOpen }
+  }, [isDiffSidebarOpen, diffDisplayMode, isDetailsSidebarOpen, setDiffDisplayMode, setIsDetailsSidebarOpen, setIsDiffSidebarOpen])
 
   // Hide traffic lights when full-page diff is open (they would overlap with content)
   useEffect(() => {
@@ -4867,8 +5163,9 @@ export function ChatView({
   }, [chatId, setPendingPrMessage])
 
   // Handle Commit to existing PR - sends a message to Claude to commit and push
+  // selectedPaths parameter is optional - if provided, only those files will be mentioned
   const [isCommittingToPr, setIsCommittingToPr] = useState(false)
-  const handleCommitToPr = useCallback(async () => {
+  const handleCommitToPr = useCallback(async (_selectedPaths?: string[]) => {
     if (!chatId) {
       toast.error("Chat ID is required", { position: "top-center" })
       return
@@ -5952,6 +6249,9 @@ Make sure to preserve all functionality from both branches when resolving confli
                         canOpenDiff={canOpenDiff}
                         isDiffSidebarOpen={isDiffSidebarOpen}
                         diffStats={diffStats}
+                        onOpenTerminal={() => setIsTerminalSidebarOpen(true)}
+                        canOpenTerminal={!!worktreePath}
+                        chatId={chatId}
                       />
                     </>
                   )}
@@ -5990,7 +6290,7 @@ Make sure to preserve all functionality from both branches when resolving confli
                       </span>
                     </PreviewSetupHoverCard>
                   ))}
-                {/* File Tree Button - shows when file tree is closed and worktree exists (desktop only) */}
+{/* File Tree Button - shows when file tree is closed and worktree exists (desktop only) */}
                 {!isMobileFullscreen &&
                   !isFileTreeSidebarOpen &&
                   worktreePath && (
@@ -6012,27 +6312,52 @@ Make sure to preserve all functionality from both branches when resolving confli
                       </TooltipContent>
                     </Tooltip>
                   )}
-                {/* Terminal Button - shows when terminal is closed and worktree exists (desktop only) */}
+                {/* Overview/Terminal Button - shows when sidebar is closed and worktree exists (desktop only) */}
                 {!isMobileFullscreen &&
-                  !isTerminalSidebarOpen &&
                   worktreePath && (
-                    <Tooltip delayDuration={500}>
-                      <TooltipTrigger asChild>
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          onClick={() => setIsTerminalSidebarOpen(true)}
-                          className="h-6 w-6 p-0 hover:bg-foreground/10 transition-colors text-foreground flex-shrink-0 rounded-md ml-2"
-                          aria-label="Open terminal"
-                        >
-                          <TerminalSquare className="h-4 w-4" />
-                        </Button>
-                      </TooltipTrigger>
-                      <TooltipContent side="bottom">
-                        Open terminal
-                        <Kbd>⌘J</Kbd>
-                      </TooltipContent>
-                    </Tooltip>
+                    isUnifiedSidebarEnabled ? (
+                      // Details button for unified sidebar
+                      !isDetailsSidebarOpen && (
+                        <Tooltip delayDuration={500}>
+                          <TooltipTrigger asChild>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              onClick={() => setIsDetailsSidebarOpen(true)}
+                              className="h-6 w-6 p-0 hover:bg-foreground/10 transition-colors text-foreground flex-shrink-0 rounded-md ml-2"
+                              aria-label="View details"
+                            >
+                              <IconOpenSidebarRight className="h-4 w-4" />
+                            </Button>
+                          </TooltipTrigger>
+                          <TooltipContent side="bottom">
+                            View details
+                            {toggleDetailsHotkey && <Kbd>{toggleDetailsHotkey}</Kbd>}
+                          </TooltipContent>
+                        </Tooltip>
+                      )
+                    ) : (
+                      // Terminal button for legacy sidebars
+                      !isTerminalSidebarOpen && (
+                        <Tooltip delayDuration={500}>
+                          <TooltipTrigger asChild>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              onClick={() => setIsTerminalSidebarOpen(true)}
+                              className="h-6 w-6 p-0 hover:bg-foreground/10 transition-colors text-foreground flex-shrink-0 rounded-md ml-2"
+                              aria-label="Open terminal"
+                            >
+                              <TerminalSquare className="h-4 w-4" />
+                            </Button>
+                          </TooltipTrigger>
+                          <TooltipContent side="bottom">
+                            Open terminal
+                            {toggleTerminalHotkey && <Kbd>{toggleTerminalHotkey}</Kbd>}
+                          </TooltipContent>
+                        </Tooltip>
+                      )
+                    )
                   )}
                 {/* Restore Button - shows when viewing archived workspace (desktop only) */}
                 {!isMobileFullscreen && isArchived && (
@@ -6358,7 +6683,7 @@ Make sure to preserve all functionality from both branches when resolving confli
           />
         )}
 
-        {/* Data Viewer Sidebar - for viewing CSV, JSON, SQLite files */}
+{/* Data Viewer Sidebar - for viewing CSV, JSON, SQLite files */}
         {isDataViewerSidebarOpen && viewedDataFile && (worktreePath || originalProjectPath) && (
           <ResizableSidebar
             isOpen={isDataViewerSidebarOpen}
@@ -6414,6 +6739,40 @@ Make sure to preserve all functionality from both branches when resolving confli
               }}
             />
           </ResizableSidebar>
+        )}
+
+        {/* Unified Details Sidebar - combines all right sidebars into one (rightmost) */}
+        {isUnifiedSidebarEnabled && !isMobileFullscreen && worktreePath && (
+          <DetailsSidebar
+            chatId={chatId}
+            worktreePath={worktreePath}
+            planPath={currentPlanPath}
+            isPlanMode={isPlanMode}
+            onBuildPlan={handleApprovePlanFromSidebar}
+            planRefetchTrigger={planEditRefetchTrigger}
+            activeSubChatId={activeSubChatIdForPlan}
+            isPlanSidebarOpen={isPlanSidebarOpen && !!currentPlanPath}
+            isTerminalSidebarOpen={isTerminalSidebarOpen}
+            isDiffSidebarOpen={isDiffSidebarOpen}
+            diffDisplayMode={diffDisplayMode}
+            canOpenDiff={canOpenDiff}
+            setIsDiffSidebarOpen={setIsDiffSidebarOpen}
+            diffStats={diffStats}
+            parsedFileDiffs={parsedFileDiffs}
+            onCommit={handleCommitToPr}
+            isCommitting={isCommittingToPr}
+            onExpandTerminal={() => setIsTerminalSidebarOpen(true)}
+            onExpandPlan={() => setIsPlanSidebarOpen(true)}
+            onExpandDiff={() => setIsDiffSidebarOpen(true)}
+            onFileSelect={(filePath) => {
+              // Set the selected file path
+              setSelectedFilePath(filePath)
+              // Set filtered files to just this file
+              setFilteredDiffFiles([filePath])
+              // Open the diff sidebar
+              setIsDiffSidebarOpen(true)
+            }}
+          />
         )}
       </div>
     </div>

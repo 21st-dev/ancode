@@ -61,17 +61,19 @@ interface ParsedMention {
   label: string
   path: string
   repository: string
-  type: "file" | "folder" | "skill" | "agent" | "tool" | "quote" | "diff"
-  // Extra data for quote/diff mentions
+  type: "file" | "folder" | "skill" | "agent" | "tool" | "quote" | "diff" | "pasted"
+  // Extra data for quote/diff/pasted mentions
   fullText?: string
   lineNumber?: number
+  size?: number // Size in bytes for pasted mentions
 }
 
 /**
- * Parse file/folder/skill/agent/tool/quote/diff mention ID into its components
+ * Parse file/folder/skill/agent/tool/quote/diff/pasted mention ID into its components
  * Format: file:owner/repo:path/to/file.tsx or folder:owner/repo:path/to/folder or skill:skill-name or agent:agent-name or tool:mcp__server__toolname
  * Quote format: quote:preview_text:full_text (base64 encoded full text)
  * Diff format: diff:filepath:lineNumber:preview_text:full_text (base64 encoded full text)
+ * Pasted format: pasted:filepath:size:preview_text
  */
 function parseMention(id: string): ParsedMention | null {
   const isFile = id.startsWith(MENTION_PREFIXES.FILE)
@@ -81,8 +83,9 @@ function parseMention(id: string): ParsedMention | null {
   const isTool = id.startsWith(MENTION_PREFIXES.TOOL)
   const isQuote = id.startsWith(MENTION_PREFIXES.QUOTE)
   const isDiff = id.startsWith(MENTION_PREFIXES.DIFF)
+  const isPasted = id.startsWith(MENTION_PREFIXES.PASTED)
 
-  if (!isFile && !isFolder && !isSkill && !isAgent && !isTool && !isQuote && !isDiff) return null
+  if (!isFile && !isFolder && !isSkill && !isAgent && !isTool && !isQuote && !isDiff && !isPasted) return null
 
   // Handle quote mentions (format: quote:preview_text:base64_full_text)
   if (isQuote) {
@@ -148,6 +151,32 @@ function parseMention(id: string): ParsedMention | null {
       type: "diff",
       fullText,
       lineNumber,
+    }
+  }
+
+  // Handle pasted mentions (format: pasted:size:preview|filepath)
+  // Using | as separator between preview and filepath since filepath can contain colons
+  if (isPasted) {
+    const content = id.slice(MENTION_PREFIXES.PASTED.length)
+    const pipeIndex = content.lastIndexOf("|")
+    if (pipeIndex === -1) return null
+
+    const beforePipe = content.slice(0, pipeIndex)
+    const filePath = content.slice(pipeIndex + 1)
+
+    const colonIndex = beforePipe.indexOf(":")
+    if (colonIndex === -1) return null
+
+    const size = parseInt(beforePipe.slice(0, colonIndex) || "0", 10)
+    const preview = beforePipe.slice(colonIndex + 1)
+
+    return {
+      id,
+      label: preview,
+      path: filePath,
+      repository: "",
+      type: "pasted",
+      size,
     }
   }
 
@@ -392,14 +421,14 @@ export function extractFileMentions(text: string): ParsedMention[] {
 }
 
 /**
- * Check if text contains any file, folder, skill, agent, tool, quote, or diff mentions
+ * Check if text contains any file, folder, skill, agent, tool, quote, diff, or pasted mentions
  */
 export function hasFileMentions(text: string): boolean {
-  return /@\[(file|folder|skill|agent|tool|quote|diff):[^\]]+\]/.test(text)
+  return /@\[(file|folder|skill|agent|tool|quote|diff|pasted):[^\]]+\]/.test(text)
 }
 
 /**
- * Extract quote/diff mentions from text and return them separately with cleaned text
+ * Extract quote/diff/pasted mentions from text and return them separately with cleaned text
  * Used for rendering these mentions as blocks above the message bubble
  */
 export function extractTextMentions(text: string): {
@@ -415,7 +444,11 @@ export function extractTextMentions(text: string): {
 
   while ((match = regex.exec(text)) !== null) {
     const id = match[1]
-    if (id.startsWith(MENTION_PREFIXES.QUOTE) || id.startsWith(MENTION_PREFIXES.DIFF)) {
+    if (
+      id.startsWith(MENTION_PREFIXES.QUOTE) ||
+      id.startsWith(MENTION_PREFIXES.DIFF) ||
+      id.startsWith(MENTION_PREFIXES.PASTED)
+    ) {
       const parsed = parseMention(id)
       if (parsed) {
         textMentions.push(parsed)
@@ -443,17 +476,37 @@ export function extractTextMentions(text: string): {
 }
 
 /**
- * Component to render a single text mention block (quote/diff)
+ * Format bytes to human readable size
+ */
+function formatSize(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`
+  const kb = bytes / 1024
+  if (kb < 1024) return `${kb.toFixed(1)} KB`
+  return `${(kb / 1024).toFixed(1)} MB`
+}
+
+/**
+ * Component to render a single text mention block (quote/diff/pasted)
  * Used for displaying above message bubbles, not inline
  */
 export function TextMentionBlock({ mention }: { mention: ParsedMention }) {
-  if (mention.type !== "quote" && mention.type !== "diff") return null
+  if (mention.type !== "quote" && mention.type !== "diff" && mention.type !== "pasted") return null
 
   const displayTitle = mention.type === "quote"
     ? (mention.label.split('\n')[0]?.slice(0, 20) || mention.label.slice(0, 20))
-    : (mention.path?.split("/").pop() || "Code")
+    : mention.type === "pasted"
+      ? (mention.label.split('\n')[0]?.slice(0, 20) || mention.label.slice(0, 20))
+      : (mention.path?.split("/").pop() || "Code")
 
   const title = displayTitle.length < 20 ? displayTitle : `${displayTitle}...`
+
+  const subtitle = mention.type === "quote"
+    ? "Selected Text"
+    : mention.type === "pasted"
+      ? `Pasted Text · ${formatSize(mention.size || 0)}`
+      : mention.lineNumber
+        ? `Line ${mention.lineNumber}`
+        : "Code selection"
 
   return (
     <HoverCard openDelay={300} closeDelay={100}>
@@ -461,7 +514,7 @@ export function TextMentionBlock({ mention }: { mention: ParsedMention }) {
         <div className="flex items-center gap-2 px-2.5 py-1.5 rounded-lg bg-muted/50 cursor-default min-w-[120px] max-w-[200px]">
           {/* Icon container */}
           <div className="flex items-center justify-center size-8 rounded-md bg-muted shrink-0">
-            {mention.type === "quote" ? (
+            {mention.type === "quote" || mention.type === "pasted" ? (
               <TextSelectIcon className="size-4 text-muted-foreground" />
             ) : (
               <CodeSelectIcon className="size-4 text-muted-foreground" />
@@ -474,11 +527,7 @@ export function TextMentionBlock({ mention }: { mention: ParsedMention }) {
               {title}
             </span>
             <span className="text-xs text-muted-foreground">
-              {mention.type === "quote"
-                ? "Selected Text"
-                : mention.lineNumber
-                  ? `Line ${mention.lineNumber}`
-                  : "Code selection"}
+              {subtitle}
             </span>
           </div>
         </div>
@@ -490,7 +539,7 @@ export function TextMentionBlock({ mention }: { mention: ParsedMention }) {
       >
         <div className="flex flex-col gap-1">
           <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
-            {mention.type === "quote" ? (
+            {mention.type === "quote" || mention.type === "pasted" ? (
               <TextSelectIcon className="size-3" />
             ) : (
               <CodeSelectIcon className="size-3" />
@@ -498,7 +547,9 @@ export function TextMentionBlock({ mention }: { mention: ParsedMention }) {
             <span>
               {mention.type === "quote"
                 ? "Selected text"
-                : `${mention.path}${mention.lineNumber ? `:${mention.lineNumber}` : ""}`}
+                : mention.type === "pasted"
+                  ? `Pasted text · ${formatSize(mention.size || 0)}`
+                  : `${mention.path}${mention.lineNumber ? `:${mention.lineNumber}` : ""}`}
             </span>
           </div>
           <pre className="text-sm whitespace-pre-wrap break-words font-mono">
@@ -514,7 +565,7 @@ export function TextMentionBlock({ mention }: { mention: ParsedMention }) {
  * Component to render multiple text mention blocks
  */
 export function TextMentionBlocks({ mentions }: { mentions: ParsedMention[] }) {
-  const textMentions = mentions.filter(m => m.type === "quote" || m.type === "diff")
+  const textMentions = mentions.filter(m => m.type === "quote" || m.type === "diff" || m.type === "pasted")
   if (textMentions.length === 0) return null
 
   return (

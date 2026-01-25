@@ -5,6 +5,7 @@ import type {
 } from "../../../shared/changes-types";
 import { create } from "zustand";
 import { devtools, persist } from "zustand/middleware";
+import { getWindowId } from "../../contexts/WindowContext";
 
 type FileListViewMode = "grouped" | "tree";
 
@@ -136,7 +137,7 @@ export const useChangesStore = create<ChangesState>()(
 				},
 			}),
 			{
-				name: "changes-store",
+				name: `${getWindowId()}:changes-store`,
 				partialize: (state) => ({
 					selectedFiles: state.selectedFiles,
 					viewMode: state.viewMode,
@@ -145,6 +146,46 @@ export const useChangesStore = create<ChangesState>()(
 					baseBranch: state.baseBranch,
 					showRenderedMarkdown: state.showRenderedMarkdown,
 				}),
+				// Migrate from legacy storage key if window-scoped key doesn't exist
+				onRehydrateStorage: () => {
+					const windowKey = `${getWindowId()}:changes-store`
+					const legacyKey = "changes-store"
+
+					// Skip if already have data for this window
+					if (localStorage.getItem(windowKey)) {
+						return undefined
+					}
+
+					// Migration 1: Check for old numeric window ID keys (e.g., "1:changes-store")
+					// Only migrate for "main" window
+					if (windowKey.startsWith("main:")) {
+						for (let i = 0; i < localStorage.length; i++) {
+							const storageKey = localStorage.key(i)
+							if (!storageKey) continue
+
+							const match = storageKey.match(/^(\d+):changes-store$/)
+							if (match) {
+								const numericData = localStorage.getItem(storageKey)
+								if (numericData) {
+									localStorage.setItem(windowKey, numericData)
+									console.log(`[ChangesStore] Migrated from numeric ID: ${storageKey} to ${windowKey}`)
+									return undefined
+								}
+							}
+						}
+					}
+
+					// Migration 2: Check legacy key (without window prefix)
+					if (localStorage.getItem(legacyKey)) {
+						const legacyData = localStorage.getItem(legacyKey)
+						if (legacyData) {
+							localStorage.setItem(windowKey, legacyData)
+							console.log(`[ChangesStore] Migrated ${legacyKey} to ${windowKey}`)
+						}
+					}
+
+					return undefined
+				},
 			},
 		),
 		{ name: "ChangesStore" },

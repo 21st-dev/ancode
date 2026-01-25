@@ -1,12 +1,12 @@
 import { atom } from "jotai"
 import { atomFamily, atomWithStorage } from "jotai/utils"
+import { atomWithWindowStorage } from "../../lib/window-storage"
 import type { TerminalInstance } from "./types"
 
-// Storage atom for persisting per-chat terminal sidebar state
-const terminalSidebarOpenStorageAtom = atomWithStorage<Record<string, boolean>>(
+// Storage atom for persisting per-chat terminal sidebar state - window-scoped
+const terminalSidebarOpenStorageAtom = atomWithWindowStorage<Record<string, boolean>>(
   "terminal-sidebar-open-by-chat",
   {},
-  undefined,
   { getOnInit: true },
 )
 
@@ -32,11 +32,10 @@ export const terminalSidebarWidthAtom = atomWithStorage<number>(
   { getOnInit: true },
 )
 
-// Terminal cwd tracking - maps paneId to current working directory
-export const terminalCwdAtom = atomWithStorage<Record<string, string>>(
+// Terminal cwd tracking - window-scoped, maps paneId to current working directory
+export const terminalCwdAtom = atomWithWindowStorage<Record<string, string>>(
   "terminal-cwds",
   {},
-  undefined,
   { getOnInit: true },
 )
 
@@ -49,16 +48,16 @@ export const terminalSearchOpenAtom = atom<Record<string, boolean>>({})
 
 /**
  * Map of chatId -> terminal instances.
- * Each chat can have multiple terminal instances.
+ * Window-scoped so each window manages its own terminal instances.
  */
-export const terminalsAtom = atomWithStorage<
+export const terminalsAtom = atomWithWindowStorage<
   Record<string, TerminalInstance[]>
->("terminals-by-chat", {}, undefined, { getOnInit: true })
+>("terminals-by-chat", {}, { getOnInit: true })
 
 /**
  * Map of chatId -> active terminal id.
- * Tracks which terminal is currently active for each chat.
+ * Window-scoped - tracks which terminal is currently active for each chat in this window.
  */
-export const activeTerminalIdAtom = atomWithStorage<
+export const activeTerminalIdAtom = atomWithWindowStorage<
   Record<string, string | null>
->("active-terminal-by-chat", {}, undefined, { getOnInit: true })
+>("active-terminal-by-chat", {}, { getOnInit: true })

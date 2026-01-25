@@ -43,6 +43,12 @@ export const ALL_SHORTCUT_ACTIONS: ShortcutAction[] = [
   // WORKSPACES
   // ============================================
   {
+    id: "toggle-details",
+    label: "View details",
+    category: "workspaces",
+    defaultKeys: ["cmd", "shift", "\\"],
+  },
+  {
     id: "new-workspace",
     label: "New workspace",
     category: "workspaces",

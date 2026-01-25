@@ -26,6 +26,7 @@ import {
   fullThemeDataAtom,
   systemLightThemeIdAtom,
   systemDarkThemeIdAtom,
+  importedThemesAtom,
   type VSCodeFullTheme,
 } from "../atoms"
 import {
@@ -145,9 +146,13 @@ export function VSCodeThemeProvider({ children }: VSCodeThemeProviderProps) {
   const [fullThemeData, setFullThemeData] = useAtom(fullThemeDataAtom)
   const systemLightThemeId = useAtomValue(systemLightThemeIdAtom)
   const systemDarkThemeId = useAtomValue(systemDarkThemeIdAtom)
-  
-  // Use builtin themes only
-  const allThemes = BUILTIN_THEMES
+  const importedThemes = useAtomValue(importedThemesAtom)
+
+  // Combine builtin and imported themes
+  const allThemes = useMemo(
+    () => [...BUILTIN_THEMES, ...importedThemes],
+    [importedThemes],
+  )
   
   // Determine if we're in dark mode (from next-themes or theme type)
   const isDark = useMemo(() => {
@@ -162,7 +167,8 @@ export function VSCodeThemeProvider({ children }: VSCodeThemeProviderProps) {
     if (selectedThemeId === null) {
       // System mode - use the appropriate theme based on system preference
       const systemThemeId = resolvedTheme === "dark" ? systemDarkThemeId : systemLightThemeId
-      return getBuiltinThemeById(systemThemeId) || null
+      // First check in all themes (includes imported), then fallback to builtin
+      return allThemes.find((t) => t.id === systemThemeId) || getBuiltinThemeById(systemThemeId) || null
     }
     return allThemes.find((t) => t.id === selectedThemeId) || null
   }, [selectedThemeId, allThemes, resolvedTheme, systemLightThemeId, systemDarkThemeId])

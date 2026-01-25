@@ -43,6 +43,8 @@ interface TerminalTabProps {
   isEditing: boolean
   hasTabsToRight: boolean
   canCloseOthers: boolean
+  /** Use smaller text size for widget mode */
+  small?: boolean
   onSelect: (id: string) => void
   onClose: (id: string) => void
   onCloseOthers: () => void
@@ -65,6 +67,7 @@ const TerminalTab = memo(
       isEditing,
       hasTabsToRight,
       canCloseOthers,
+      small,
       onSelect,
       onClose,
       onCloseOthers,
@@ -154,7 +157,8 @@ const TerminalTab = memo(
             onClick={handleClick}
             onDoubleClick={handleDoubleClick}
             className={cn(
-              "group relative flex items-center text-sm rounded-md transition-colors h-6 flex-shrink-0 select-none",
+              "group relative flex items-center rounded-md transition-colors h-6 flex-shrink-0 select-none",
+              small ? "text-xs" : "text-sm",
               !isOnly ? "cursor-pointer" : "cursor-default",
               "outline-offset-2 focus-visible:outline focus-visible:outline-2 focus-visible:outline-ring/70",
               "overflow-hidden px-1.5 py-0.5 whitespace-nowrap min-w-[50px] gap-1.5",
@@ -178,7 +182,10 @@ const TerminalTab = memo(
                 onKeyDown={handleKeyDown}
                 onBlur={handleBlur}
                 onClick={(e) => e.stopPropagation()}
-                className="relative z-0 text-left flex-1 min-w-0 pr-1 bg-transparent outline-none border-none text-sm"
+                className={cn(
+                  "relative z-0 text-left flex-1 min-w-0 pr-1 bg-transparent outline-none border-none",
+                  small ? "text-xs" : "text-sm",
+                )}
               />
             ) : (
               <span
@@ -257,6 +264,10 @@ interface TerminalTabsProps {
   initialCwd: string
   /** Background color for gradients - should match terminal background */
   terminalBg?: string
+  /** Hide the plus button (when it's rendered externally) */
+  hidePlusButton?: boolean
+  /** Use smaller text size for widget mode */
+  small?: boolean
   onSelectTerminal: (id: string) => void
   onCloseTerminal: (id: string) => void
   onCloseOtherTerminals: (id: string) => void
@@ -271,6 +282,8 @@ export const TerminalTabs = memo(function TerminalTabs({
   cwds,
   initialCwd,
   terminalBg,
+  hidePlusButton = false,
+  small = false,
   onSelectTerminal,
   onCloseTerminal,
   onCloseOtherTerminals,
@@ -419,7 +432,10 @@ export const TerminalTabs = memo(function TerminalTabs({
       {/* Scrollable tabs container - with padding-right for plus button */}
       <div
         ref={tabsContainerRef}
-        className="flex items-center px-1 py-1 -my-1 gap-1 flex-1 min-w-0 overflow-x-auto scrollbar-hide pr-12"
+        className={cn(
+          "flex items-center px-1 py-1 -my-1 gap-1 flex-1 min-w-0 overflow-x-auto scrollbar-hide",
+          !hidePlusButton && "pr-12",
+        )}
         style={{
           // @ts-expect-error - WebKit-specific property for Electron
           WebkitAppRegion: "no-drag",
@@ -448,6 +464,7 @@ export const TerminalTabs = memo(function TerminalTabs({
               isEditing={editingTerminalId === terminal.id}
               hasTabsToRight={hasTabsToRight}
               canCloseOthers={canCloseOthers}
+              small={small}
               onSelect={onSelectTerminal}
               onClose={onCloseTerminal}
               onCloseOthers={() => onCloseOtherTerminals(terminal.id)}
@@ -470,42 +487,44 @@ export const TerminalTabs = memo(function TerminalTabs({
       </div>
 
       {/* Plus button - absolute positioned on right with gradient cover */}
-      <div
-        className="absolute right-0 top-0 bottom-0 flex items-center z-20"
-        style={{
-          // @ts-expect-error - WebKit-specific property for Electron
-          WebkitAppRegion: "no-drag",
-        }}
-      >
-        {/* Gradient to cover content peeking from the left */}
+      {!hidePlusButton && (
         <div
-          className="w-6 h-full"
+          className="absolute right-0 top-0 bottom-0 flex items-center z-20"
           style={{
-            background: terminalBg
-              ? `linear-gradient(to right, transparent, ${terminalBg})`
-              : undefined,
+            // @ts-expect-error - WebKit-specific property for Electron
+            WebkitAppRegion: "no-drag",
           }}
-        />
-        <div
-          className="h-full flex items-center pr-1"
-          style={{ backgroundColor: terminalBg }}
         >
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Button
-                variant="ghost"
-                size="icon"
-                onClick={onCreateTerminal}
-                className="h-6 w-6 p-0 hover:bg-foreground/10 transition-[background-color,transform] duration-150 ease-out active:scale-[0.97] rounded-md"
-                aria-label="New terminal"
-              >
-                <PlusIcon className="h-3.5 w-3.5" />
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent side="bottom">New terminal</TooltipContent>
-          </Tooltip>
+          {/* Gradient to cover content peeking from the left */}
+          <div
+            className="w-6 h-full"
+            style={{
+              background: terminalBg
+                ? `linear-gradient(to right, transparent, ${terminalBg})`
+                : undefined,
+            }}
+          />
+          <div
+            className="h-full flex items-center pr-1"
+            style={{ backgroundColor: terminalBg }}
+          >
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  onClick={onCreateTerminal}
+                  className="h-6 w-6 p-0 hover:bg-foreground/10 transition-[background-color,transform] duration-150 ease-out active:scale-[0.97] rounded-md"
+                  aria-label="New terminal"
+                >
+                  <PlusIcon className="h-3.5 w-3.5" />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent side="bottom">New terminal</TooltipContent>
+            </Tooltip>
+          </div>
         </div>
-      </div>
+      )}
     </div>
   )
 })

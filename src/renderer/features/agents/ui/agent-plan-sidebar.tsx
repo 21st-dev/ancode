@@ -3,7 +3,7 @@
 import { useEffect, useMemo } from "react"
 import { useAtomValue } from "jotai"
 import { Button } from "../../../components/ui/button"
-import { IconCloseSidebarRight, IconSpinner, PlanIcon } from "../../../components/ui/icons"
+import { IconDoubleChevronRight, IconSpinner, PlanIcon } from "../../../components/ui/icons"
 import { Kbd } from "../../../components/ui/kbd"
 import { ChatMarkdownRenderer } from "../../../components/chat-markdown-renderer"
 import { trpc } from "../../../lib/trpc"
@@ -50,9 +50,17 @@ export function AgentPlanSidebar({
   return (
     <div className="flex flex-col h-full bg-tl-background">
       {/* Header */}
-      <div className="flex items-center justify-between pl-3 pr-1.5 h-10 bg-tl-background flex-shrink-0 border-b border-border/50">
+      <div className="flex items-center justify-between px-2 h-10 bg-tl-background flex-shrink-0 border-b border-border/50">
         <div className="flex items-center gap-2 min-w-0 flex-1">
-          <PlanIcon className="h-4 w-4 text-muted-foreground flex-shrink-0" />
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={onClose}
+            className="h-6 w-6 p-0 hover:bg-foreground/10 transition-[background-color,transform] duration-150 ease-out active:scale-[0.97] text-foreground flex-shrink-0 rounded-md"
+            aria-label="Close plan"
+          >
+            <IconDoubleChevronRight className="h-4 w-4" />
+          </Button>
           <span className="text-sm font-medium truncate">{planTitle}</span>
         </div>
         <div className="flex items-center gap-1 flex-shrink-0">
@@ -67,13 +75,6 @@ export function AgentPlanSidebar({
               <Kbd className="ml-1.5 text-primary-foreground/70">⌘↵</Kbd>
             </Button>
           )}
-          <Button
-            variant="ghost"
-            className="h-7 w-7 p-0 hover:bg-muted transition-[background-color,transform] duration-150 ease-out active:scale-[0.97] rounded-md"
-            onClick={onClose}
-          >
-            <IconCloseSidebarRight className="h-4 w-4 text-muted-foreground" />
-          </Button>
         </div>
       </div>
 

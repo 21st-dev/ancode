@@ -628,3 +628,10 @@ export function getBuiltinThemesByType(type: "light" | "dark"): VSCodeFullTheme[
  */
 export const DEFAULT_LIGHT_THEME_ID = "21st-light"
 export const DEFAULT_DARK_THEME_ID = "21st-dark"
+
+/**
+ * Set of builtin theme names (lowercase) for filtering discovered themes
+ */
+export const BUILTIN_THEME_NAMES = new Set(
+  BUILTIN_THEMES.map((t) => t.name.toLowerCase())
+)

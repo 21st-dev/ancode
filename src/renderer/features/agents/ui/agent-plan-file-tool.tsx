@@ -122,6 +122,13 @@ export const AgentPlanFileTool = memo(function AgentPlanFileTool({
     updateScrollGradients()
   }, [planContent, updateScrollGradients])
 
+  // Auto-set current plan path when plan file appears (so Details sidebar can show it immediately)
+  useEffect(() => {
+    if (filePath && hasVisibleContent) {
+      setCurrentPlanPath(filePath)
+    }
+  }, [filePath, hasVisibleContent, setCurrentPlanPath])
+
   // Handle expand/collapse
   const handleToggleExpand = useCallback(() => {
     setIsExpanded((prev) => !prev)

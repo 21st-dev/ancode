@@ -45,8 +45,11 @@ export interface OAuthCallbacks {
 }
 
 const CALLBACK_PORT = 8914;
-const CALLBACK_PATH = '/oauth/callback';
+const CALLBACK_PATH = '/callback';
+// Client names for OAuth registration
+// Some MCP servers (like Figma) have an allowlist - try '1code' first, fall back to 'Codex'
 const CLIENT_NAME = '1code';
+const FALLBACK_CLIENT_NAME = 'Codex';
 
 /**
  * Generate a styled OAuth callback page with terminal emulator aesthetic
@@ -537,7 +540,7 @@ export class CraftOAuth {
   }
 
   // Register OAuth client dynamically
-  private async registerClient(registrationEndpoint: string): Promise<{
+  private async registerClient(registrationEndpoint: string, clientName: string): Promise<{
     client_id: string;
     client_secret?: string;
   }> {
@@ -547,7 +550,7 @@ export class CraftOAuth {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        client_name: CLIENT_NAME,
+        client_name: clientName,
         redirect_uris: [redirectUri],
         grant_types: ['authorization_code', 'refresh_token'],
         response_types: ['code'],
@@ -572,7 +575,8 @@ export class CraftOAuth {
     code: string,
     codeVerifier: string,
     clientId: string,
-    redirectUri?: string
+    redirectUri?: string,
+    clientSecret?: string
   ): Promise<OAuthTokens> {
     const uri = redirectUri || this.config.redirectUri || `http://localhost:${CALLBACK_PORT}${CALLBACK_PATH}`;
 
@@ -583,6 +587,11 @@ export class CraftOAuth {
       client_id: clientId,
       code_verifier: codeVerifier,
     });
+
+    // Add client_secret if provided (some servers require it)
+    if (clientSecret) {
+      params.set('client_secret', clientSecret);
+    }
 
     const response = await fetch(tokenEndpoint, {
       method: 'POST',
@@ -686,15 +695,24 @@ export class CraftOAuth {
     // Register client if endpoint available
     let clientId: string;
     if (metadata.registration_endpoint) {
-      this.callbacks.onStatus(`Registering client at ${metadata.registration_endpoint}...`);
+      // Try primary client name first, fall back to alternative if rejected
+      this.callbacks.onStatus(`Registering client as '${CLIENT_NAME}'...`);
       try {
-        const client = await this.registerClient(metadata.registration_endpoint);
+        const client = await this.registerClient(metadata.registration_endpoint, CLIENT_NAME);
         clientId = client.client_id;
         this.callbacks.onStatus(`Registered as client: ${clientId}`);
       } catch (error) {
-        const msg = error instanceof Error ? error.message : 'Unknown error';
-        this.callbacks.onStatus(`Client registration failed: ${msg}`);
-        throw error;
+        // Try fallback client name (some servers have allowlists)
+        this.callbacks.onStatus(`Registration as '${CLIENT_NAME}' failed, trying '${FALLBACK_CLIENT_NAME}'...`);
+        try {
+          const client = await this.registerClient(metadata.registration_endpoint, FALLBACK_CLIENT_NAME);
+          clientId = client.client_id;
+          this.callbacks.onStatus(`Registered as client: ${clientId}`);
+        } catch (fallbackError) {
+          const msg = fallbackError instanceof Error ? fallbackError.message : 'Unknown error';
+          this.callbacks.onStatus(`Client registration failed: ${msg}`);
+          throw fallbackError;
+        }
       }
     } else {
       // Use a default client ID for public clients
@@ -754,16 +772,32 @@ export class CraftOAuth {
     codeVerifier: string;
     tokenEndpoint: string;
     clientId: string;
+    clientSecret?: string;
   }> {
     this.callbacks.onStatus('Fetching OAuth server configuration...');
     const metadata = preloadedMetadata || await this.getServerMetadata();
 
     // Register client if endpoint available
     let clientId: string;
+    let clientSecret: string | undefined;
     if (metadata.registration_endpoint) {
-      const client = await this.registerClient(metadata.registration_endpoint);
-      clientId = client.client_id;
+      // Try primary client name first, fall back to alternative if rejected
+      this.callbacks.onStatus(`Registering client as '${CLIENT_NAME}'...`);
+      try {
+        const client = await this.registerClient(metadata.registration_endpoint, CLIENT_NAME);
+        clientId = client.client_id;
+        clientSecret = client.client_secret;
+        this.callbacks.onStatus(`Registered as client: ${clientId}`);
+      } catch (error) {
+        // Try fallback client name (some servers have allowlists)
+        this.callbacks.onStatus(`Registration as '${CLIENT_NAME}' failed, trying '${FALLBACK_CLIENT_NAME}'...`);
+        const client = await this.registerClient(metadata.registration_endpoint, FALLBACK_CLIENT_NAME);
+        clientId = client.client_id;
+        clientSecret = client.client_secret;
+        this.callbacks.onStatus(`Registered as client: ${clientId}`);
+      }
     } else {
+      // No registration endpoint - use default client ID
       clientId = '1code';
     }
 
@@ -785,6 +819,7 @@ export class CraftOAuth {
       codeVerifier: pkce.verifier,
       tokenEndpoint: metadata.token_endpoint,
       clientId,
+      clientSecret,
     };
   }
 
@@ -795,10 +830,11 @@ export class CraftOAuth {
     code: string,
     codeVerifier: string,
     tokenEndpoint: string,
-    clientId: string
+    clientId: string,
+    clientSecret?: string
   ): Promise<OAuthTokens> {
     const redirectUri = this.config.redirectUri || `http://localhost:${CALLBACK_PORT}${CALLBACK_PATH}`;
-    return this.exchangeCodeForTokens(tokenEndpoint, code, codeVerifier, clientId, redirectUri);
+    return this.exchangeCodeForTokens(tokenEndpoint, code, codeVerifier, clientId, redirectUri, clientSecret);
   }
 
   // Start local HTTP server to receive OAuth callback

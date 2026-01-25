@@ -70,7 +70,7 @@ const listAgentsProcedure = publicProcedure
     let projectAgentsPromise = Promise.resolve<FileAgent[]>([])
     if (input?.cwd) {
       const projectAgentsDir = path.join(input.cwd, ".claude", "agents")
-      projectAgentsPromise = scanAgentsDirectory(projectAgentsDir, "project")
+      projectAgentsPromise = scanAgentsDirectory(projectAgentsDir, "project", input.cwd)
     }
 
     const [userAgents, projectAgents] = await Promise.all([

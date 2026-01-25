@@ -30,23 +30,30 @@ const CDN_BASE = "https://cdn.21st.dev/releases/desktop"
 const MIN_CHECK_INTERVAL = 60 * 1000 // 1 minute
 let lastCheckTime = 0
 
-let mainWindow: (() => BrowserWindow | null) | null = null
+let getAllWindows: (() => BrowserWindow[]) | null = null
 
 /**
- * Send update event to renderer process
+ * Send update event to all renderer windows
+ * Update events are app-wide and should be visible in all windows
  */
-function sendToRenderer(channel: string, data?: unknown) {
-  const win = mainWindow?.()
-  if (win && !win.isDestroyed()) {
-    win.webContents.send(channel, data)
+function sendToAllRenderers(channel: string, data?: unknown) {
+  const windows = getAllWindows?.() ?? BrowserWindow.getAllWindows()
+  for (const win of windows) {
+    try {
+      if (win && !win.isDestroyed()) {
+        win.webContents.send(channel, data)
+      }
+    } catch {
+      // Window may have been destroyed between check and send
+    }
   }
 }
 
 /**
  * Initialize the auto-updater with event handlers and IPC
  */
-export async function initAutoUpdater(getWindow: () => BrowserWindow | null) {
-  mainWindow = getWindow
+export async function initAutoUpdater(getWindows: () => BrowserWindow[]) {
+  getAllWindows = getWindows
 
   // Initialize config
   initAutoUpdaterConfig()
@@ -67,7 +74,7 @@ export async function initAutoUpdater(getWindow: () => BrowserWindow | null) {
   // Event: Checking for updates
   autoUpdater.on("checking-for-update", () => {
     log.info("[AutoUpdater] Checking for updates...")
-    sendToRenderer("update:checking")
+    sendToAllRenderers("update:checking")
   })
 
   // Event: Update available
@@ -78,7 +85,7 @@ export async function initAutoUpdater(getWindow: () => BrowserWindow | null) {
     if (setUpdateAvailable) {
       setUpdateAvailable(true, info.version)
     }
-    sendToRenderer("update:available", {
+    sendToAllRenderers("update:available", {
       version: info.version,
       releaseDate: info.releaseDate,
       releaseNotes: info.releaseNotes,
@@ -88,7 +95,7 @@ export async function initAutoUpdater(getWindow: () => BrowserWindow | null) {
   // Event: No update available
   autoUpdater.on("update-not-available", (info: UpdateInfo) => {
     log.info(`[AutoUpdater] App is up to date (v${info.version})`)
-    sendToRenderer("update:not-available", {
+    sendToAllRenderers("update:not-available", {
       version: info.version,
     })
   })
@@ -99,7 +106,7 @@ export async function initAutoUpdater(getWindow: () => BrowserWindow | null) {
       `[AutoUpdater] Download progress: ${progress.percent.toFixed(1)}% ` +
         `(${formatBytes(progress.transferred)}/${formatBytes(progress.total)})`,
     )
-    sendToRenderer("update:progress", {
+    sendToAllRenderers("update:progress", {
       percent: progress.percent,
       bytesPerSecond: progress.bytesPerSecond,
       transferred: progress.transferred,
@@ -115,7 +122,7 @@ export async function initAutoUpdater(getWindow: () => BrowserWindow | null) {
     if (setUpdateAvailable) {
       setUpdateAvailable(false)
     }
-    sendToRenderer("update:downloaded", {
+    sendToAllRenderers("update:downloaded", {
       version: info.version,
       releaseDate: info.releaseDate,
       releaseNotes: info.releaseNotes,
@@ -125,7 +132,7 @@ export async function initAutoUpdater(getWindow: () => BrowserWindow | null) {
   // Event: Error
   autoUpdater.on("error", (error: Error) => {
     log.error("[AutoUpdater] Error:", error.message)
-    sendToRenderer("update:error", error.message)
+    sendToAllRenderers("update:error", error.message)
   })
 
   // Register IPC handlers
@@ -243,7 +250,7 @@ export async function downloadUpdate() {
  * Check for updates when window gains focus
  * This is more natural than checking on an interval
  */
-export function setupFocusUpdateCheck(getWindow: () => BrowserWindow | null) {
+export function setupFocusUpdateCheck(_getWindows: () => BrowserWindow[]) {
   // Listen for window focus events
   app.on("browser-window-focus", () => {
     log.info("[AutoUpdater] Window focused - checking for updates")

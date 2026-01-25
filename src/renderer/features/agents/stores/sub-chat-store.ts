@@ -2,6 +2,7 @@ import { create } from "zustand"
 import { useMessageQueueStore } from "./message-queue-store"
 import { useStreamingStatusStore } from "./streaming-status-store"
 import { agentChatStore } from "./agent-chat-store"
+import { getWindowId } from "../../../contexts/WindowContext"
 
 export interface SubChatMeta {
   id: string
@@ -37,7 +38,11 @@ interface AgentSubChatStore {
 }
 
 // localStorage helpers - store open tabs, active tab, and pinned tabs
+// Prefixed with windowId to isolate state per Electron window
 const getStorageKey = (chatId: string, type: "open" | "active" | "pinned") =>
+  `${getWindowId()}:agent-${type}-sub-chats-${chatId}`
+
+const getLegacyStorageKey = (chatId: string, type: "open" | "active" | "pinned") =>
   `agent-${type}-sub-chats-${chatId}`
 
 // Custom event for notifying other components when open sub-chats change
@@ -59,10 +64,56 @@ const saveToLS = (chatId: string, type: "open" | "active" | "pinned", value: unk
   }
 }
 
+// Find data from old numeric window IDs (e.g., "1:agent-open-sub-chats-xxx")
+const findNumericWindowIdValue = (legacyKey: string, targetKey: string): string | null => {
+  // Only migrate for "main" window
+  if (!targetKey.startsWith("main:")) return null
+
+  for (let i = 0; i < localStorage.length; i++) {
+    const storageKey = localStorage.key(i)
+    if (!storageKey) continue
+
+    // Check if this key matches pattern: <number>:<legacyKey>
+    const match = storageKey.match(/^(\d+):(.+)$/)
+    if (match && match[2] === legacyKey) {
+      const value = localStorage.getItem(storageKey)
+      if (value !== null) {
+        console.log(`[SubChatStore] Migrated from numeric ID: ${storageKey} to ${targetKey}`)
+        return value
+      }
+    }
+  }
+  return null
+}
+
 const loadFromLS = <T>(chatId: string, type: "open" | "active" | "pinned", fallback: T): T => {
   if (typeof window === "undefined") return fallback
   try {
-    const stored = localStorage.getItem(getStorageKey(chatId, type))
+    const key = getStorageKey(chatId, type)
+    let stored = localStorage.getItem(key)
+
+    // Migration 1: check for old numeric window ID keys
+    if (stored === null) {
+      const legacyKey = getLegacyStorageKey(chatId, type)
+      const numericValue = findNumericWindowIdValue(legacyKey, key)
+      if (numericValue !== null) {
+        localStorage.setItem(key, numericValue)
+        stored = numericValue
+      }
+    }
+
+    // Migration 2: check legacy key if window-scoped key doesn't exist
+    if (stored === null) {
+      const legacyKey = getLegacyStorageKey(chatId, type)
+      const legacyStored = localStorage.getItem(legacyKey)
+      if (legacyStored !== null) {
+        // Migrate to window-scoped key
+        localStorage.setItem(key, legacyStored)
+        stored = legacyStored
+        console.log(`[SubChatStore] Migrated ${legacyKey} to ${key}`)
+      }
+    }
+
     return stored ? JSON.parse(stored) : fallback
   } catch {
     return fallback

@@ -135,6 +135,19 @@ export function AgentsContent() {
     }))
   )
 
+  // Update window title when active sub-chat changes
+  const activeSubChatName = useMemo(() => {
+    if (!activeSubChatId) return null
+    const subChat = allSubChats.find((sc) => sc.id === activeSubChatId)
+    return subChat?.name ?? null
+  }, [activeSubChatId, allSubChats])
+
+  useEffect(() => {
+    if (typeof window !== "undefined" && window.desktopApi?.setWindowTitle) {
+      window.desktopApi.setWindowTitle(activeSubChatName || "")
+    }
+  }, [activeSubChatName])
+
   // Fetch teams for header
   const { data: teams } = api.teams.getUserTeams.useQuery(undefined, {
     enabled: !!selectedTeamId,

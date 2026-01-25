@@ -11,11 +11,13 @@ import {
   systemDarkThemeIdAtom,
   showWorkspaceIconAtom,
   alwaysExpandTodoListAtom,
+  importedThemesAtom,
   type VSCodeFullTheme,
 } from "../../../lib/atoms"
 import {
   BUILTIN_THEMES,
   getBuiltinThemeById,
+  BUILTIN_THEME_NAMES,
 } from "../../../lib/themes/builtin-themes"
 import {
   generateCSSVariables,
@@ -28,7 +30,9 @@ import {
   SelectContent,
   SelectItem,
   SelectTrigger,
-  SelectValue,
+  SelectSeparator,
+  SelectLabel,
+  SelectGroup,
 } from "../../../components/ui/select"
 import { Switch } from "../../../components/ui/switch"
 
@@ -137,6 +141,7 @@ export function AgentsAppearanceTab() {
     systemDarkThemeIdAtom,
   )
   const setFullThemeData = useSetAtom(fullThemeDataAtom)
+  const [importedThemes, setImportedThemes] = useAtom(importedThemesAtom)
 
   // Sidebar settings
   const [showWorkspaceIcon, setShowWorkspaceIcon] = useAtom(showWorkspaceIconAtom)
@@ -144,9 +149,58 @@ export function AgentsAppearanceTab() {
   // To-do list preference
   const [alwaysExpandTodoList, setAlwaysExpandTodoList] = useAtom(alwaysExpandTodoListAtom)
 
+  // VS Code themes state
+  const [isScanning, setIsScanning] = useState(false)
+
   useEffect(() => {
     setMounted(true)
   }, [])
+
+  // Scan and load VS Code themes on mount
+  useEffect(() => {
+    if (!mounted) return
+    const api = window.desktopApi
+    if (typeof api?.scanVSCodeThemes !== "function") return
+    if (typeof api?.loadVSCodeTheme !== "function") return
+
+    const loadAllThemes = async () => {
+      setIsScanning(true)
+      try {
+        const discovered = await api.scanVSCodeThemes()
+        // Filter out themes that are already builtin
+        const newThemes = discovered.filter(
+          (t) => !BUILTIN_THEME_NAMES.has(t.name.toLowerCase())
+        )
+
+        // Load all themes in parallel
+        const loadedThemes = await Promise.all(
+          newThemes.map(async (theme) => {
+            try {
+              const fullTheme = await api.loadVSCodeTheme(theme.path)
+              return {
+                ...fullTheme,
+                id: theme.id,
+                source: "imported" as const,
+              } as VSCodeFullTheme
+            } catch (err) {
+              console.error("[appearance-tab] Failed to load theme:", theme.name, err)
+              return null
+            }
+          })
+        )
+
+        // Filter out failed loads and update imported themes
+        const validThemes = loadedThemes.filter((t): t is VSCodeFullTheme => t !== null)
+        setImportedThemes(validThemes)
+      } catch (error) {
+        console.error("Failed to load VS Code themes:", error)
+      } finally {
+        setIsScanning(false)
+      }
+    }
+
+    loadAllThemes()
+  }, [mounted, setImportedThemes])
 
   // Group themes by type
   const darkThemes = useMemo(
@@ -166,8 +220,11 @@ export function AgentsAppearanceTab() {
     if (selectedThemeId === null) {
       return null // System mode
     }
-    return BUILTIN_THEMES.find((t) => t.id === selectedThemeId) || null
-  }, [selectedThemeId])
+    // Check in both builtin and imported themes
+    return BUILTIN_THEMES.find((t) => t.id === selectedThemeId) ||
+           importedThemes.find((t) => t.id === selectedThemeId) ||
+           null
+  }, [selectedThemeId, importedThemes])
 
   // Get theme objects for system mode selectors
   const systemLightTheme = useMemo(
@@ -201,7 +258,9 @@ export function AgentsAppearanceTab() {
         return
       }
 
-      const theme = BUILTIN_THEMES.find((t) => t.id === themeId)
+      // Check in both builtin and imported themes
+      const theme = BUILTIN_THEMES.find((t) => t.id === themeId) ||
+                    importedThemes.find((t) => t.id === themeId)
       if (theme) {
         setFullThemeData(theme)
 
@@ -227,6 +286,7 @@ export function AgentsAppearanceTab() {
       systemDarkThemeId,
       setFullThemeData,
       setNextTheme,
+      importedThemes,
     ],
   )
 
@@ -276,6 +336,16 @@ export function AgentsAppearanceTab() {
     [setSystemDarkThemeId, resolvedTheme, selectedThemeId],
   )
 
+  // Group imported themes by type
+  const importedDarkThemes = useMemo(
+    () => importedThemes.filter((t) => t.type === "dark"),
+    [importedThemes],
+  )
+  const importedLightThemes = useMemo(
+    () => importedThemes.filter((t) => t.type === "light"),
+    [importedThemes],
+  )
+
   // Re-apply theme when system preference changes
   useEffect(() => {
     if (selectedThemeId === null && mounted) {
@@ -308,7 +378,7 @@ export function AgentsAppearanceTab() {
   }
 
   return (
-    <div className="p-6 space-y-6 overflow-y-auto max-h-[70vh]">
+    <div className="p-6 space-y-6 flex-1 overflow-y-auto">
       {/* Header - hidden on narrow screens since it's in the navigation bar */}
       {!isNarrowScreen && (
         <div className="flex flex-col space-y-1.5 text-center sm:text-left">
@@ -394,6 +464,37 @@ export function AgentsAppearanceTab() {
                   </div>
                 </SelectItem>
               ))}
+
+              {/* Imported themes from VS Code / Cursor / Windsurf */}
+              {importedThemes.length > 0 && (
+                <>
+                  <SelectSeparator />
+                  <SelectGroup>
+                    <SelectLabel className="text-xs text-muted-foreground px-2">
+                      From editors
+                    </SelectLabel>
+                    {importedThemes.map((theme) => (
+                      <SelectItem key={theme.id} value={theme.id}>
+                        <div className="flex items-center gap-2">
+                          <ThemePreviewBox theme={theme} size="sm" />
+                          <span className="truncate">{theme.name}</span>
+                        </div>
+                      </SelectItem>
+                    ))}
+                  </SelectGroup>
+                </>
+              )}
+
+              {/* Loading indicator */}
+              {isScanning && (
+                <>
+                  <SelectSeparator />
+                  <div className="flex items-center gap-2 px-2 py-1.5 text-xs text-muted-foreground">
+                    <IconSpinner className="h-3 w-3" />
+                    <span>Loading themes from editors...</span>
+                  </div>
+                </>
+              )}
             </SelectContent>
           </Select>
         </div>
@@ -486,6 +587,7 @@ export function AgentsAppearanceTab() {
           )}
         </AnimatePresence>
       </div>
+
 
       {/* Display Options Section */}
       <div className="bg-background rounded-lg border border-border overflow-hidden">

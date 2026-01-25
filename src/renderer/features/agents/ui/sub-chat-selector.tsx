@@ -8,8 +8,12 @@ import {
   agentsSubChatsSidebarModeAtom,
   pendingUserQuestionsAtom,
 } from "../atoms"
+import {
+  widgetVisibilityAtomFamily,
+  unifiedSidebarEnabledAtom,
+} from "../../details-sidebar/atoms"
 import { trpc } from "../../../lib/trpc"
-import { X, Plus, AlignJustify, Play } from "lucide-react"
+import { X, Plus, AlignJustify, Play, TerminalSquare } from "lucide-react"
 import {
   IconSpinner,
   PlanIcon,
@@ -35,6 +39,7 @@ import {
 } from "../../../components/ui/tooltip"
 import { Kbd } from "../../../components/ui/kbd"
 import { getShortcutKey } from "../../../lib/utils/platform"
+import { useResolvedHotkeyDisplay } from "../../../lib/hotkeys"
 import {
   ContextMenu,
   ContextMenuTrigger,
@@ -168,6 +173,9 @@ interface SubChatSelectorProps {
   canOpenDiff?: boolean
   isDiffSidebarOpen?: boolean
   diffStats?: DiffStats
+  onOpenTerminal?: () => void
+  canOpenTerminal?: boolean
+  chatId?: string
 }
 
 export function SubChatSelector({
@@ -180,6 +188,9 @@ export function SubChatSelector({
   canOpenDiff = false,
   isDiffSidebarOpen = false,
   diffStats,
+  onOpenTerminal,
+  canOpenTerminal = false,
+  chatId,
 }: SubChatSelectorProps) {
   // Use shallow comparison to prevent re-renders when arrays have same content
   const { activeSubChatId, openSubChatIds, pinnedSubChatIds, allSubChats, parentChatId, togglePinSubChat } = useAgentSubChatStore(
@@ -199,6 +210,24 @@ export function SubChatSelector({
     agentsSubChatsSidebarModeAtom,
   )
   const pendingQuestionsMap = useAtomValue(pendingUserQuestionsAtom)
+
+  // Overview sidebar state - to check if widgets are visible
+  const isUnifiedSidebarEnabled = useAtomValue(unifiedSidebarEnabledAtom)
+  const widgetVisibilityAtom = useMemo(
+    () => widgetVisibilityAtomFamily(chatId || ""),
+    [chatId],
+  )
+  const widgetVisibility = useAtomValue(widgetVisibilityAtom)
+
+  // Show standalone buttons when:
+  // 1. Unified sidebar is disabled (use legacy sidebars), OR
+  // 2. Unified sidebar is enabled but the widget is hidden by user
+  const showDiffButton = !isUnifiedSidebarEnabled || !widgetVisibility.includes("diff")
+  const showTerminalButton = !isUnifiedSidebarEnabled || !widgetVisibility.includes("terminal")
+
+  // Resolved hotkeys for tooltips
+  const openDiffHotkey = useResolvedHotkeyDisplay("open-diff")
+  const toggleTerminalHotkey = useResolvedHotkeyDisplay("toggle-terminal")
 
   // Pending plan approvals from DB - only for open sub-chats
   const { data: pendingPlanApprovalsData } = trpc.chats.getPendingPlanApprovals.useQuery(
@@ -867,8 +896,8 @@ export function SubChatSelector({
         </div>
       )}
 
-      {/* Diff button - always visible on desktop when sandbox exists */}
-      {!isMobile && canOpenDiff && (
+      {/* Diff button - visible on desktop when unified sidebar is disabled OR diff widget is hidden */}
+      {!isMobile && canOpenDiff && showDiffButton && (
         <div
           className="rounded-md bg-background/10 backdrop-blur-[10px] flex items-center justify-center"
           style={{
@@ -898,11 +927,40 @@ export function SubChatSelector({
               ) : diffStats?.hasChanges ? (
                 <>
                   <span>View changes</span>
-                  <Kbd>⌘D</Kbd>
+                  {openDiffHotkey && <Kbd>{openDiffHotkey}</Kbd>}
                 </>
               ) : (
                 "No changes"
               )}
+            </TooltipContent>
+          </Tooltip>
+        </div>
+      )}
+
+      {/* Terminal button - visible on desktop when unified sidebar is disabled OR terminal widget is hidden */}
+      {!isMobile && canOpenTerminal && showTerminalButton && (
+        <div
+          className="rounded-md bg-background/10 backdrop-blur-[10px] flex items-center justify-center"
+          style={{
+            // @ts-expect-error - WebKit-specific property
+            WebkitAppRegion: "no-drag",
+          }}
+        >
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={() => onOpenTerminal?.()}
+                className="h-6 w-6 p-0 transition-[background-color,transform] duration-150 ease-out active:scale-[0.97] flex-shrink-0 rounded-md flex items-center justify-center hover:bg-foreground/10"
+              >
+                <TerminalSquare className="h-4 w-4" />
+                <span className="sr-only">Open terminal</span>
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent side="bottom">
+              <span>Open terminal</span>
+              {toggleTerminalHotkey && <Kbd>{toggleTerminalHotkey}</Kbd>}
             </TooltipContent>
           </Tooltip>
         </div>

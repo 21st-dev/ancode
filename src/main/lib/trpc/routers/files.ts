@@ -1,13 +1,13 @@
 import { z } from "zod"
 import { router, publicProcedure } from "../index"
-import { readdir, stat, readFile, rm, rename, copyFile, mkdir } from "node:fs/promises"
+import { readdir, stat, readFile, writeFile, rm, rename, copyFile, mkdir } from "node:fs/promises"
 import { watch, type FSWatcher } from "node:fs"
 import { join, relative, basename, resolve, isAbsolute, sep } from "node:path"
 import { observable } from "@trpc/server/observable"
 import { EventEmitter } from "node:events"
 import { exec } from "node:child_process"
 import { promisify } from "node:util"
-import { shell } from "electron"
+import { app, shell } from "electron"
 import {
   getDataFileInfo,
   parseDataFile,
@@ -1427,6 +1427,42 @@ export const filesRouter = router({
       } catch (error) {
         console.error(`[files] Error reading file ${filePath}:`, error)
         throw new Error(`Failed to read file: ${error instanceof Error ? error.message : "Unknown error"}`)
+      }
+    }),
+
+  /**
+   * Write pasted text to a file in the session's pasted directory
+   * Used for large text pastes that shouldn't be embedded inline
+   */
+  writePastedText: publicProcedure
+    .input(
+      z.object({
+        subChatId: z.string(),
+        text: z.string(),
+        filename: z.string().optional(),
+      })
+    )
+    .mutation(async ({ input }) => {
+      const { subChatId, text, filename } = input
+
+      // Create pasted directory in session folder
+      const sessionDir = join(app.getPath("userData"), "claude-sessions", subChatId)
+      const pastedDir = join(sessionDir, "pasted")
+      await mkdir(pastedDir, { recursive: true })
+
+      // Generate filename with timestamp
+      const finalFilename = filename || `pasted_${Date.now()}.txt`
+      const filePath = join(pastedDir, finalFilename)
+
+      // Write file
+      await writeFile(filePath, text, "utf-8")
+
+      console.log(`[files] Wrote pasted text to ${filePath} (${text.length} bytes)`)
+
+      return {
+        filePath,
+        filename: finalFilename,
+        size: text.length,
       }
     }),
 })

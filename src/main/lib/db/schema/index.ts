@@ -1,4 +1,4 @@
-import { sqliteTable, text, integer } from "drizzle-orm/sqlite-core"
+import { index, sqliteTable, text, integer } from "drizzle-orm/sqlite-core"
 import { relations } from "drizzle-orm"
 import { createId } from "../utils"
 
@@ -49,7 +49,9 @@ export const chats = sqliteTable("chats", {
   // PR tracking fields
   prUrl: text("pr_url"),
   prNumber: integer("pr_number"),
-})
+}, (table) => [
+  index("chats_worktree_path_idx").on(table.worktreePath),
+])
 
 export const chatsRelations = relations(chats, ({ one, many }) => ({
   project: one(projects, {

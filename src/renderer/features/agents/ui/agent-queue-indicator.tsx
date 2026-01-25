@@ -11,8 +11,10 @@ import {
 import { cn } from "../../../lib/utils"
 import type { AgentQueueItem } from "../lib/queue-utils"
 import { RenderFileMentions } from "../mentions/render-file-mentions"
+import { getWindowId } from "../../../contexts/WindowContext"
 
-const QUEUE_EXPANDED_KEY = "agent-queue-expanded"
+// Window-scoped key so each window has its own queue expanded state
+const getQueueExpandedKey = () => `${getWindowId()}:agent-queue-expanded`
 
 // Queue item row component
 const QueueItemRow = memo(function QueueItemRow({
@@ -110,16 +112,16 @@ export const AgentQueueIndicator = memo(function AgentQueueIndicator({
   isStreaming = false,
   hasStatusCardBelow = false,
 }: AgentQueueIndicatorProps) {
-  // Load expanded state from localStorage
+  // Load expanded state from localStorage (window-scoped)
   const [isExpanded, setIsExpanded] = useState(() => {
     if (typeof window === "undefined") return true
-    const saved = localStorage.getItem(QUEUE_EXPANDED_KEY)
+    const saved = localStorage.getItem(getQueueExpandedKey())
     return saved !== null ? saved === "true" : true // Default to expanded
   })
 
-  // Save expanded state to localStorage
+  // Save expanded state to localStorage (window-scoped)
   useEffect(() => {
-    localStorage.setItem(QUEUE_EXPANDED_KEY, String(isExpanded))
+    localStorage.setItem(getQueueExpandedKey(), String(isExpanded))
   }, [isExpanded])
 
   if (queue.length === 0) {

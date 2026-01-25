@@ -512,6 +512,17 @@ export const alwaysExpandTodoListAtom = atomWithStorage<boolean>(
 export const fullThemeDataAtom = atom<VSCodeFullTheme | null>(null)
 
 /**
+ * Imported themes from VS Code extensions
+ * Persisted in localStorage, loaded on app start
+ */
+export const importedThemesAtom = atomWithStorage<VSCodeFullTheme[]>(
+  "preferences:imported-themes",
+  [],
+  undefined,
+  { getOnInit: true },
+)
+
+/**
  * All available full themes (built-in + imported + discovered)
  * This is a derived atom that combines all theme sources
  */

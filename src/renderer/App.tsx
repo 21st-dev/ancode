@@ -4,7 +4,9 @@ import { useEffect, useMemo } from "react"
 import { Toaster } from "sonner"
 import { TooltipProvider } from "./components/ui/tooltip"
 import { TRPCProvider } from "./contexts/TRPCProvider"
-import { selectedProjectAtom } from "./features/agents/atoms"
+import { WindowProvider, getInitialWindowParams } from "./contexts/WindowContext"
+import { selectedProjectAtom, selectedAgentChatIdAtom } from "./features/agents/atoms"
+import { useAgentSubChatStore } from "./features/agents/stores/sub-chat-store"
 import { AgentsLayout } from "./features/layout/agents-layout"
 import {
   AnthropicOnboardingPage,
@@ -49,6 +51,22 @@ function AppContent() {
   const apiKeyOnboardingCompleted = useAtomValue(apiKeyOnboardingCompletedAtom)
   const setApiKeyOnboardingCompleted = useSetAtom(apiKeyOnboardingCompletedAtom)
   const selectedProject = useAtomValue(selectedProjectAtom)
+  const setSelectedChatId = useSetAtom(selectedAgentChatIdAtom)
+  const { setActiveSubChat, addToOpenSubChats, setChatId } = useAgentSubChatStore()
+
+  // Apply initial window params (chatId/subChatId) when opening via "Open in new window"
+  useEffect(() => {
+    const params = getInitialWindowParams()
+    if (params.chatId) {
+      console.log("[App] Opening chat from window params:", params.chatId, params.subChatId)
+      setSelectedChatId(params.chatId)
+      setChatId(params.chatId)
+      if (params.subChatId) {
+        addToOpenSubChats(params.subChatId)
+        setActiveSubChat(params.subChatId)
+      }
+    }
+  }, [setSelectedChatId, setChatId, addToOpenSubChats, setActiveSubChat])
 
   // Check if user has existing CLI config (API key or proxy)
   // Based on PR #29 by @sa4hnd
@@ -153,22 +171,24 @@ export function App() {
   }, [])
 
   return (
-    <JotaiProvider store={appStore}>
-      <ThemeProvider attribute="class" defaultTheme="system" enableSystem>
-        <VSCodeThemeProvider>
-          <TooltipProvider delayDuration={100}>
-            <TRPCProvider>
-              <div
-                data-agents-page
-                className="h-screen w-screen bg-background text-foreground overflow-hidden"
-              >
-                <AppContent />
-              </div>
-              <ThemedToaster />
-            </TRPCProvider>
-          </TooltipProvider>
-        </VSCodeThemeProvider>
-      </ThemeProvider>
-    </JotaiProvider>
+    <WindowProvider>
+      <JotaiProvider store={appStore}>
+        <ThemeProvider attribute="class" defaultTheme="system" enableSystem>
+          <VSCodeThemeProvider>
+            <TooltipProvider delayDuration={100}>
+              <TRPCProvider>
+                <div
+                  data-agents-page
+                  className="h-screen w-screen bg-background text-foreground overflow-hidden"
+                >
+                  <AppContent />
+                </div>
+                <ThemedToaster />
+              </TRPCProvider>
+            </TooltipProvider>
+          </VSCodeThemeProvider>
+        </ThemeProvider>
+      </JotaiProvider>
+    </WindowProvider>
   )
 }

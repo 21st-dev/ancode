@@ -91,6 +91,7 @@ import {
   ExcelIcon,
   ArrowDataIcon,
   PDFIcon,
+  SVGIcon,
   ImageFileIcon,
   WordIcon,
   PowerPointIcon,
@@ -424,8 +425,7 @@ export function getFileIconByExtension(
     case "bmp":
       return ImageFileIcon
     case "svg":
-      // SVG already returns HTMLIcon (XML-like), keep it or use ImageFileIcon
-      return ImageFileIcon
+      return SVGIcon
     default:
       return returnNullForUnknown ? null : FilesIcon
   }
@@ -873,14 +873,16 @@ export const AgentsFileMention = memo(function AgentsFileMention({
         matchesMultiWordSearch(file.filePath, searchLower),
       )
       .map((file) => {
-        const pathParts = file.filePath.split("/")
-        const fileName = pathParts.pop() || file.filePath
+        // Use displayPath (relative path) for UI display, filePath only for internal ID
+        const displayPath = file.displayPath || file.filePath
+        const pathParts = displayPath.split("/")
+        const fileName = pathParts.pop() || displayPath
         const dirPath = pathParts.join("/") || "/"
 
         return {
           id: `changed:${file.filePath}`,
           label: fileName,
-          path: file.filePath,
+          path: displayPath,
           repository: repository || "",
           truncatedPath: dirPath,
           additions: file.additions,

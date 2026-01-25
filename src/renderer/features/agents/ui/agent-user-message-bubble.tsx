@@ -240,10 +240,30 @@ export const AgentUserMessageBubble = memo(function AgentUserMessageBubble({
                 <div className="absolute bottom-0 left-0 right-0 h-10 pointer-events-none bg-gradient-to-t from-[hsl(var(--input-background))] to-transparent rounded-b-xl" />
               )}
             </div>
-          ) : imageParts.length > 0 && textMentions.length === 0 && !skipTextMentionBlocks ? (
-            // Show "Using image" only when no text and images are rendered inline (not by parent)
+          ) : (imageParts.length > 0 || textMentions.length > 0) && !skipTextMentionBlocks ? (
+            // Show "Using X" summary when no text but have attachments rendered inline
             <div className="bg-input-background border px-3 py-2 rounded-xl text-sm text-muted-foreground italic">
-              Using {imageParts.length === 1 ? "image" : `${imageParts.length} images`}
+              {(() => {
+                const parts: string[] = []
+
+                // Count images
+                if (imageParts.length > 0) {
+                  parts.push(imageParts.length === 1 ? "image" : `${imageParts.length} images`)
+                }
+
+                // Count text mentions by type
+                const quoteCount = textMentions.filter(m => m.type === "quote" || m.type === "pasted").length
+                const codeCount = textMentions.filter(m => m.type === "diff").length
+
+                if (quoteCount > 0) {
+                  parts.push(quoteCount === 1 ? "selected text" : `${quoteCount} text selections`)
+                }
+                if (codeCount > 0) {
+                  parts.push(codeCount === 1 ? "code selection" : `${codeCount} code selections`)
+                }
+
+                return `Using ${parts.join(", ")}`
+              })()}
             </div>
           ) : null}
         </div>

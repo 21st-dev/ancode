@@ -58,8 +58,10 @@ import { AgentContextIndicator, type MessageTokenData } from "../ui/agent-contex
 import { AgentDiffTextContextItem } from "../ui/agent-diff-text-context-item"
 import { AgentFileItem } from "../ui/agent-file-item"
 import { AgentImageItem } from "../ui/agent-image-item"
+import { AgentPastedTextItem } from "../ui/agent-pasted-text-item"
 import { AgentTextContextItem } from "../ui/agent-text-context-item"
 import { handlePasteEvent } from "../utils/paste-text"
+import type { PastedTextFile } from "../hooks/use-pasted-text-files"
 
 // Hook to get available models (including offline models if Ollama is available and debug enabled)
 function useAvailableModels() {
@@ -126,6 +128,12 @@ export interface ChatInputAreaProps {
   // Diff text context from selected diff sidebar text
   diffTextContexts?: DiffTextContext[]
   onRemoveDiffTextContext?: (id: string) => void
+  // Pasted text files (large pasted text saved as files)
+  pastedTexts?: PastedTextFile[]
+  onAddPastedText?: (text: string) => Promise<void>
+  onRemovePastedText?: (id: string) => void
+  // Callback to cache file content for dropped text files (content added to prompt on send)
+  onCacheFileContent?: (mentionId: string, content: string) => void
   // Pre-computed token data for context indicator (avoids passing messages array)
   messageTokenData: MessageTokenData
   // Context
@@ -188,6 +196,9 @@ function arePropsEqual(prevProps: ChatInputAreaProps, nextProps: ChatInputAreaPr
     prevProps.onRemoveImage !== nextProps.onRemoveImage ||
     prevProps.onRemoveFile !== nextProps.onRemoveFile ||
     prevProps.onRemoveTextContext !== nextProps.onRemoveTextContext ||
+    prevProps.onAddPastedText !== nextProps.onAddPastedText ||
+    prevProps.onRemovePastedText !== nextProps.onRemovePastedText ||
+    prevProps.onCacheFileContent !== nextProps.onCacheFileContent ||
     prevProps.onInputContentChange !== nextProps.onInputContentChange ||
     prevProps.onSubmitWithQuestionAnswer !== nextProps.onSubmitWithQuestionAnswer
   ) {
@@ -241,6 +252,18 @@ function arePropsEqual(prevProps: ChatInputAreaProps, nextProps: ChatInputAreaPr
   }
   for (let i = 0; i < prevProps.files.length; i++) {
     if (prevProps.files[i]?.id !== nextProps.files[i]?.id) {
+      return false
+    }
+  }
+
+  // Compare pastedTexts array - by length and ids
+  const prevPasted = prevProps.pastedTexts || []
+  const nextPasted = nextProps.pastedTexts || []
+  if (prevPasted.length !== nextPasted.length) {
+    return false
+  }
+  for (let i = 0; i < prevPasted.length; i++) {
+    if (prevPasted[i]?.id !== nextPasted[i]?.id) {
       return false
     }
   }
@@ -305,6 +328,10 @@ export const ChatInputArea = memo(function ChatInputArea({
   onRemoveTextContext,
   diffTextContexts,
   onRemoveDiffTextContext,
+  pastedTexts = [],
+  onAddPastedText,
+  onRemovePastedText,
+  onCacheFileContent,
   messageTokenData,
   subChatId,
   parentChatId,
@@ -531,7 +558,7 @@ export const ChatInputArea = memo(function ChatInputArea({
       editorRef.current?.clearSlashCommand()
       setShowSlashDropdown(false)
 
-      // Handle builtin commands
+      // Handle builtin commands that change app state (no text input needed)
       if (command.category === "builtin") {
         switch (command.name) {
           case "clear":
@@ -539,17 +566,17 @@ export const ChatInputArea = memo(function ChatInputArea({
             if (onCreateNewSubChat) {
               onCreateNewSubChat()
             }
-            break
+            return
           case "plan":
             if (!isPlanMode) {
               setIsPlanMode(true)
             }
-            break
+            return
           case "agent":
             if (isPlanMode) {
               setIsPlanMode(false)
             }
-            break
+            return
           case "compact":
             // Trigger context compaction
             onCompact()
@@ -574,26 +601,19 @@ export const ChatInputArea = memo(function ChatInputArea({
             break
           }
         }
-        return
       }
 
-      // Handle custom commands
-      if (command.argumentHint) {
-        // Command expects arguments - insert command and let user add args
-        editorRef.current?.setValue(`/${command.name} `)
-      } else if (command.prompt) {
-        // Command without arguments - send immediately
-        editorRef.current?.setValue(command.prompt)
-        setTimeout(() => onSend(), 0)
-      }
+      // For all other commands (builtin prompts and custom):
+      // insert the command and let user add arguments or press Enter to send
+      editorRef.current?.setValue(`/${command.name} `)
     },
     [isPlanMode, setIsPlanMode, onSend, onCreateNewSubChat, onCompact, editorRef, setShowCreateAgentForm],
   )
 
-  // Paste handler for images and plain text
+  // Paste handler for images, plain text, and large text (saved as files)
   const handlePaste = useCallback(
-    (e: React.ClipboardEvent) => handlePasteEvent(e, onAddAttachments),
-    [onAddAttachments],
+    (e: React.ClipboardEvent) => handlePasteEvent(e, onAddAttachments, onAddPastedText),
+    [onAddAttachments, onAddPastedText],
   )
 
   // Drag/drop handlers
@@ -607,12 +627,124 @@ export const ChatInputArea = memo(function ChatInputArea({
     setIsDragOver(false)
   }, [])
 
+  // Text file extensions that should have content read and attached
+  const TEXT_FILE_EXTENSIONS = new Set([
+    // Code
+    ".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs",
+    ".py", ".rb", ".go", ".rs", ".java", ".kt", ".swift", ".c", ".cpp", ".h", ".hpp",
+    ".cs", ".php", ".lua", ".r", ".m", ".mm", ".scala", ".clj", ".ex", ".exs",
+    ".hs", ".elm", ".erl", ".fs", ".fsx", ".ml", ".v", ".vhdl", ".zig",
+    // Config/Data
+    ".json", ".yaml", ".yml", ".toml", ".xml", ".ini", ".env", ".conf", ".cfg",
+    ".properties", ".plist",
+    // Web
+    ".html", ".htm", ".css", ".scss", ".sass", ".less", ".vue", ".svelte", ".astro",
+    // Documentation
+    ".md", ".mdx", ".rst", ".txt", ".text",
+    // Graphics (text-based)
+    ".svg",
+    // Shell/Scripts
+    ".sh", ".bash", ".zsh", ".fish", ".ps1", ".bat", ".cmd",
+    // Other
+    ".sql", ".graphql", ".gql", ".prisma", ".dockerfile", ".makefile",
+    ".gitignore", ".gitattributes", ".editorconfig", ".eslintrc", ".prettierrc",
+  ])
+
+  const MAX_FILE_SIZE_FOR_CONTENT = 100 * 1024 // 100KB - files larger than this only get path mention
+
+  // Image extensions that should be handled as attachments (base64)
+  const IMAGE_EXTENSIONS = new Set([".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp"])
+
+  const trpcUtils = trpc.useUtils()
+
   const handleDrop = useCallback(
-    (e: React.DragEvent) => {
+    async (e: React.DragEvent) => {
       e.preventDefault()
       setIsDragOver(false)
       const droppedFiles = Array.from(e.dataTransfer.files)
-      onAddAttachments(droppedFiles)
+
+      // Separate images from other files
+      const imageFiles: File[] = []
+      const otherFiles: File[] = []
+
+      for (const file of droppedFiles) {
+        const ext = file.name.includes(".") ? "." + file.name.split(".").pop()?.toLowerCase() : ""
+        if (IMAGE_EXTENSIONS.has(ext)) {
+          imageFiles.push(file)
+        } else {
+          otherFiles.push(file)
+        }
+      }
+
+      // Handle images via existing attachment system (base64)
+      if (imageFiles.length > 0) {
+        onAddAttachments(imageFiles)
+      }
+
+      // Process other files - for text files, read content and add as file mention
+      for (const file of otherFiles) {
+        // Get file path using Electron's webUtils API (more reliable than file.path)
+        // @ts-expect-error - Electron's webUtils API
+        const filePath: string | undefined = window.webUtils?.getPathForFile?.(file) || (file as File & { path?: string }).path
+
+        let mentionId: string
+        let mentionPath: string
+
+        if (projectPath && filePath && filePath.startsWith(projectPath)) {
+          // File is inside project - use relative path
+          const relativePath = filePath.slice(projectPath.length).replace(/^\//, "")
+          mentionId = `file:local:${relativePath}`
+          mentionPath = relativePath
+        } else if (filePath) {
+          // External file - use absolute path
+          mentionId = `file:external:${filePath}`
+          mentionPath = filePath
+        } else {
+          // No path available (shouldn't happen in Electron) - use filename
+          mentionId = `file:external:${file.name}`
+          mentionPath = file.name
+        }
+
+        const fileName = file.name
+        const ext = fileName.includes(".") ? "." + fileName.split(".").pop()?.toLowerCase() : ""
+        // Files without extension are likely directories or special files - skip content reading
+        const hasExtension = ext !== ""
+        const isTextFile = hasExtension && TEXT_FILE_EXTENSIONS.has(ext)
+        const isSmallEnough = file.size <= MAX_FILE_SIZE_FOR_CONTENT
+
+        // For text files that are small enough, read content and cache it
+        // Show file chip, content will be added to prompt on send
+        if (isTextFile && isSmallEnough && filePath) {
+          // Add file chip for visual representation
+          editorRef.current?.insertMention({
+            id: mentionId,
+            label: fileName,
+            path: mentionPath,
+            repository: "local",
+            type: "file",
+          })
+
+          // Read and cache content (will be added to prompt on send)
+          try {
+            const content = await trpcUtils.files.readFile.fetch({ filePath })
+            onCacheFileContent?.(mentionId, content)
+          } catch (err) {
+            // If reading fails, chip is still there - agent can try to read via path
+            console.error(`[handleDrop] Failed to read file content ${filePath}:`, err)
+          }
+        } else {
+          // For binary files, large files - add as mention only
+          // mentionPath contains full absolute path for external files
+          editorRef.current?.insertMention({
+            id: mentionId,
+            label: fileName,
+            path: mentionPath,
+            repository: "local",
+            type: "file",
+          })
+        }
+      }
+
       // Focus after state update - use double rAF to wait for React render
       requestAnimationFrame(() => {
         requestAnimationFrame(() => {
@@ -620,7 +752,7 @@ export const ChatInputArea = memo(function ChatInputArea({
         })
       })
     },
-    [onAddAttachments, editorRef],
+    [editorRef, projectPath, onCacheFileContent, onAddAttachments, trpcUtils],
   )
 
   return (
@@ -645,7 +777,7 @@ export const ChatInputArea = memo(function ChatInputArea({
               maxHeight={200}
               onSubmit={onSend}
               contextItems={
-                images.length > 0 || files.length > 0 || textContexts.length > 0 || (diffTextContexts?.length ?? 0) > 0 ? (
+                images.length > 0 || files.length > 0 || textContexts.length > 0 || (diffTextContexts?.length ?? 0) > 0 || pastedTexts.length > 0 ? (
                   <div className="flex flex-wrap gap-[6px]">
                     {(() => {
                       // Build allImages array for gallery navigation
@@ -698,6 +830,16 @@ export const ChatInputArea = memo(function ChatInputArea({
                         lineNumber={dtc.lineNumber}
                         lineType={dtc.lineType}
                         onRemove={onRemoveDiffTextContext ? () => onRemoveDiffTextContext(dtc.id) : undefined}
+                      />
+                    ))}
+                    {pastedTexts.map((pt) => (
+                      <AgentPastedTextItem
+                        key={pt.id}
+                        filePath={pt.filePath}
+                        filename={pt.filename}
+                        size={pt.size}
+                        preview={pt.preview}
+                        onRemove={onRemovePastedText ? () => onRemovePastedText(pt.id) : undefined}
                       />
                     ))}
                   </div>

@@ -16,6 +16,7 @@ import {
   fetchGitHubPRStatus,
   getWorktreeDiff,
   removeWorktree,
+  sanitizeProjectName,
 } from "../../git"
 import { computeContentHash, gitCache } from "../../git/cache"
 import { splitUnifiedDiffByFile } from "../../git/diff-parser"
@@ -264,6 +265,12 @@ export const chatsRouter = router({
                   base64Data: z.string().optional(),
                 }),
               }),
+              // Hidden file content - sent to agent but not displayed in UI
+              z.object({
+                type: z.literal("file-content"),
+                filePath: z.string(),
+                content: z.string(),
+              }),
             ]),
           )
           .optional(),
@@ -344,7 +351,7 @@ export const chatsRouter = router({
         )
         const result = await createWorktreeForChat(
           project.path,
-          project.id,
+          sanitizeProjectName(project.name),
           chat.id,
           input.baseBranch,
           input.branchType,
@@ -1521,7 +1528,7 @@ export const chatsRouter = router({
 
   /**
    * Get sub-chats with pending plan approvals
-   * Parses messages to find plan file Write without subsequent "Implement plan" user message
+   * Uses mode field as source of truth: mode="plan" + completed ExitPlanMode = pending approval
    * Logic must match active-chat.tsx hasUnapprovedPlan
    * REQUIRES openSubChatIds to avoid loading all sub-chats (performance optimization)
    */
@@ -1535,11 +1542,12 @@ export const chatsRouter = router({
       return []
     }
 
-    // Query only the specified sub-chats (VS Code style: load only what's needed)
+    // Query only the specified sub-chats, including mode for filtering
     const allSubChats = db
       .select({
         chatId: subChats.chatId,
         subChatId: subChats.id,
+        mode: subChats.mode,
         messages: subChats.messages,
       })
       .from(subChats)
@@ -1549,7 +1557,13 @@ export const chatsRouter = router({
     const pendingApprovals: Array<{ subChatId: string; chatId: string }> = []
 
     for (const row of allSubChats) {
-      if (!row.messages || !row.subChatId || !row.chatId) continue
+      if (!row.subChatId || !row.chatId) continue
+
+      // If mode is "agent", plan is already approved - skip
+      if (row.mode === "agent") continue
+
+      // Only check for ExitPlanMode in plan mode sub-chats
+      if (!row.messages) continue
 
       try {
         const messages = JSON.parse(row.messages) as Array<{
@@ -1562,22 +1576,11 @@ export const chatsRouter = router({
           }>
         }>
 
-        // Traverse messages from end to find unapproved ExitPlanMode
-        // Logic matches active-chat.tsx hasUnapprovedPlan
-        const checkHasUnapprovedPlan = (): boolean => {
+        // Check if there's a completed ExitPlanMode in messages
+        const hasCompletedExitPlanMode = (): boolean => {
           for (let i = messages.length - 1; i >= 0; i--) {
             const msg = messages[i]
             if (!msg) continue
-
-            // If user message says "Build plan" or "Implement plan" (exact match), plan is already approved
-            if (msg.role === "user") {
-              const textPart = msg.parts?.find((p) => p.type === "text")
-              const text = textPart?.text || ""
-              const normalizedText = text.trim().toLowerCase()
-              if (normalizedText === "implement plan" || normalizedText === "build plan") {
-                return false // Plan was approved
-              }
-            }
 
             // If assistant message with completed ExitPlanMode, we found an unapproved plan
             if (msg.role === "assistant" && msg.parts) {
@@ -1593,9 +1596,7 @@ export const chatsRouter = router({
           return false
         }
 
-        const hasUnapprovedPlan = checkHasUnapprovedPlan()
-
-        if (hasUnapprovedPlan) {
+        if (hasCompletedExitPlanMode()) {
           pendingApprovals.push({
             subChatId: row.subChatId,
             chatId: row.chatId,

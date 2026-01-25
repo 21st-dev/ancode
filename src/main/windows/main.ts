@@ -14,11 +14,22 @@ import { createIPCHandler } from "trpc-electron/main"
 import { createAppRouter } from "../lib/trpc/routers"
 import { getAuthManager, handleAuthCode, getBaseUrl } from "../index"
 import { registerGitWatcherIPC } from "../lib/git/watcher"
+import { registerThemeScannerIPC } from "../lib/vscode-theme-scanner"
+import { windowManager } from "./window-manager"
+
+// Helper to get window from IPC event
+function getWindowFromEvent(
+  event: Electron.IpcMainInvokeEvent,
+): BrowserWindow | null {
+  const webContents = event.sender
+  const win = BrowserWindow.fromWebContents(webContents)
+  return win && !win.isDestroyed() ? win : null
+}
 
 // Register IPC handlers for window operations (only once)
 let ipcHandlersRegistered = false
 
-function registerIpcHandlers(getWindow: () => BrowserWindow | null): void {
+function registerIpcHandlers(): void {
   if (ipcHandlersRegistered) return
   ipcHandlersRegistered = true
 
@@ -56,8 +67,8 @@ function registerIpcHandlers(getWindow: () => BrowserWindow | null): void {
   })
 
   // Note: Update checking is now handled by auto-updater module (lib/auto-updater.ts)
-  ipcMain.handle("app:set-badge", (_event, count: number | null) => {
-    const win = getWindow()
+  ipcMain.handle("app:set-badge", (event, count: number | null) => {
+    const win = getWindowFromEvent(event)
     if (process.platform === "darwin") {
       app.dock.setBadge(count ? String(count) : "")
     } else if (process.platform === "win32" && win) {
@@ -72,8 +83,8 @@ function registerIpcHandlers(getWindow: () => BrowserWindow | null): void {
   })
 
   // Windows: Badge overlay icon
-  ipcMain.handle("app:set-badge-icon", (_event, imageData: string | null) => {
-    const win = getWindow()
+  ipcMain.handle("app:set-badge-icon", (event, imageData: string | null) => {
+    const win = getWindowFromEvent(event)
     if (process.platform === "win32" && win) {
       if (imageData) {
         const image = nativeImage.createFromDataURL(imageData)
@@ -86,7 +97,7 @@ function registerIpcHandlers(getWindow: () => BrowserWindow | null): void {
 
   ipcMain.handle(
     "app:show-notification",
-    (_event, options: { title: string; body: string }) => {
+    (event, options: { title: string; body: string }) => {
       try {
         const { Notification } = require("electron")
         const iconPath = join(__dirname, "../../../build/icon.ico")
@@ -102,7 +113,7 @@ function registerIpcHandlers(getWindow: () => BrowserWindow | null): void {
         notification.show()
 
         notification.on("click", () => {
-          const win = getWindow()
+          const win = getWindowFromEvent(event)
           if (win) {
             if (win.isMinimized()) win.restore()
             win.focus()
@@ -117,37 +128,39 @@ function registerIpcHandlers(getWindow: () => BrowserWindow | null): void {
   // API base URL for fetch requests
   ipcMain.handle("app:get-api-base-url", () => getBaseUrl())
 
-  // Window controls
-  ipcMain.handle("window:minimize", () => getWindow()?.minimize())
-  ipcMain.handle("window:maximize", () => {
-    const win = getWindow()
+  // Window controls - use event.sender to identify window
+  ipcMain.handle("window:minimize", (event) => {
+    getWindowFromEvent(event)?.minimize()
+  })
+  ipcMain.handle("window:maximize", (event) => {
+    const win = getWindowFromEvent(event)
     if (win?.isMaximized()) {
       win.unmaximize()
     } else {
       win?.maximize()
     }
   })
-  ipcMain.handle("window:close", () => getWindow()?.close())
-  ipcMain.handle(
-    "window:is-maximized",
-    () => getWindow()?.isMaximized() ?? false,
-  )
-  ipcMain.handle("window:toggle-fullscreen", () => {
-    const win = getWindow()
+  ipcMain.handle("window:close", (event) => {
+    getWindowFromEvent(event)?.close()
+  })
+  ipcMain.handle("window:is-maximized", (event) => {
+    return getWindowFromEvent(event)?.isMaximized() ?? false
+  })
+  ipcMain.handle("window:toggle-fullscreen", (event) => {
+    const win = getWindowFromEvent(event)
     if (win) {
       win.setFullScreen(!win.isFullScreen())
     }
   })
-  ipcMain.handle(
-    "window:is-fullscreen",
-    () => getWindow()?.isFullScreen() ?? false,
-  )
+  ipcMain.handle("window:is-fullscreen", (event) => {
+    return getWindowFromEvent(event)?.isFullScreen() ?? false
+  })
 
   // Traffic light visibility control (for hybrid native/custom approach)
   ipcMain.handle(
     "window:set-traffic-light-visibility",
-    (_event, visible: boolean) => {
-      const win = getWindow()
+    (event, visible: boolean) => {
+      const win = getWindowFromEvent(event)
       if (win && process.platform === "darwin") {
         // In fullscreen, always show native traffic lights (don't let React hide them)
         if (win.isFullScreen()) {
@@ -160,31 +173,44 @@ function registerIpcHandlers(getWindow: () => BrowserWindow | null): void {
   )
 
   // Zoom controls
-  ipcMain.handle("window:zoom-in", () => {
-    const win = getWindow()
+  ipcMain.handle("window:zoom-in", (event) => {
+    const win = getWindowFromEvent(event)
     if (win) {
       const zoom = win.webContents.getZoomFactor()
       win.webContents.setZoomFactor(Math.min(zoom + 0.1, 3))
     }
   })
-  ipcMain.handle("window:zoom-out", () => {
-    const win = getWindow()
+  ipcMain.handle("window:zoom-out", (event) => {
+    const win = getWindowFromEvent(event)
     if (win) {
       const zoom = win.webContents.getZoomFactor()
       win.webContents.setZoomFactor(Math.max(zoom - 0.1, 0.5))
     }
   })
-  ipcMain.handle("window:zoom-reset", () => {
-    getWindow()?.webContents.setZoomFactor(1)
+  ipcMain.handle("window:zoom-reset", (event) => {
+    getWindowFromEvent(event)?.webContents.setZoomFactor(1)
   })
-  ipcMain.handle(
-    "window:get-zoom",
-    () => getWindow()?.webContents.getZoomFactor() ?? 1,
-  )
+  ipcMain.handle("window:get-zoom", (event) => {
+    return getWindowFromEvent(event)?.webContents.getZoomFactor() ?? 1
+  })
+
+  // New window - optionally open with specific chat/subchat
+  ipcMain.handle("window:new", (_event, options?: { chatId?: string; subChatId?: string }) => {
+    createWindow(options)
+  })
+
+  // Set window title
+  ipcMain.handle("window:set-title", (event, title: string) => {
+    const win = getWindowFromEvent(event)
+    if (win) {
+      // Show just the title, or default app name if empty
+      win.setTitle(title || "1Code")
+    }
+  })
 
   // DevTools - only allowed in dev mode or when unlocked
-  ipcMain.handle("window:toggle-devtools", () => {
-    const win = getWindow()
+  ipcMain.handle("window:toggle-devtools", (event) => {
+    const win = getWindowFromEvent(event)
     // Check if devtools are unlocked (or in dev mode)
     const isUnlocked = !app.isPackaged || (global as any).__devToolsUnlocked
     if (win && isUnlocked) {
@@ -254,18 +280,25 @@ function registerIpcHandlers(getWindow: () => BrowserWindow | null): void {
     } catch (err) {
       console.error("[Auth] Failed to clear cookie:", err)
     }
-    showLoginPage()
+    // Show login page in all windows
+    for (const win of windowManager.getAll()) {
+      showLoginPageInWindow(win)
+    }
   })
 
   ipcMain.handle("auth:start-flow", (event) => {
     if (!validateSender(event)) return
-    getAuthManager().startAuthFlow(getWindow())
+    const win = getWindowFromEvent(event)
+    getAuthManager().startAuthFlow(win)
   })
 
   ipcMain.handle("auth:submit-code", async (event, code: string) => {
     if (!validateSender(event)) return
     if (!code || typeof code !== "string") {
-      getWindow()?.webContents.send("auth:error", "Invalid authorization code")
+      getWindowFromEvent(event)?.webContents.send(
+        "auth:error",
+        "Invalid authorization code",
+      )
       return
     }
     await handleAuthCode(code)
@@ -282,40 +315,55 @@ function registerIpcHandlers(getWindow: () => BrowserWindow | null): void {
   })
 
   // Register git watcher IPC handlers
-  registerGitWatcherIPC(getWindow)
+  registerGitWatcherIPC()
+
+  // Register VS Code theme scanner IPC handlers
+  registerThemeScannerIPC()
 }
 
-// Current window reference
-let currentWindow: BrowserWindow | null = null
-
 /**
- * Show login page
+ * Show login page in a specific window
  */
-export function showLoginPage(): void {
-  if (!currentWindow) return
-  console.log("[Main] Showing login page")
+function showLoginPageInWindow(window: BrowserWindow): void {
+  console.log("[Main] Showing login page in window", window.id)
 
   // In dev mode, login.html is in src/renderer, not out/renderer
   if (process.env.ELECTRON_RENDERER_URL) {
     // Dev mode: load from source directory
     const loginPath = join(app.getAppPath(), "src/renderer/login.html")
     console.log("[Main] Loading login from:", loginPath)
-    currentWindow.loadFile(loginPath)
+    window.loadFile(loginPath)
   } else {
     // Production: load from built output
-    currentWindow.loadFile(join(__dirname, "../renderer/login.html"))
+    window.loadFile(join(__dirname, "../renderer/login.html"))
   }
+}
+
+/**
+ * Show login page in the focused window (or first window)
+ */
+export function showLoginPage(): void {
+  const win = windowManager.getFocused() || windowManager.getAll()[0]
+  if (!win) return
+  showLoginPageInWindow(win)
 }
 
 // Singleton IPC handler (prevents duplicate handlers on macOS window recreation)
 let ipcHandler: ReturnType<typeof createIPCHandler> | null = null
 
 /**
- * Get the current window reference
+ * Get the focused window reference
  * Used by tRPC procedures that need window access
  */
 export function getWindow(): BrowserWindow | null {
-  return currentWindow
+  return windowManager.getFocused()
+}
+
+/**
+ * Get all windows
+ */
+export function getAllWindows(): BrowserWindow[] {
+  return windowManager.getAll()
 }
 
 /**
@@ -338,11 +386,14 @@ function getUseNativeFramePreference(): boolean {
 }
 
 /**
- * Create the main application window
+ * Create a new application window
+ * @param options Optional settings for the new window
+ * @param options.chatId Open this chat in the new window
+ * @param options.subChatId Open this sub-chat in the new window
  */
-export function createMainWindow(): BrowserWindow {
-  // Register IPC handlers before creating window
-  registerIpcHandlers(getWindow)
+export function createWindow(options?: { chatId?: string; subChatId?: string }): BrowserWindow {
+  // Register IPC handlers before creating first window
+  registerIpcHandlers()
 
   // Read Windows frame preference
   const useNativeFrame = getUseNativeFramePreference()
@@ -376,8 +427,11 @@ export function createMainWindow(): BrowserWindow {
     },
   })
 
-  // Update current window reference
-  currentWindow = window
+  // Register window with manager and get stable ID for localStorage namespacing
+  const stableWindowId = windowManager.register(window)
+  console.log(
+    `[Main] Created window ${window.id} with stable ID "${stableWindowId}" (total: ${windowManager.count()})`,
+  )
 
   // Setup tRPC IPC handler (singleton pattern)
   if (ipcHandler) {
@@ -396,7 +450,7 @@ export function createMainWindow(): BrowserWindow {
 
   // Show window when ready
   window.on("ready-to-show", () => {
-    console.log("[Main] Window ready to show")
+    console.log("[Main] Window", window.id, "ready to show")
     // Ensure native traffic lights are visible by default (login page, loading states)
     if (process.platform === "darwin") {
       window.setWindowButtonVisibility(true)
@@ -428,6 +482,16 @@ export function createMainWindow(): BrowserWindow {
     window.webContents.send("window:focus-change", false)
   })
 
+  // Disable Cmd+R / Ctrl+R to prevent accidental page refresh
+  // Users can still use Cmd+Shift+R / Ctrl+Shift+R for intentional reloads
+  window.webContents.on("before-input-event", (event, input) => {
+    const isMac = process.platform === "darwin"
+    const modifierKey = isMac ? input.meta : input.control
+    if (modifierKey && input.key.toLowerCase() === "r" && !input.shift) {
+      event.preventDefault()
+    }
+  })
+
   // Handle external links
   window.webContents.setWindowOpenHandler(({ url }) => {
     shell.openExternal(url)
@@ -436,7 +500,8 @@ export function createMainWindow(): BrowserWindow {
 
   // Handle window close
   window.on("closed", () => {
-    currentWindow = null
+    console.log(`[Main] Window ${window.id} closed`)
+    // windowManager handles cleanup via 'closed' event listener
   })
 
   // Load the renderer - check auth first
@@ -453,14 +518,33 @@ export function createMainWindow(): BrowserWindow {
 
   if (isAuth) {
     console.log("[Main] ✓ User authenticated, loading app")
+    // Get stable window ID from manager (assigned during register)
+    // "main" for first window, "window-2", "window-3", etc. for additional windows
+    const windowId = windowManager.getStableId(window)
+
+    // Build URL params including optional chatId/subChatId
+    const buildParams = (params: URLSearchParams) => {
+      params.set("windowId", windowId)
+      if (options?.chatId) params.set("chatId", options.chatId)
+      if (options?.subChatId) params.set("subChatId", options.subChatId)
+    }
+
     if (devServerUrl) {
-      window.loadURL(devServerUrl)
-      // Only open DevTools automatically in development
-      if (!app.isPackaged) {
+      // Pass params via query for dev mode
+      const url = new URL(devServerUrl)
+      buildParams(url.searchParams)
+      window.loadURL(url.toString())
+      // Only open devtools for first window in development
+      if (!app.isPackaged && windowId === "main") {
         window.webContents.openDevTools()
       }
     } else {
-      window.loadFile(join(__dirname, "../renderer/index.html"))
+      // Pass params via hash for production (file:// URLs)
+      const hashParams = new URLSearchParams()
+      buildParams(hashParams)
+      window.loadFile(join(__dirname, "../renderer/index.html"), {
+        hash: hashParams.toString(),
+      })
     }
   } else {
     console.log("[Main] ✗ Not authenticated, showing login page")
@@ -475,7 +559,7 @@ export function createMainWindow(): BrowserWindow {
 
   // Ensure traffic lights are visible after page load (covers reload/Cmd+R case)
   window.webContents.on("did-finish-load", () => {
-    console.log("[Main] Page finished loading")
+    console.log("[Main] Page finished loading in window", window.id)
     if (process.platform === "darwin") {
       window.setWindowButtonVisibility(true)
     }
@@ -483,9 +567,22 @@ export function createMainWindow(): BrowserWindow {
   window.webContents.on(
     "did-fail-load",
     (_event, errorCode, errorDescription) => {
-      console.error("[Main] Page failed to load:", errorCode, errorDescription)
+      console.error(
+        "[Main] Page failed to load in window",
+        window.id,
+        ":",
+        errorCode,
+        errorDescription,
+      )
     },
   )
 
   return window
+}
+
+/**
+ * Create the main application window (alias for createWindow for backwards compatibility)
+ */
+export function createMainWindow(): BrowserWindow {
+  return createWindow()
 }

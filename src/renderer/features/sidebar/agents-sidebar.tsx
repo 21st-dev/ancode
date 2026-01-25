@@ -101,6 +101,7 @@ import { NetworkStatus } from "../../components/ui/network-status"
 import { useAgentSubChatStore, OPEN_SUB_CHATS_CHANGE_EVENT } from "../agents/stores/sub-chat-store"
 import { AgentsHelpPopover } from "../agents/components/agents-help-popover"
 import { getShortcutKey, isDesktopApp } from "../../lib/utils/platform"
+import { useResolvedHotkeyDisplay } from "../../lib/hotkeys"
 import { pluralize } from "../agents/utils/pluralize"
 import { useNewChatDrafts, deleteNewChatDraft, type NewChatDraft } from "../agents/lib/drafts"
 import {
@@ -715,6 +716,11 @@ const AgentChatItem = React.memo(function AgentChatItem({
                 </ContextMenuItem>
               </ContextMenuSubContent>
             </ContextMenuSub>
+            {isDesktop && (
+              <ContextMenuItem onClick={() => window.desktopApi?.newWindow({ chatId })}>
+                Open in new window
+              </ContextMenuItem>
+            )}
             <ContextMenuSeparator />
             <ContextMenuItem onClick={() => onArchive(chatId)} className="justify-between">
               Archive workspace
@@ -1070,6 +1076,7 @@ const SidebarHeader = memo(function SidebarHeader({
 }: SidebarHeaderProps) {
   const [isDropdownOpen, setIsDropdownOpen] = useState(false)
   const showOfflineFeatures = useAtomValue(showOfflineModeFeaturesAtom)
+  const toggleSidebarHotkey = useResolvedHotkeyDisplay("toggle-sidebar")
 
   return (
     <div
@@ -1126,7 +1133,7 @@ const SidebarHeader = memo(function SidebarHeader({
             </TooltipTrigger>
             <TooltipContent>
               Close sidebar
-              <Kbd>⌘\</Kbd>
+              {toggleSidebarHotkey && <Kbd>{toggleSidebarHotkey}</Kbd>}
             </TooltipContent>
           </Tooltip>
         </div>
@@ -1618,6 +1625,15 @@ export function AgentsSidebar({
   // Archive chat mutation
   const archiveChatMutation = trpc.chats.archive.useMutation({
     onSuccess: (_, variables) => {
+      // Hide tooltip if visible (element may be removed from DOM before mouseLeave fires)
+      if (agentTooltipTimerRef.current) {
+        clearTimeout(agentTooltipTimerRef.current)
+        agentTooltipTimerRef.current = null
+      }
+      if (agentTooltipRef.current) {
+        agentTooltipRef.current.style.display = "none"
+      }
+
       utils.chats.list.invalidate()
       utils.chats.listArchived.invalidate()
 
@@ -1695,6 +1711,15 @@ export function AgentsSidebar({
   // Batch archive mutation
   const archiveChatsBatchMutation = trpc.chats.archiveBatch.useMutation({
     onSuccess: (_, variables) => {
+      // Hide tooltip if visible (element may be removed from DOM before mouseLeave fires)
+      if (agentTooltipTimerRef.current) {
+        clearTimeout(agentTooltipTimerRef.current)
+        agentTooltipTimerRef.current = null
+      }
+      if (agentTooltipRef.current) {
+        agentTooltipRef.current.style.display = "none"
+      }
+
       utils.chats.list.invalidate()
       utils.chats.listArchived.invalidate()
 

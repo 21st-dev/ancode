@@ -54,6 +54,7 @@ import {
 } from "../../components/ui/tooltip"
 import { Kbd } from "../../components/ui/kbd"
 import { isDesktopApp, getShortcutKey } from "../../lib/utils/platform"
+import { useResolvedHotkeyDisplay } from "../../lib/hotkeys"
 import { TrafficLightSpacer } from "../agents/components/traffic-light-spacer"
 import { PopoverTrigger } from "../../components/ui/popover"
 import { AlignJustify } from "lucide-react"
@@ -219,9 +220,24 @@ export function AgentsSubChatsSidebar({
 
   const utils = trpc.useUtils()
 
+  // SubChat name tooltip - using refs instead of state to avoid re-renders on hover
+  // Declared here so they can be used in archive mutation's onSuccess
+  const subChatNameRefs = useRef<Map<string, HTMLSpanElement>>(new Map())
+  const subChatTooltipTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const tooltipRef = useRef<HTMLDivElement>(null)
+
   // Archive parent chat mutation
   const archiveChatMutation = trpc.chats.archive.useMutation({
     onSuccess: (_, variables) => {
+      // Hide tooltip if visible (element may be removed from DOM before mouseLeave fires)
+      if (subChatTooltipTimerRef.current) {
+        clearTimeout(subChatTooltipTimerRef.current)
+        subChatTooltipTimerRef.current = null
+      }
+      if (tooltipRef.current) {
+        tooltipRef.current.style.display = "none"
+      }
+
       utils.chats.list.invalidate()
       utils.chats.listArchived.invalidate()
 
@@ -240,6 +256,9 @@ export function AgentsSubChatsSidebar({
   })
   const subChatUnseenChanges = useAtomValue(agentsSubChatUnseenChangesAtom)
   const setSubChatUnseenChanges = useSetAtom(agentsSubChatUnseenChangesAtom)
+
+  // Resolved hotkey for tooltip
+  const newAgentHotkey = useResolvedHotkeyDisplay("new-agent")
   const [justCreatedIds, setJustCreatedIds] = useAtom(justCreatedIdsAtom)
   const pendingQuestionsMap = useAtomValue(pendingUserQuestionsAtom)
 
@@ -277,11 +296,6 @@ export function AgentsSubChatsSidebar({
   const [subChatToArchive, setSubChatToArchive] = useState<SubChatMeta | null>(
     null,
   )
-
-  // SubChat name tooltip - using refs instead of state to avoid re-renders on hover
-  const subChatNameRefs = useRef<Map<string, HTMLSpanElement>>(new Map())
-  const subChatTooltipTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
-  const tooltipRef = useRef<HTMLDivElement>(null)
 
   // Multi-select state
   const [selectedSubChatIds, setSelectedSubChatIds] = useAtom(
@@ -1118,7 +1132,7 @@ export function AgentsSubChatsSidebar({
               </TooltipTrigger>
             <TooltipContent side="right">
               Create a new chat
-              <Kbd>{getShortcutKey("newTab")}</Kbd>
+              {newAgentHotkey && <Kbd>{newAgentHotkey}</Kbd>}
             </TooltipContent>
           </Tooltip>
           </div>
