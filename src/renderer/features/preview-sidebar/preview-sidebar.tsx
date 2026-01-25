@@ -119,6 +119,7 @@ function getPaneId(chatId: string): string {
 }
 
 // React Grab injection script - loads and activates the element selector
+// Only uses React Grab's plugin API - no fallback
 const REACT_GRAB_INJECT_SCRIPT = `
 (function() {
   // Handler for element selection - called when user copies with Cmd+C
@@ -137,45 +138,28 @@ const REACT_GRAB_INJECT_SCRIPT = `
   }
 
   // Register our plugin with React Grab to get notified on copy
-  function registerOurPlugin() {
-    const api = window.__REACT_GRAB__ || window.ReactGrab;
-    if (!api) return false;
-
-    // Remove any previous registration to avoid duplicates
+  function registerOurPlugin(api) {
+    // Skip if already registered
     if (window.__CONDUCTOR_ELEMENT_PLUGIN_REGISTERED__) {
       return true;
     }
 
-    // Use React Grab's plugin API if available
-    if (typeof api.registerPlugin === 'function') {
-      api.registerPlugin({
-        name: 'conductor-element-capture',
-        onCopySuccess: function(elements, content) {
-          if (elements && elements.length > 0) {
-            handleElementCapture(elements[0], content);
-          }
-        }
-      });
-      window.__CONDUCTOR_ELEMENT_PLUGIN_REGISTERED__ = true;
-    } else {
-      // Fallback: listen for copy events ourselves
-      if (!window.__CONDUCTOR_COPY_LISTENER__) {
-        window.__CONDUCTOR_COPY_LISTENER__ = function(e) {
-          if ((e.metaKey || e.ctrlKey) && e.key === 'c') {
-            const grabApi = window.__REACT_GRAB__ || window.ReactGrab;
-            if (!grabApi) return;
-
-            const element = grabApi.selectedElements?.[0] || grabApi.hoveredElement || grabApi.currentElement;
-            if (element) {
-              handleElementCapture(element, null);
-            }
-          }
-        };
-        document.addEventListener('keydown', window.__CONDUCTOR_COPY_LISTENER__);
-      }
-      window.__CONDUCTOR_ELEMENT_PLUGIN_REGISTERED__ = true;
+    // Only proceed if registerPlugin API is available
+    if (typeof api.registerPlugin !== 'function') {
+      console.log('__REACT_GRAB_UNAVAILABLE__');
+      return false;
     }
 
+    api.registerPlugin({
+      name: 'conductor-element-capture',
+      onCopySuccess: function(elements, content) {
+        if (elements && elements.length > 0) {
+          handleElementCapture(elements[0], content);
+        }
+      }
+    });
+    window.__CONDUCTOR_ELEMENT_PLUGIN_REGISTERED__ = true;
+    console.log('__REACT_GRAB_READY__');
     return true;
   }
 
@@ -184,7 +168,9 @@ const REACT_GRAB_INJECT_SCRIPT = `
     const api = window.__REACT_GRAB__ || window.ReactGrab;
     if (api) {
       api.activate?.();
-      registerOurPlugin();
+      registerOurPlugin(api);
+    } else {
+      console.log('__REACT_GRAB_UNAVAILABLE__');
     }
   }
 
@@ -200,6 +186,9 @@ const REACT_GRAB_INJECT_SCRIPT = `
   script.crossOrigin = 'anonymous';
   script.onload = function() {
     activateReactGrab();
+  };
+  script.onerror = function() {
+    console.log('__REACT_GRAB_UNAVAILABLE__');
   };
   document.head.appendChild(script);
 })();
@@ -316,6 +305,7 @@ export function PreviewSidebar({ chatId, worktreePath, onElementSelect, onScreen
 
   // Element selector state
   const [isSelectorActive, setIsSelectorActive] = useState(false)
+  const [isReactGrabAvailable, setIsReactGrabAvailable] = useState<boolean | null>(null) // null = unknown, true = available, false = unavailable
 
   const paneId = useMemo(() => getPaneId(chatId), [chatId])
 
@@ -619,6 +609,10 @@ export function PreviewSidebar({ chatId, worktreePath, onElementSelect, onScreen
   const setStateRef = useRef(setState)
   setStateRef.current = setState
 
+  // Ref to access setIsReactGrabAvailable in event handlers
+  const setIsReactGrabAvailableRef = useRef(setIsReactGrabAvailable)
+  setIsReactGrabAvailableRef.current = setIsReactGrabAvailable
+
   // Ref to access current URL in webview creation effect (prefer currentUrl over selectedUrl)
   const urlToLoadRef = useRef(state.currentUrl ?? state.selectedUrl)
   urlToLoadRef.current = state.currentUrl ?? state.selectedUrl
@@ -699,9 +693,27 @@ export function PreviewSidebar({ chatId, worktreePath, onElementSelect, onScreen
       }
     }
 
-    // Handle console messages from webview (for React Grab element selection)
+    // Handle console messages from webview (for React Grab element selection and status)
     const handleConsoleMessage = (e: Event) => {
       const event = e as unknown as { message: string; level: number }
+
+      // React Grab ready signal
+      if (event.message === "__REACT_GRAB_READY__") {
+        console.log("[PreviewSidebar] React Grab is ready")
+        setIsReactGrabAvailableRef.current?.(true)
+        return
+      }
+
+      // React Grab unavailable signal
+      if (event.message === "__REACT_GRAB_UNAVAILABLE__") {
+        console.log("[PreviewSidebar] React Grab is unavailable")
+        setIsReactGrabAvailableRef.current?.(false)
+        // Deactivate selector if it was active
+        setIsSelectorActiveRef.current?.(false)
+        return
+      }
+
+      // Element selection
       if (event.message.startsWith("__ELEMENT_SELECTED__:")) {
         console.log("[PreviewSidebar] Element selected, parsing...")
         try {
@@ -996,27 +1008,30 @@ export function PreviewSidebar({ chatId, worktreePath, onElementSelect, onScreen
               <TooltipContent>Developer tools</TooltipContent>
             </Tooltip>
 
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <span className="inline-flex">
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    onClick={handleToggleSelector}
-                    disabled={!state.selectedUrl}
-                    className={cn(
-                      "h-6 w-6 p-0 hover:bg-foreground/10",
-                      isSelectorActive && "bg-primary/20 text-primary"
-                    )}
-                  >
-                    <MousePointer2 className="h-3.5 w-3.5" />
-                  </Button>
-                </span>
-              </TooltipTrigger>
-              <TooltipContent>
-                {isSelectorActive ? "Cancel element selection" : "Select element"}
-              </TooltipContent>
-            </Tooltip>
+            {/* Select Element button - hidden if React Grab is unavailable */}
+            {isReactGrabAvailable !== false && (
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <span className="inline-flex">
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      onClick={handleToggleSelector}
+                      disabled={!state.selectedUrl}
+                      className={cn(
+                        "h-6 w-6 p-0 hover:bg-foreground/10",
+                        isSelectorActive && "bg-primary/20 text-primary"
+                      )}
+                    >
+                      <MousePointer2 className="h-3.5 w-3.5" />
+                    </Button>
+                  </span>
+                </TooltipTrigger>
+                <TooltipContent>
+                  {isSelectorActive ? "Cancel element selection" : "Select element"}
+                </TooltipContent>
+              </Tooltip>
+            )}
 
             <Tooltip>
               <TooltipTrigger asChild>
