@@ -50,10 +50,11 @@ export const devCredentialsRouter = router({
 
   /**
    * Get a credential with decrypted password (for filling forms)
+   * Uses mutation instead of query since it's called imperatively and returns sensitive data
    */
   get: publicProcedure
     .input(z.object({ id: z.string() }))
-    .query(({ input }) => {
+    .mutation(({ input }) => {
       const db = getDatabase()
       const cred = db
         .select()
