@@ -241,16 +241,17 @@ export const customProviderConfigAtom = atomWithStorage<CustomProviderConfig>(
 
 /**
  * Normalize custom provider config
- * Returns undefined unless all three fields are non-empty
+ * Returns undefined unless model and token are provided
+ * Defaults baseUrl to Anthropic's API if empty (common for proxies)
  */
 export function normalizeCustomProviderConfig(
   config: CustomProviderConfig,
 ): CustomProviderConfig | undefined {
   const model = config.model.trim()
   const token = config.token.trim()
-  const baseUrl = config.baseUrl.trim()
+  const baseUrl = config.baseUrl.trim() || "https://api.anthropic.com"
 
-  if (!model || !token || !baseUrl) return undefined
+  if (!model || !token) return undefined
 
   return { model, token, baseUrl }
 }

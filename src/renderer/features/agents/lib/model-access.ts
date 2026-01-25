@@ -64,15 +64,19 @@ export function useModelAccess(): ModelAccessStatus {
   const claudeEnabled = hasClaudeOAuth || hasCliConfig || hasAnthropicApiKey
   const customEnabled = hasCustomProvider
 
-  // Disabled reasons
+  // Disabled reasons - provide specific guidance based on what's missing
   let claudeDisabledReason: string | null = null
   if (!claudeEnabled) {
-    claudeDisabledReason = "Configure Anthropic provider in Settings"
+    const missing: string[] = []
+    if (!hasClaudeOAuth) missing.push("Claude Code")
+    if (!hasCliConfig) missing.push("CLI config")
+    if (!hasAnthropicApiKey) missing.push("API key")
+    claudeDisabledReason = `Configure (${missing.join(", ")}) in Settings`
   }
 
   let customDisabledReason: string | null = null
   if (!customEnabled) {
-    customDisabledReason = "Configure Custom provider in Settings"
+    customDisabledReason = "Configure provider in Settings"
   }
 
   const isLoading = isLoadingOAuth || isLoadingCli
@@ -88,26 +92,4 @@ export function useModelAccess(): ModelAccessStatus {
     customDisabledReason,
     isLoading,
   }
-}
-
-/**
- * Determine which credential source to use for Claude models.
- * Returns the source type for routing decisions.
- *
- * Precedence (per plan):
- * 1. Anthropic API key (explicit user config takes priority)
- * 2. OAuth connection
- * 3. CLI config
- */
-export type ClaudeCredentialSource = "anthropic-api-key" | "oauth" | "cli" | null
-
-export function getClaudeCredentialSource(access: ModelAccessStatus): ClaudeCredentialSource {
-  // Anthropic API key takes priority (explicit user config)
-  if (access.hasAnthropicApiKey) return "anthropic-api-key"
-  // OAuth is next
-  if (access.hasClaudeOAuth) return "oauth"
-  // CLI config is last
-  if (access.hasCliConfig) return "cli"
-  // No valid source
-  return null
 }
