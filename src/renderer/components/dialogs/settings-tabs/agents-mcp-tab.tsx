@@ -80,8 +80,11 @@ function ServerRow({ server, isExpanded, onToggle, onAuth }: ServerRowProps) {
 
   return (
     <div>
-      <button
+      <div
+        role={hasTools ? "button" : undefined}
+        tabIndex={hasTools ? 0 : undefined}
         onClick={hasTools ? onToggle : undefined}
+        onKeyDown={hasTools ? (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onToggle(); } } : undefined}
         className={cn(
           "w-full flex items-center gap-3 p-3 text-left transition-colors",
           hasTools && "hover:bg-muted/50 cursor-pointer",
@@ -140,7 +143,7 @@ function ServerRow({ server, isExpanded, onToggle, onAuth }: ServerRowProps) {
             {isConnected ? "Reconnect" : "Auth"}
           </Button>
         )}
-      </button>
+      </div>
 
       {/* Expanded tools list */}
       <AnimatePresence>
@@ -233,7 +236,10 @@ export function AgentsMcpTab() {
         toast.error(result.error || "Authentication failed")
       }
     } catch (error) {
-      toast.error("Authentication failed")
+      // Extract actual error message from tRPC error
+      const message = error instanceof Error ? error.message : "Authentication failed";
+      console.error(`[MCP Auth] Error authenticating ${serverName}:`, error);
+      toast.error(message)
     }
   }
 

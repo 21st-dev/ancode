@@ -248,7 +248,7 @@ const FAVICON_SVG = `<svg width="32" height="32" viewBox="0 0 1024 1024" fill="n
 const FAVICON_DATA_URI = `data:image/svg+xml,${encodeURIComponent(FAVICON_SVG)}`
 
 // Start local HTTP server for auth callbacks
-// This catches http://localhost:{AUTH_SERVER_PORT}/auth/callback?code=xxx and /mcp-oauth/callback
+// This catches http://localhost:{AUTH_SERVER_PORT}/auth/callback?code=xxx and /callback (for MCP OAuth)
 const server = createServer((req, res) => {
     const url = new URL(req.url || "", `http://localhost:${AUTH_SERVER_PORT}`)
 
@@ -339,8 +339,8 @@ const server = createServer((req, res) => {
         res.writeHead(400, { "Content-Type": "text/plain" })
         res.end("Missing code parameter")
       }
-    } else if (url.pathname === "/mcp-oauth/callback") {
-      // Handle MCP OAuth callback in dev mode
+    } else if (url.pathname === "/callback") {
+      // Handle MCP OAuth callback
       const code = url.searchParams.get("code")
       const state = url.searchParams.get("state")
       console.log(

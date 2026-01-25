@@ -139,8 +139,8 @@ const OAUTH_TIMEOUT_MS = 5 * 60 * 1000;
 
 function getMcpOAuthRedirectUri(): string {
   return IS_DEV
-    ? `http://localhost:${AUTH_SERVER_PORT}/mcp-oauth/callback`
-    : `http://127.0.0.1:${AUTH_SERVER_PORT}/mcp-oauth/callback`;
+    ? `http://localhost:${AUTH_SERVER_PORT}/callback`
+    : `http://127.0.0.1:${AUTH_SERVER_PORT}/callback`;
 }
 
 interface PendingOAuth {
@@ -149,6 +149,7 @@ interface PendingOAuth {
   codeVerifier: string;
   tokenEndpoint: string;
   clientId: string;
+  clientSecret?: string;
   redirectUri: string;
   resolve: (result: { success: boolean; error?: string }) => void;
   timeoutId: NodeJS.Timeout;
@@ -169,7 +170,7 @@ export async function startMcpOAuth(
   const serverConfig = getMcpServerConfig(config, projectPath, serverName);
 
   if (!serverConfig?.url) {
-    throw new Error(`MCP server "${serverName}" URL not configured`);
+    return { success: false, error: `MCP server "${serverName}" URL not configured` };
   }
 
   // 2. Use CraftOAuth for OAuth logic
@@ -180,7 +181,16 @@ export async function startMcpOAuth(
   );
 
   // 3. Start OAuth flow (fetches metadata from .well-known, then gets auth URL)
-  const { authUrl, state, codeVerifier, tokenEndpoint, clientId } = await oauth.startAuthFlow();
+  let authFlowResult;
+  try {
+    authFlowResult = await oauth.startAuthFlow();
+  } catch (error) {
+    const msg = error instanceof Error ? error.message : String(error);
+    console.error(`[MCP OAuth] Failed to start auth flow: ${msg}`);
+    return { success: false, error: msg };
+  }
+
+  const { authUrl, state, codeVerifier, tokenEndpoint, clientId, clientSecret } = authFlowResult;
 
   // 4. Store pending flow and wait for callback
   return new Promise((resolve) => {
@@ -195,6 +205,7 @@ export async function startMcpOAuth(
       codeVerifier,
       tokenEndpoint,
       clientId,
+      clientSecret,
       redirectUri,
       resolve,
       timeoutId,
@@ -237,7 +248,8 @@ export async function handleMcpOAuthCallback(code: string, state: string): Promi
       code,
       pending.codeVerifier,
       pending.tokenEndpoint,
-      pending.clientId
+      pending.clientId,
+      pending.clientSecret
     );
 
     // 3. Save to ~/.claude.json
