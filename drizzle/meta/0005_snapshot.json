@@ -1,8 +1,8 @@
 {
   "version": "6",
   "dialect": "sqlite",
-  "id": "a5b2c3d4-e5f6-7890-abcd-ef1234567890",
-  "prevId": "1c211023-1270-4cdd-934d-4396e72557e9",
+  "id": "0284f691-83e5-43d8-8e73-0918cc3435e8",
+  "prevId": "a5b2c3d4-e5f6-7890-abcd-ef1234567890",
   "tables": {
     "chats": {
       "name": "chats",
@@ -85,7 +85,15 @@
           "autoincrement": false
         }
       },
-      "indexes": {},
+      "indexes": {
+        "chats_worktree_path_idx": {
+          "name": "chats_worktree_path_idx",
+          "columns": [
+            "worktree_path"
+          ],
+          "isUnique": false
+        }
+      },
       "foreignKeys": {
         "chats_project_id_projects_id_fk": {
           "name": "chats_project_id_projects_id_fk",
@@ -278,30 +286,6 @@
           "notNull": true,
           "autoincrement": false,
           "default": "'[]'"
-        },
-        "additions": {
-          "name": "additions",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false,
-          "default": 0
-        },
-        "deletions": {
-          "name": "deletions",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false,
-          "default": 0
-        },
-        "file_count": {
-          "name": "file_count",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false,
-          "default": 0
         },
         "created_at": {
           "name": "created_at",

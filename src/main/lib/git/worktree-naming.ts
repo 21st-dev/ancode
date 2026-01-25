@@ -20,16 +20,22 @@ function generateLandscapeName(): string {
 /**
  * Sanitize a project name for use as a filesystem directory name.
  * Lowercases, replaces spaces/underscores with hyphens, strips special characters.
+ * Appends a short project ID suffix to avoid collisions when different names
+ * normalize to the same slug (e.g., "My Project" and "my_project").
+ * Truncates to 50 characters to stay within filesystem path length limits.
  */
-export function sanitizeProjectName(name: string): string {
+export function sanitizeProjectName(name: string, projectId: string): string {
 	const sanitized = name
 		.toLowerCase()
 		.replace(/[\s_]+/g, "-")
 		.replace(/[^a-z0-9\-.]/g, "")
 		.replace(/-{2,}/g, "-")
-		.replace(/^-+|-+$/g, "");
+		.replace(/^-+|-+$/g, "")
+		.slice(0, 50);
 
-	return sanitized || "project";
+	const base = sanitized || "project";
+	const suffix = projectId.slice(0, 6);
+	return `${base}-${suffix}`;
 }
 
 /**
@@ -37,6 +43,11 @@ export function sanitizeProjectName(name: string): string {
  * Uses adjective-landscape pattern (e.g., "golden-meadow", "quiet-ridge").
  * Checks the parent directory for existing folders to avoid collisions.
  * Falls back to appending a numeric suffix if random generation keeps colliding.
+ *
+ * Note: There is a theoretical TOCTOU race between existsSync and the actual
+ * git worktree add. In practice this is negligible (180k combinations, single
+ * local user). If it occurs, git worktree add fails atomically and the error
+ * is caught by createWorktreeForChat().
  */
 export function generateWorktreeFolderName(parentDir: string): string {
 	for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
