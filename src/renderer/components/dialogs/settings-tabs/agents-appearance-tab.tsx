@@ -14,6 +14,7 @@ import {
   importedThemesAtom,
   type VSCodeFullTheme,
 } from "../../../lib/atoms"
+import { diffViewDisplayModeAtom, type DiffViewDisplayMode } from "../../../features/agents/atoms"
 import {
   BUILTIN_THEMES,
   getBuiltinThemeById,
@@ -148,6 +149,9 @@ export function AgentsAppearanceTab() {
 
   // To-do list preference
   const [alwaysExpandTodoList, setAlwaysExpandTodoList] = useAtom(alwaysExpandTodoListAtom)
+
+  // Changes view display mode
+  const [diffDisplayMode, setDiffDisplayMode] = useAtom(diffViewDisplayModeAtom)
 
   // VS Code themes state
   const [isScanning, setIsScanning] = useState(false)
@@ -618,6 +622,39 @@ export function AgentsAppearanceTab() {
             checked={alwaysExpandTodoList}
             onCheckedChange={setAlwaysExpandTodoList}
           />
+        </div>
+        <div className="flex items-center justify-between p-4 border-t border-border">
+          <div className="flex flex-col space-y-1">
+            <span className="text-sm font-medium text-foreground">
+              Changes view
+            </span>
+            <span className="text-xs text-muted-foreground">
+              How to display the changes/diff view
+            </span>
+          </div>
+          <Select
+            value={diffDisplayMode}
+            onValueChange={(value) => setDiffDisplayMode(value as DiffViewDisplayMode)}
+          >
+            <SelectTrigger className="w-auto px-3">
+              <span className="text-xs">
+                {diffDisplayMode === "side-peek" && "Sidebar"}
+                {diffDisplayMode === "center-peek" && "Dialog"}
+                {diffDisplayMode === "full-page" && "Fullscreen"}
+              </span>
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="side-peek">
+                <span>Sidebar</span>
+              </SelectItem>
+              <SelectItem value="center-peek">
+                <span>Dialog</span>
+              </SelectItem>
+              <SelectItem value="full-page">
+                <span>Fullscreen</span>
+              </SelectItem>
+            </SelectContent>
+          </Select>
         </div>
       </div>
     </div>
