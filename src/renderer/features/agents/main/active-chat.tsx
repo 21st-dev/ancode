@@ -63,6 +63,7 @@ import { getQueryClient } from "../../../contexts/TRPCProvider"
 import { trackMessageSent } from "../../../lib/analytics"
 import { apiFetch } from "../../../lib/api-fetch"
 import {
+  betaPreviewSidebarEnabledAtom,
   customClaudeConfigAtom,
   isDesktopAtom, isFullscreenAtom,
   normalizeCustomClaudeConfig,
@@ -4244,6 +4245,7 @@ export function ChatView({
   const [isPlanMode] = useAtom(isPlanModeAtom)
   const isDesktop = useAtomValue(isDesktopAtom)
   const isFullscreen = useAtomValue(isFullscreenAtom)
+  const betaPreviewSidebarEnabled = useAtomValue(betaPreviewSidebarEnabledAtom)
   const customClaudeConfig = useAtomValue(customClaudeConfigAtom)
   const selectedOllamaModel = useAtomValue(selectedOllamaModelAtom)
   const normalizedCustomClaudeConfig =
@@ -6177,15 +6179,17 @@ Make sure to preserve all functionality from both branches when resolving confli
                   (canOpenPreview ? (
                     <Tooltip delayDuration={500}>
                       <TooltipTrigger asChild>
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          onClick={() => setIsPreviewSidebarOpen(true)}
-                          className="h-6 w-6 p-0 hover:bg-foreground/10 transition-colors text-foreground flex-shrink-0 rounded-md ml-2"
-                          aria-label="Open preview"
-                        >
-                          <IconOpenSidebarRight className="h-4 w-4" />
-                        </Button>
+                        <span className="inline-flex ml-2">
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            onClick={() => setIsPreviewSidebarOpen(true)}
+                            className="h-6 w-6 p-0 hover:bg-foreground/10 transition-colors text-foreground flex-shrink-0 rounded-md"
+                            aria-label="Open preview"
+                          >
+                            <IconOpenSidebarRight className="h-4 w-4" />
+                          </Button>
+                        </span>
                       </TooltipTrigger>
                       <TooltipContent>Open preview</TooltipContent>
                     </Tooltip>
@@ -6204,19 +6208,21 @@ Make sure to preserve all functionality from both branches when resolving confli
                       </span>
                     </PreviewSetupHoverCard>
                   ))}
-                {/* New Preview Button - shows when preview sidebar is closed (desktop only) */}
-                {isDesktop && !isMobileFullscreen && !isNewPreviewSidebarOpen && (
+                {/* New Preview Button - shows when preview sidebar is closed (desktop only, beta feature) */}
+                {betaPreviewSidebarEnabled && isDesktop && !isMobileFullscreen && !isNewPreviewSidebarOpen && (
                   <Tooltip delayDuration={500}>
                     <TooltipTrigger asChild>
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        onClick={() => setIsNewPreviewSidebarOpen(true)}
-                        className="h-6 w-6 p-0 hover:bg-foreground/10 transition-colors text-foreground flex-shrink-0 rounded-md ml-2"
-                        aria-label="Open preview"
-                      >
-                        <Eye className="h-4 w-4" />
-                      </Button>
+                      <span className="inline-flex ml-2">
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          onClick={() => setIsNewPreviewSidebarOpen(true)}
+                          className="h-6 w-6 p-0 hover:bg-foreground/10 transition-colors text-foreground flex-shrink-0 rounded-md"
+                          aria-label="Open preview"
+                        >
+                          <Eye className="h-4 w-4" />
+                        </Button>
+                      </span>
                     </TooltipTrigger>
                     <TooltipContent side="bottom">Preview</TooltipContent>
                   </Tooltip>
@@ -6229,15 +6235,17 @@ Make sure to preserve all functionality from both branches when resolving confli
                       !isDetailsSidebarOpen && (
                         <Tooltip delayDuration={500}>
                           <TooltipTrigger asChild>
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              onClick={() => setIsDetailsSidebarOpen(true)}
-                              className="h-6 w-6 p-0 hover:bg-foreground/10 transition-colors text-foreground flex-shrink-0 rounded-md ml-2"
-                              aria-label="View details"
-                            >
-                              <IconOpenSidebarRight className="h-4 w-4" />
-                            </Button>
+                            <span className="inline-flex ml-2">
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                onClick={() => setIsDetailsSidebarOpen(true)}
+                                className="h-6 w-6 p-0 hover:bg-foreground/10 transition-colors text-foreground flex-shrink-0 rounded-md"
+                                aria-label="View details"
+                              >
+                                <IconOpenSidebarRight className="h-4 w-4" />
+                              </Button>
+                            </span>
                           </TooltipTrigger>
                           <TooltipContent side="bottom">
                             View details
@@ -6250,15 +6258,17 @@ Make sure to preserve all functionality from both branches when resolving confli
                       !isTerminalSidebarOpen && (
                         <Tooltip delayDuration={500}>
                           <TooltipTrigger asChild>
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              onClick={() => setIsTerminalSidebarOpen(true)}
-                              className="h-6 w-6 p-0 hover:bg-foreground/10 transition-colors text-foreground flex-shrink-0 rounded-md ml-2"
-                              aria-label="Open terminal"
-                            >
-                              <TerminalSquare className="h-4 w-4" />
-                            </Button>
+                            <span className="inline-flex ml-2">
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                onClick={() => setIsTerminalSidebarOpen(true)}
+                                className="h-6 w-6 p-0 hover:bg-foreground/10 transition-colors text-foreground flex-shrink-0 rounded-md"
+                                aria-label="Open terminal"
+                              >
+                                <TerminalSquare className="h-4 w-4" />
+                              </Button>
+                            </span>
                           </TooltipTrigger>
                           <TooltipContent side="bottom">
                             Open terminal
@@ -6272,16 +6282,18 @@ Make sure to preserve all functionality from both branches when resolving confli
                 {!isMobileFullscreen && isArchived && (
                   <Tooltip delayDuration={500}>
                     <TooltipTrigger asChild>
-                      <Button
-                        variant="ghost"
-                        onClick={handleRestoreWorkspace}
-                        disabled={restoreWorkspaceMutation.isPending}
-                        className="h-6 px-2 gap-1.5 hover:bg-foreground/10 transition-colors text-foreground flex-shrink-0 rounded-md ml-2 flex items-center"
-                        aria-label="Restore workspace"
-                      >
-                        <IconTextUndo className="h-4 w-4" />
-                        <span className="text-xs">Restore</span>
-                      </Button>
+                      <span className="inline-flex ml-2">
+                        <Button
+                          variant="ghost"
+                          onClick={handleRestoreWorkspace}
+                          disabled={restoreWorkspaceMutation.isPending}
+                          className="h-6 px-2 gap-1.5 hover:bg-foreground/10 transition-colors text-foreground flex-shrink-0 rounded-md flex items-center"
+                          aria-label="Restore workspace"
+                        >
+                          <IconTextUndo className="h-4 w-4" />
+                          <span className="text-xs">Restore</span>
+                        </Button>
+                      </span>
                     </TooltipTrigger>
                     <TooltipContent side="bottom">
                       Restore workspace
@@ -6592,8 +6604,8 @@ Make sure to preserve all functionality from both branches when resolving confli
           />
         )}
 
-        {/* New Preview Sidebar - with dev server and browser preview (desktop only) */}
-        {isDesktop && !isMobileFullscreen && worktreePath && (
+        {/* New Preview Sidebar - with dev server and browser preview (desktop only, beta feature) */}
+        {betaPreviewSidebarEnabled && isDesktop && !isMobileFullscreen && worktreePath && (
           <PreviewSidebar
             chatId={chatId}
             worktreePath={worktreePath}

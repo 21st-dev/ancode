@@ -414,6 +414,15 @@ export const betaKanbanEnabledAtom = atomWithStorage<boolean>(
   { getOnInit: true },
 )
 
+// Beta: Enable Preview sidebar
+// When enabled, shows Preview button in chat header to open a new preview sidebar
+export const betaPreviewSidebarEnabledAtom = atomWithStorage<boolean>(
+  "preferences:beta-preview-sidebar-enabled",
+  false, // Default OFF
+  undefined,
+  { getOnInit: true },
+)
+
 // Preferences - Ctrl+Tab Quick Switch Target
 // When "workspaces" (default), Ctrl+Tab switches between workspaces, and Opt+Ctrl+Tab switches between agents
 // When "agents", Ctrl+Tab switches between agents, and Opt+Ctrl+Tab switches between workspaces
