@@ -150,7 +150,6 @@ import {
 } from "../mentions"
 import {
   CHAT_LAYOUT,
-  claudeModels,
   EXPLORING_TOOLS,
   getFirstSubChatId,
   groupExploringTools,

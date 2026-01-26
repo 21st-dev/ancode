@@ -99,12 +99,3 @@ export const claudeModels = [
   { id: "sonnet", name: "Sonnet" },
   { id: "haiku", name: "Haiku" },
 ]
-
-/**
- * Agent providers
- */
-export const agents = [
-  { id: "claude-code", name: "Claude Code", hasModels: true },
-  { id: "cursor", name: "Cursor CLI", disabled: true },
-  { id: "codex", name: "OpenAI Codex", disabled: true },
-]
