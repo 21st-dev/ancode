@@ -738,6 +738,7 @@ export const claudeRouter = router({
             }
 
             // Build full environment for Claude SDK (includes HOME, PATH, etc.)
+            // Pass OAuth token for Claude subscription users, or custom token for API key users
             const claudeEnv = buildClaudeEnv(
               finalCustomConfig
                 ? {
@@ -746,7 +747,7 @@ export const claudeRouter = router({
                       ANTHROPIC_BASE_URL: finalCustomConfig.baseUrl,
                     },
                   }
-                : undefined,
+                : claudeCodeToken ? { customEnv: { ANTHROPIC_AUTH_TOKEN: claudeCodeToken } } : undefined,
             )
 
             // Debug logging in dev
@@ -1367,6 +1368,7 @@ ${prompt}
                 // Check for error messages from SDK (error can be embedded in message payload!)
                 const msgAny = msg as any
                 if (msgAny.type === "error" || msgAny.error) {
+                  console.log(`[SD] ERROR MSG RECEIVED:`, JSON.stringify(msgAny, null, 2))
                   const sdkError =
                     msgAny.error || msgAny.message || "Unknown SDK error"
                   lastError = new Error(sdkError)
