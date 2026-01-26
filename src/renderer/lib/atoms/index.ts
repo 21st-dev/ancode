@@ -60,12 +60,20 @@ export {
   // AskUserQuestion
   pendingUserQuestionsAtom,
 
+  // Plan atoms
+  planSidebarOpenAtomFamily,
+  currentPlanPathAtomFamily,
+  subChatModeAtomFamily,
+  pendingBuildPlanSubChatIdAtom,
+  showNewChatFormAtom,
+
   // Types
   type SavedRepo,
   type SelectedProject,
   type AgentsMobileViewMode,
   type AgentsDebugMode,
   type SubChatFileChange,
+  type AgentMode,
 } from "../../features/agents/atoms"
 
 // ============================================
@@ -536,6 +544,15 @@ export const agentsQuickSwitchSelectedIndexAtom = atom<number>(0)
 // Quick switch dialog - Sub-chats
 export const subChatsQuickSwitchOpenAtom = atom<boolean>(false)
 export const subChatsQuickSwitchSelectedIndexAtom = atom<number>(0)
+
+// Chat source mode (local, sandbox, remote)
+export type ChatSourceMode = "local" | "sandbox" | "remote"
+export const chatSourceModeAtom = atomWithStorage<ChatSourceMode>(
+  "agents:chatSourceMode",
+  "local",
+  undefined,
+  { getOnInit: true },
+)
 
 // ============================================
 // UPDATE ATOMS
