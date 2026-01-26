@@ -1816,6 +1816,42 @@ export function AgentsSidebar({
     }
   }, [searchQuery, agentChats, pinnedChatIds])
 
+  // Create virtualized list items (headers + chats)
+  const virtualListItems = useMemo(() => {
+    const items: Array<
+      | { type: 'header'; title: string; key: string }
+      | { type: 'chat'; chat: typeof filteredChats[0]; key: string }
+    > = []
+
+    if (pinnedAgents.length > 0) {
+      items.push({ type: 'header', title: 'Pinned workspaces', key: 'header-pinned' })
+      pinnedAgents.forEach((chat) => {
+        items.push({ type: 'chat', chat, key: `chat-${chat.id}` })
+      })
+    }
+
+    if (unpinnedAgents.length > 0) {
+      const unpinnedTitle = pinnedAgents.length > 0 ? 'Recent workspaces' : 'Workspaces'
+      items.push({ type: 'header', title: unpinnedTitle, key: 'header-unpinned' })
+      unpinnedAgents.forEach((chat) => {
+        items.push({ type: 'chat', chat, key: `chat-${chat.id}` })
+      })
+    }
+
+    return items
+  }, [pinnedAgents, unpinnedAgents])
+
+  // Setup virtualizer for chat list
+  const virtualizer = useVirtualizer({
+    count: virtualListItems.length,
+    getScrollElement: () => scrollContainerRef.current,
+    estimateSize: (index) => {
+      const item = virtualListItems[index]
+      return item?.type === 'header' ? 20 : 56 // Header: 20px, Chat item: 56px
+    },
+    overscan: 5,
+  })
+
   // Handle bulk archive of selected chats
   const handleBulkArchive = useCallback(() => {
     const chatIdsToArchive = Array.from(selectedChatIds)
@@ -2536,90 +2572,130 @@ export function AgentsSidebar({
             </div>
           )}
 
-          {/* Chats Section */}
+          {/* Chats Section - Virtualized */}
           {filteredChats.length > 0 ? (
-            <div className={cn("mb-4", isMultiSelectMode ? "px-0" : "-mx-1")}>
-              {/* Pinned section */}
-              <ChatListSection
-                title="Pinned workspaces"
-                chats={pinnedAgents}
-                selectedChatId={selectedChatId}
-                focusedChatIndex={focusedChatIndex}
-                loadingChatIds={loadingChatIds}
-                unseenChanges={unseenChanges}
-                workspacePendingPlans={workspacePendingPlans}
-                workspacePendingQuestions={workspacePendingQuestions}
-                isMultiSelectMode={isMultiSelectMode}
-                selectedChatIds={selectedChatIds}
-                isMobileFullscreen={isMobileFullscreen}
-                isDesktop={isDesktop}
-                pinnedChatIds={pinnedChatIds}
-                projectsMap={projectsMap}
-                workspaceFileStats={workspaceFileStats}
-                filteredChats={filteredChats}
-                canShowPinOption={canShowPinOption}
-                areAllSelectedPinned={areAllSelectedPinned}
-                showIcon={showWorkspaceIcon}
-                onChatClick={handleChatClick}
-                onCheckboxClick={handleCheckboxClick}
-                onMouseEnter={handleAgentMouseEnter}
-                onMouseLeave={handleAgentMouseLeave}
-                onArchive={handleArchiveSingle}
-                onTogglePin={handleTogglePin}
-                onRenameClick={handleRenameClick}
-                onCopyBranch={handleCopyBranch}
-                onArchiveAllBelow={handleArchiveAllBelow}
-                onArchiveOthers={handleArchiveOthers}
-                onBulkPin={handleBulkPin}
-                onBulkUnpin={handleBulkUnpin}
-                onBulkArchive={handleBulkArchive}
-                archivePending={archiveChatMutation.isPending}
-                archiveBatchPending={archiveChatsBatchMutation.isPending}
-                nameRefCallback={nameRefCallback}
-                formatTime={formatTime}
-                justCreatedIds={justCreatedIds}
-              />
+            <div
+              style={{
+                height: `${virtualizer.getTotalSize()}px`,
+                width: '100%',
+                position: 'relative',
+              }}
+              className={cn("mb-4", isMultiSelectMode ? "px-0" : "-mx-1")}
+            >
+              {virtualizer.getVirtualItems().map((virtualItem) => {
+                const item = virtualListItems[virtualItem.index]
+                if (!item) return null
 
-              {/* Unpinned section */}
-              <ChatListSection
-                title={pinnedAgents.length > 0 ? "Recent workspaces" : "Workspaces"}
-                chats={unpinnedAgents}
-                selectedChatId={selectedChatId}
-                focusedChatIndex={focusedChatIndex}
-                loadingChatIds={loadingChatIds}
-                unseenChanges={unseenChanges}
-                workspacePendingPlans={workspacePendingPlans}
-                workspacePendingQuestions={workspacePendingQuestions}
-                isMultiSelectMode={isMultiSelectMode}
-                selectedChatIds={selectedChatIds}
-                isMobileFullscreen={isMobileFullscreen}
-                isDesktop={isDesktop}
-                pinnedChatIds={pinnedChatIds}
-                projectsMap={projectsMap}
-                workspaceFileStats={workspaceFileStats}
-                filteredChats={filteredChats}
-                canShowPinOption={canShowPinOption}
-                areAllSelectedPinned={areAllSelectedPinned}
-                showIcon={showWorkspaceIcon}
-                onChatClick={handleChatClick}
-                onCheckboxClick={handleCheckboxClick}
-                onMouseEnter={handleAgentMouseEnter}
-                onMouseLeave={handleAgentMouseLeave}
-                onArchive={handleArchiveSingle}
-                onTogglePin={handleTogglePin}
-                onRenameClick={handleRenameClick}
-                onCopyBranch={handleCopyBranch}
-                onArchiveAllBelow={handleArchiveAllBelow}
-                onArchiveOthers={handleArchiveOthers}
-                onBulkPin={handleBulkPin}
-                onBulkUnpin={handleBulkUnpin}
-                onBulkArchive={handleBulkArchive}
-                archivePending={archiveChatMutation.isPending}
-                archiveBatchPending={archiveChatsBatchMutation.isPending}
-                nameRefCallback={nameRefCallback}
-                formatTime={formatTime}
-                justCreatedIds={justCreatedIds}
-              />
+                if (item.type === 'header') {
+                  return (
+                    <div
+                      key={virtualItem.key}
+                      style={{
+                        position: 'absolute',
+                        top: 0,
+                        left: 0,
+                        width: '100%',
+                        transform: `translateY(${virtualItem.start}px)`,
+                      }}
+                    >
+                      <div
+                        className={cn(
+                          "flex items-center h-4 mb-1",
+                          isMultiSelectMode ? "pl-3" : "pl-2",
+                        )}
+                      >
+                        <h3 className="text-xs font-medium text-muted-foreground whitespace-nowrap">
+                          {item.title}
+                        </h3>
+                      </div>
+                    </div>
+                  )
+                }
+
+                // Chat item
+                const chat = item.chat
+                const isLoading = loadingChatIds.has(chat.id)
+                const isSelected = selectedChatId === chat.id
+                const isPinned = pinnedChatIds.has(chat.id)
+                const globalIndexMap = new Map<string, number>()
+                filteredChats.forEach((c, i) => globalIndexMap.set(c.id, i))
+                const globalIndex = globalIndexMap.get(chat.id) ?? -1
+                const isFocused = focusedChatIndex === globalIndex && focusedChatIndex >= 0
+                const project = projectsMap.get(chat.projectId)
+                const repoName = project?.gitRepo || project?.name
+                const displayText = chat.branch
+                  ? repoName
+                    ? `${repoName} • ${chat.branch}`
+                    : chat.branch
+                  : repoName || "Local project"
+                const isChecked = selectedChatIds.has(chat.id)
+                const stats = workspaceFileStats.get(chat.id)
+                const hasPendingPlan = workspacePendingPlans.has(chat.id)
+                const hasPendingQuestion = workspacePendingQuestions.has(chat.id)
+                const isLastInFilteredChats = globalIndex === filteredChats.length - 1
+                const isJustCreated = justCreatedIds.has(chat.id)
+
+                return (
+                  <div
+                    key={virtualItem.key}
+                    style={{
+                      position: 'absolute',
+                      top: 0,
+                      left: 0,
+                      width: '100%',
+                      transform: `translateY(${virtualItem.start}px)`,
+                    }}
+                  >
+                    <AgentChatItem
+                      chatId={chat.id}
+                      chatName={chat.name}
+                      chatBranch={chat.branch}
+                      chatUpdatedAt={chat.updatedAt}
+                      chatProjectId={chat.projectId}
+                      globalIndex={globalIndex}
+                      isSelected={isSelected}
+                      isLoading={isLoading}
+                      hasUnseenChanges={unseenChanges.has(chat.id)}
+                      hasPendingPlan={hasPendingPlan}
+                      hasPendingQuestion={hasPendingQuestion}
+                      isMultiSelectMode={isMultiSelectMode}
+                      isChecked={isChecked}
+                      isFocused={isFocused}
+                      isMobileFullscreen={isMobileFullscreen}
+                      isDesktop={isDesktop}
+                      isPinned={isPinned}
+                      displayText={displayText}
+                      gitOwner={project?.gitOwner}
+                      gitProvider={project?.gitProvider}
+                      stats={stats}
+                      selectedChatIdsSize={selectedChatIds.size}
+                      canShowPinOption={canShowPinOption}
+                      areAllSelectedPinned={areAllSelectedPinned}
+                      filteredChatsLength={filteredChats.length}
+                      isLastInFilteredChats={isLastInFilteredChats}
+                      showIcon={showWorkspaceIcon}
+                      onChatClick={handleChatClick}
+                      onCheckboxClick={handleCheckboxClick}
+                      onMouseEnter={handleAgentMouseEnter}
+                      onMouseLeave={handleAgentMouseLeave}
+                      onArchive={handleArchiveSingle}
+                      onTogglePin={handleTogglePin}
+                      onRenameClick={handleRenameClick}
+                      onCopyBranch={handleCopyBranch}
+                      onArchiveAllBelow={handleArchiveAllBelow}
+                      onArchiveOthers={handleArchiveOthers}
+                      onBulkPin={handleBulkPin}
+                      onBulkUnpin={handleBulkUnpin}
+                      onBulkArchive={handleBulkArchive}
+                      archivePending={archiveChatMutation.isPending}
+                      archiveBatchPending={archiveChatsBatchMutation.isPending}
+                      nameRefCallback={nameRefCallback}
+                      formatTime={formatTime}
+                      isJustCreated={isJustCreated}
+                    />
+                  </div>
+                )
+              })}
             </div>
           ) : null}
         </div>
