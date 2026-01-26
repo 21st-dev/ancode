@@ -127,6 +127,37 @@ function registerIpcHandlers(getWindow: () => BrowserWindow | null): void {
       options?: { method?: string; body?: string; headers?: Record<string, string> },
     ) => {
       try {
+        // Validate and normalize URL
+        let normalizedUrl: string
+        try {
+          // Try to parse as URL first
+          const parsed = new URL(url)
+          // Reconstruct URL to ensure proper encoding (handles already-encoded URLs)
+          normalizedUrl = parsed.toString()
+        } catch {
+          // If URL parsing fails, try to fix common issues
+          // Check if it's a relative URL or missing protocol
+          if (!url.includes("://")) {
+            // Assume https if no protocol
+            normalizedUrl = `https://${url}`
+            try {
+              new URL(normalizedUrl) // Validate the constructed URL
+            } catch {
+              return {
+                ok: false,
+                status: 400,
+                error: `Invalid URL: ${url}`,
+              }
+            }
+          } else {
+            return {
+              ok: false,
+              status: 400,
+              error: `Invalid URL format: ${url}`,
+            }
+          }
+        }
+
         const authManager = getAuthManager()
         const token = await authManager?.getValidToken()
         const headers = new Headers(options?.headers || {})
@@ -134,26 +165,111 @@ function registerIpcHandlers(getWindow: () => BrowserWindow | null): void {
           headers.set("X-Desktop-Token", token)
         }
 
-        const response = await fetch(url, {
-          method: options?.method || "GET",
-          headers,
-          body: options?.body,
-        })
-
-        const contentType = response.headers.get("content-type") || ""
-        let data: unknown = null
-        if (contentType.includes("application/json")) {
-          data = await response.json().catch(() => null)
-        } else {
-          data = await response.text().catch(() => null)
+        // Add User-Agent to appear as a normal browser (some sites block requests without it)
+        if (!headers.has("User-Agent")) {
+          headers.set("User-Agent", "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36")
         }
 
-        return { ok: response.ok, status: response.status, data }
+        // Add timeout to prevent hanging requests
+        const controller = new AbortController()
+        const timeoutId = setTimeout(() => controller.abort(), 30000) // 30 second timeout
+
+        try {
+          const response = await fetch(normalizedUrl, {
+            method: options?.method || "GET",
+            headers,
+            body: options?.body,
+            signal: controller.signal,
+            redirect: "follow", // Follow redirects automatically
+          })
+
+          // Check if URL was redirected
+          const wasRedirected = response.url !== normalizedUrl
+          const finalUrl = response.url
+
+          clearTimeout(timeoutId)
+
+          // Check content length for size limits (prevent memory issues)
+          // Note: fetch() automatically follows redirects, so we'll get the final response
+          const contentLength = response.headers.get("content-length")
+          const MAX_SIZE = 10 * 1024 * 1024 // 10MB limit
+          if (contentLength && parseInt(contentLength, 10) > MAX_SIZE) {
+            return {
+              ok: false,
+              status: 413,
+              error: `Response too large (${Math.round(parseInt(contentLength, 10) / 1024 / 1024)}MB). Maximum size is ${MAX_SIZE / 1024 / 1024}MB.`,
+            }
+          }
+
+          const contentType = response.headers.get("content-type") || ""
+          let data: unknown = null
+
+          // Build redirect info message if redirected
+          let redirectInfo = ""
+          if (wasRedirected) {
+            redirectInfo = `\n\n⚠️ Redirected from: ${normalizedUrl}\n→ Final URL: ${finalUrl}\n\n`
+          }
+
+          // Handle different content types appropriately
+          if (contentType.includes("application/json")) {
+            data = await response.json().catch(() => null)
+            if (redirectInfo && typeof data === "object") {
+              // Add redirect info to JSON response
+              data = { _redirect_info: redirectInfo, ...data }
+            }
+          } else if (contentType.includes("application/pdf") || contentType.includes("application/octet-stream") || contentType.includes("binary")) {
+            // For PDFs and binary content, return a message instead of trying to read as text
+            const size = contentLength ? parseInt(contentLength, 10) : 0
+            data = `${redirectInfo}[Binary content - ${contentType}${size > 0 ? `, ${Math.round(size / 1024)}KB` : ""}]\n\nNote: Direct download of PDFs is not supported. The document may require accessing through the website interface.`
+          } else {
+            // For text content, read with size limit
+            const text = await response.text().catch(() => null)
+            if (text && text.length > MAX_SIZE) {
+              data = redirectInfo + text.slice(0, MAX_SIZE) + `\n\n[Content truncated - response exceeds ${MAX_SIZE / 1024 / 1024}MB limit]`
+            } else {
+              data = redirectInfo + (text || "")
+            }
+          }
+
+          return { ok: response.ok, status: response.status, data }
+        } catch (fetchError) {
+          clearTimeout(timeoutId)
+          throw fetchError
+        }
       } catch (error) {
+        // Provide more detailed error messages
+        if (error instanceof Error) {
+          if (error.name === "AbortError") {
+            return {
+              ok: false,
+              status: 408,
+              error: "Request timeout - the server took too long to respond",
+            }
+          }
+          if (error.message.includes("ECONNREFUSED") || error.message.includes("ENOTFOUND")) {
+            return {
+              ok: false,
+              status: 503,
+              error: "Connection failed - could not reach the server",
+            }
+          }
+          if (error.message.includes("CERT") || error.message.includes("SSL")) {
+            return {
+              ok: false,
+              status: 526,
+              error: "SSL certificate error - the connection is not secure",
+            }
+          }
+          return {
+            ok: false,
+            status: 500,
+            error: error.message || "Network error occurred",
+          }
+        }
         return {
           ok: false,
           status: 500,
-          error: error instanceof Error ? error.message : String(error),
+          error: String(error),
         }
       }
     },
@@ -169,6 +285,32 @@ function registerIpcHandlers(getWindow: () => BrowserWindow | null): void {
       options: { method?: string; body?: string; headers?: Record<string, string> },
     ) => {
       try {
+        // Validate and normalize URL
+        let normalizedUrl: string
+        try {
+          const parsed = new URL(url)
+          normalizedUrl = parsed.toString()
+        } catch {
+          if (!url.includes("://")) {
+            normalizedUrl = `https://${url}`
+            try {
+              new URL(normalizedUrl)
+            } catch {
+              return {
+                ok: false,
+                status: 400,
+                error: `Invalid URL: ${url}`,
+              }
+            }
+          } else {
+            return {
+              ok: false,
+              status: 400,
+              error: `Invalid URL format: ${url}`,
+            }
+          }
+        }
+
         const authManager = getAuthManager()
         const token = await authManager?.getValidToken()
         const headers = new Headers(options?.headers || {})
@@ -176,49 +318,96 @@ function registerIpcHandlers(getWindow: () => BrowserWindow | null): void {
           headers.set("X-Desktop-Token", token)
         }
 
-        const response = await fetch(url, {
-          method: options?.method || "GET",
-          headers,
-          body: options?.body,
-        })
-
-        if (!response.ok || !response.body) {
-          return {
-            ok: false,
-            status: response.status,
-            error: response.statusText || "No response body",
-          }
+        // Add User-Agent to appear as a normal browser (some sites block requests without it)
+        if (!headers.has("User-Agent")) {
+          headers.set("User-Agent", "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36")
         }
 
-        const sender = event.sender
-        const reader = response.body.getReader()
+        // Add timeout to prevent hanging requests
+        const controller = new AbortController()
+        const timeoutId = setTimeout(() => controller.abort(), 30000) // 30 second timeout
 
-        ;(async () => {
-          try {
-            while (true) {
-              const { value, done } = await reader.read()
-              if (done) {
-                sender.send(`stream:done:${streamId}`)
-                break
-              }
-              if (value) {
-                sender.send(`stream:chunk:${streamId}`, value)
-              }
+        try {
+          const response = await fetch(normalizedUrl, {
+            method: options?.method || "GET",
+            headers,
+            body: options?.body,
+            signal: controller.signal,
+            redirect: "follow", // Follow redirects automatically
+          })
+
+          clearTimeout(timeoutId)
+
+          if (!response.ok || !response.body) {
+            return {
+              ok: false,
+              status: response.status,
+              error: response.statusText || "No response body",
             }
-          } catch (err) {
-            sender.send(
-              `stream:error:${streamId}`,
-              err instanceof Error ? err.message : String(err),
-            )
           }
-        })()
 
-        return { ok: true, status: response.status }
+          const sender = event.sender
+          const reader = response.body.getReader()
+
+          ;(async () => {
+            try {
+              while (true) {
+                const { value, done } = await reader.read()
+                if (done) {
+                  sender.send(`stream:done:${streamId}`)
+                  break
+                }
+                if (value) {
+                  sender.send(`stream:chunk:${streamId}`, value)
+                }
+              }
+            } catch (err) {
+              sender.send(
+                `stream:error:${streamId}`,
+                err instanceof Error ? err.message : String(err),
+              )
+            }
+          })()
+
+          return { ok: true, status: response.status }
+        } catch (fetchError) {
+          clearTimeout(timeoutId)
+          throw fetchError
+        }
       } catch (error) {
+        // Provide more detailed error messages
+        if (error instanceof Error) {
+          if (error.name === "AbortError") {
+            return {
+              ok: false,
+              status: 408,
+              error: "Request timeout - the server took too long to respond",
+            }
+          }
+          if (error.message.includes("ECONNREFUSED") || error.message.includes("ENOTFOUND")) {
+            return {
+              ok: false,
+              status: 503,
+              error: "Connection failed - could not reach the server",
+            }
+          }
+          if (error.message.includes("CERT") || error.message.includes("SSL")) {
+            return {
+              ok: false,
+              status: 526,
+              error: "SSL certificate error - the connection is not secure",
+            }
+          }
+          return {
+            ok: false,
+            status: 500,
+            error: error.message || "Network error occurred",
+          }
+        }
         return {
           ok: false,
           status: 500,
-          error: error instanceof Error ? error.message : String(error),
+          error: String(error),
         }
       }
     },
@@ -615,7 +804,7 @@ export function createMainWindow(initialParams?: WindowLaunchParams): BrowserWin
   console.log("[Main] ================================")
 
   if (isAuth) {
-    console.log("[Main] ✓ User authenticated, loading app")
+    console.log("[Main] [OK] User authenticated, loading app")
     if (devServerUrl) {
       loadUrlWithParams(devServerUrl, initialParams)
       // DevTools can be opened manually with Cmd+Option+I
@@ -624,7 +813,7 @@ export function createMainWindow(initialParams?: WindowLaunchParams): BrowserWin
       loadWithParams(join(__dirname, "../renderer/index.html"), initialParams)
     }
   } else {
-    console.log("[Main] ✗ Not authenticated, showing login page")
+    console.log("[Main] [ERROR] Not authenticated, showing login page")
     // In dev mode, login.html is in src/renderer
     if (devServerUrl) {
       const loginPath = join(app.getAppPath(), "src/renderer/login.html")
