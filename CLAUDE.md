@@ -14,7 +14,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 Running the 1Code Electron app.
 
 Running command: cd, bun
-$ cd /Users/kenny/1code && bun run dev
+$ cd ~/1code && bun run dev
 ```
 
 Run the command in the background so the user can continue working.

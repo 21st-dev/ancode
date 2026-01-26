@@ -180,15 +180,15 @@ $ bun run build
 ## Files Modified
 
 ### Created Files (3)
-1. `/Users/kenny/1code/PERFORMANCE_AUDIT_2026-01-26.md` (14 KB)
+1. `PERFORMANCE_AUDIT_2026-01-26.md` (14 KB)
    - Comprehensive performance analysis
    - Identified 4 critical + 5 medium priority issues
 
-2. `/Users/kenny/1code/PERFORMANCE_IMPROVEMENTS_2026-01-26.md` (10 KB)
+2. `PERFORMANCE_IMPROVEMENTS_2026-01-26.md` (10 KB)
    - Detailed documentation of fixes #1 and #2
    - Testing guide and rollback procedures
 
-3. `/Users/kenny/1code/drizzle/0006_performance_indexes.sql` (0.5 KB)
+3. `drizzle/0006_performance_indexes.sql` (0.5 KB)
    - Database migration for performance indexes
    - Creates 4 indexes on hot query paths
 
