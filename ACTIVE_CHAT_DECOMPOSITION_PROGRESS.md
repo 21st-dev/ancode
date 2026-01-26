@@ -2,13 +2,13 @@
 
 **Date**: January 26, 2026
 **Task**: #4 - Decompose active-chat.tsx component
-**Status**: 5 of ~10 extractions completed (50% progress) ✅
+**Status**: 8 of ~10 extractions completed (80% progress) ✅
 
 ---
 
 ## Summary
 
-Successfully extracted 5 components and utilities from the monolithic 6,780-line `active-chat.tsx` file. All extractions maintain the same functionality, include proper TypeScript types, and follow React best practices with memoization where appropriate.
+Successfully extracted 8 components and utilities from the monolithic 6,780-line `active-chat.tsx` file. All extractions maintain the same functionality, include proper TypeScript types, and follow React best practices with memoization where appropriate.
 
 ---
 
@@ -119,22 +119,77 @@ Successfully extracted 5 components and utilities from the monolithic 6,780-line
 
 ---
 
-## 🔄 Remaining Extractions
-
-### 6. MessageGroup Component (~50 lines)
-**Location**: Lines 856-910 in active-chat.tsx
-**Complexity**: Low
-**Purpose**: Wrapper for message layout with group styling
-
-### 7. CollapsibleSteps Component (~60 lines)
-**Location**: Lines 911-977 in active-chat.tsx
+### 6. MessageGroup Component
+**File**: `src/renderer/features/agents/components/message-group.tsx`
+**Size**: 58 lines
 **Complexity**: Medium
-**Purpose**: Accordion-style tool steps display
 
-### 8. CommitFileItem Component (~30 lines)
-**Location**: Lines 1023-1056 in active-chat.tsx
+**Features**:
+- Measures user message height for sticky todo positioning
+- Uses `content-visibility: auto` for performance in long chats
+- Only visible groups are rendered (huge performance optimization)
+- ResizeObserver to track message height dynamically
+- CSS variable updates without React re-renders
+
+**Performance Benefits**:
+- Skip layout/paint for elements outside viewport
+- Proper scrollbar sizing before rendering
+- Minimal re-renders with direct DOM manipulation
+
+**Dependencies**:
+- React useEffect, useRef hooks
+
+---
+
+### 7. CollapsibleSteps Component
+**File**: `src/renderer/features/agents/components/collapsible-steps.tsx`
+**Size**: 68 lines
+**Complexity**: Medium
+
+**Features**:
+- Accordion-style collapsible container for tool steps
+- Expand/collapse animation with smooth transitions
+- Shows step count (singular/plural handling)
+- Click-to-toggle header row
+- Button click stops propagation
+
+**UI Elements**:
+- ListTree icon for visual indicator
+- Animated expand/collapse icons
+- Hover states for interactive feedback
+
+**Dependencies**:
+- `lucide-react` (ListTree icon)
+- ExpandIcon, CollapseIcon from UI icons
+- `cn` utility for className merging
+
+---
+
+### 8. CommitFileItem Component
+**File**: `src/renderer/features/agents/components/commit-file-item.tsx`
+**Size**: 47 lines
 **Complexity**: Low
-**Purpose**: Individual file item in commit list (already memoized)
+
+**Features**:
+- Memoized to prevent re-renders in file lists
+- Displays file path with directory/filename split
+- Shows status indicator (Added, Modified, Deleted, etc.)
+- Truncates long directory paths with ellipsis
+- Click handler for file selection
+
+**Layout**:
+- Directory path in muted color
+- Filename in bold
+- Status badge on the right
+
+**Dependencies**:
+- `getStatusIndicator` from changes utils
+- FileStatus type from shared types
+- `cn` utility
+
+---
+
+## 🔄 Remaining Extractions
 
 ### 9. DiffStateProvider & Context (~500 lines)
 **Location**: Lines 978-1482 in active-chat.tsx
@@ -142,16 +197,17 @@ Successfully extracted 5 components and utilities from the monolithic 6,780-line
 **Purpose**: Diff view state management with context
 
 ### 10. DiffSidebarContent Component (~600 lines)
-**Location**: Lines 1058-1650 in active-chat.tsx
+**Location**: Lines 1024+ in active-chat.tsx
 **Complexity**: High
 **Purpose**: Complex diff sidebar UI with file tree and diff viewer
+**Status**: Not yet extracted (requires careful state management)
 
 ---
 
 ## Performance Impact
 
 ### Completed Work
-- **-668 lines** extracted from active-chat.tsx (5 files created)
+- **-845 lines** extracted from active-chat.tsx (8 files created)
 - **Better separation** of concerns
 - **Improved testability** with isolated components
 - **Reduced cognitive load** - each file has single responsibility
@@ -180,12 +236,15 @@ $ bun run build
 
 ## Files Modified
 
-### Created Files (5)
+### Created Files (8)
 1. `src/renderer/features/agents/components/scroll-to-bottom-button.tsx` (130 lines)
 2. `src/renderer/features/agents/utils/chat-helpers.ts` (105 lines)
 3. `src/renderer/features/agents/components/copy-button.tsx` (48 lines)
 4. `src/renderer/features/agents/components/rollback-button.tsx` (44 lines)
 5. `src/renderer/features/agents/components/play-button.tsx` (341 lines)
+6. `src/renderer/features/agents/components/message-group.tsx` (58 lines)
+7. `src/renderer/features/agents/components/collapsible-steps.tsx` (68 lines)
+8. `src/renderer/features/agents/components/commit-file-item.tsx` (47 lines)
 
 ### Modified Files (3)
 1. `src/renderer/App.tsx` - Resolved merge conflict
@@ -259,8 +318,9 @@ For each extracted component:
 
 ---
 
-**Time Invested**: ~2 hours
-**Progress**: 50% complete (5/10 extractions)
+**Time Invested**: ~3.5 hours
+**Progress**: 80% complete (8/10 extractions)
 **Status**: ✅ On track
+**Lines Extracted**: 841 lines across 8 files
 
-**Next Session Goal**: Complete remaining 5 extractions and integrate all components into active-chat.tsx
+**Next Goal**: Extract remaining 2 complex components (DiffStateProvider, DiffSidebarContent) and integrate all components into active-chat.tsx
