@@ -3,121 +3,20 @@
 import { memo, useMemo, useState, useCallback } from "react"
 import { useAtomValue } from "jotai"
 import { cn } from "@/lib/utils"
-import { PlanIcon, CheckIcon, IconArrowRight, ExpandIcon, CollapseIcon } from "@/components/ui/icons"
+import { PlanIcon, ExpandIcon, CollapseIcon } from "@/components/ui/icons"
 import { currentTodosAtomFamily } from "@/features/agents/atoms"
-
-interface TodoItem {
-  content: string
-  status: "pending" | "in_progress" | "completed"
-  activeForm?: string
-}
+import type { TodoItem } from "@/features/agents/shared/todo-types"
+import {
+  TodoProgressCircle,
+  TodoStatusIcon,
+} from "@/features/agents/shared/todo-components"
 
 interface TodoWidgetProps {
   /** Active sub-chat ID to get todos from */
   subChatId: string | null
 }
 
-// Pie-style progress circle - fills sectors like pizza slices
-const ProgressCircle = ({
-  completed,
-  total,
-  size = 16,
-  className,
-}: {
-  completed: number
-  total: number
-  size?: number
-  className?: string
-}) => {
-  const cx = size / 2
-  const cy = size / 2
-  const outerRadius = (size - 1) / 2
-  const innerRadius = outerRadius - 1.5 // Leave space for outer border
-
-  // Create pie segments (no borders on segments, just fill)
-  const segments = []
-  for (let i = 0; i < total; i++) {
-    const startAngle = (i / total) * 360 - 90 // Start from top
-    const endAngle = ((i + 1) / total) * 360 - 90
-    const gap = total > 1 ? 4 : 0 // Gap between segments
-    const adjustedStartAngle = startAngle + gap / 2
-    const adjustedEndAngle = endAngle - gap / 2
-
-    // Convert to radians
-    const startRad = (adjustedStartAngle * Math.PI) / 180
-    const endRad = (adjustedEndAngle * Math.PI) / 180
-
-    // Calculate arc points
-    const x1 = cx + innerRadius * Math.cos(startRad)
-    const y1 = cy + innerRadius * Math.sin(startRad)
-    const x2 = cx + innerRadius * Math.cos(endRad)
-    const y2 = cy + innerRadius * Math.sin(endRad)
-
-    const largeArcFlag = endAngle - startAngle > 180 ? 1 : 0
-    const pathData = `M ${cx} ${cy} L ${x1} ${y1} A ${innerRadius} ${innerRadius} 0 ${largeArcFlag} 1 ${x2} ${y2} Z`
-
-    segments.push(
-      <path
-        key={i}
-        d={pathData}
-        fill={i < completed ? "currentColor" : "transparent"}
-        opacity={i < completed ? 0.7 : 0.15}
-      />,
-    )
-  }
-
-  return (
-    <svg
-      width={size}
-      height={size}
-      viewBox={`0 0 ${size} ${size}`}
-      className={cn("text-muted-foreground", className)}
-    >
-      {/* Outer border circle */}
-      <circle
-        cx={cx}
-        cy={cy}
-        r={outerRadius}
-        fill="none"
-        stroke="currentColor"
-        strokeWidth={0.5}
-        opacity={0.3}
-      />
-      {segments}
-    </svg>
-  )
-}
-
-const TodoStatusIcon = ({
-  status,
-}: {
-  status: TodoItem["status"]
-}) => {
-  switch (status) {
-    case "completed":
-      return (
-        <div
-          className="w-3.5 h-3.5 rounded-full bg-muted flex items-center justify-center flex-shrink-0"
-          style={{ border: "0.5px solid hsl(var(--border))" }}
-        >
-          <CheckIcon className="w-2 h-2 text-muted-foreground" />
-        </div>
-      )
-    case "in_progress":
-      return (
-        <div className="w-3.5 h-3.5 rounded-full bg-foreground flex items-center justify-center flex-shrink-0">
-          <IconArrowRight className="w-2 h-2 text-background" />
-        </div>
-      )
-    default:
-      return (
-        <div
-          className="w-3.5 h-3.5 rounded-full flex items-center justify-center flex-shrink-0"
-          style={{ border: "0.5px solid hsl(var(--muted-foreground) / 0.3)" }}
-        />
-      )
-  }
-}
+// Using shared components from @/features/agents/shared/todo-components
 
 const TodoListItem = ({
   todo,
@@ -257,7 +156,7 @@ export const TodoWidget = memo(function TodoWidget({ subChatId }: TodoWidgetProp
                 <CheckIcon className="w-2.5 h-2.5 text-muted-foreground" />
               </div>
             ) : (
-              <ProgressCircle
+              <TodoProgressCircle
                 completed={visualProgress}
                 total={totalTodos}
                 size={16}

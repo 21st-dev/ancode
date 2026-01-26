@@ -3,6 +3,7 @@ import { ThemeProvider, useTheme } from "next-themes"
 import { useEffect, useMemo } from "react"
 import { Toaster } from "sonner"
 import { TooltipProvider } from "./components/ui/tooltip"
+import { ErrorBoundary } from "./components/error-boundary"
 import { TRPCProvider } from "./contexts/TRPCProvider"
 import { selectedProjectAtom } from "./features/agents/atoms"
 import { AgentsLayout } from "./features/layout/agents-layout"
@@ -142,22 +143,24 @@ export function App() {
   }, [])
 
   return (
-    <JotaiProvider store={appStore}>
-      <ThemeProvider attribute="class" defaultTheme="system" enableSystem>
-        <VSCodeThemeProvider>
-          <TooltipProvider delayDuration={100}>
-            <TRPCProvider>
-              <div
-                data-agents-page
-                className="h-screen w-screen bg-background text-foreground overflow-hidden"
-              >
-                <AppContent />
-              </div>
-              <ThemedToaster />
-            </TRPCProvider>
-          </TooltipProvider>
-        </VSCodeThemeProvider>
-      </ThemeProvider>
-    </JotaiProvider>
+    <ErrorBoundary>
+      <JotaiProvider store={appStore}>
+        <ThemeProvider attribute="class" defaultTheme="system" enableSystem>
+          <VSCodeThemeProvider>
+            <TooltipProvider delayDuration={100}>
+              <TRPCProvider>
+                <div
+                  data-agents-page
+                  className="h-screen w-screen bg-background text-foreground overflow-hidden"
+                >
+                  <AppContent />
+                </div>
+                <ThemedToaster />
+              </TRPCProvider>
+            </TooltipProvider>
+          </VSCodeThemeProvider>
+        </ThemeProvider>
+      </JotaiProvider>
+    </ErrorBoundary>
   )
 }

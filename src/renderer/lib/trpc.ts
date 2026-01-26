@@ -10,8 +10,29 @@ import superjson from "superjson"
 export const trpc = createTRPCReact<AppRouter>()
 
 /**
- * Vanilla client for use outside React components (stores, utilities)
+ * Create ipcLink lazily to ensure window.electronTRPC is available
  */
-export const trpcClient = createTRPCProxyClient<AppRouter>({
-  links: [ipcLink({ transformer: superjson })],
+function createIpcLink() {
+  if (typeof window === "undefined" || !(window as any).electronTRPC) {
+    throw new Error(
+      "Could not find `electronTRPC` global. Check that `exposeElectronTRPC` has been called in your preload file."
+    )
+  }
+  return ipcLink({ transformer: superjson })
+}
+
+/**
+ * Vanilla client for use outside React components (stores, utilities)
+ * Created lazily to ensure preload script has finished
+ */
+let _trpcClient: ReturnType<typeof createTRPCProxyClient<AppRouter>> | null = null
+export const trpcClient = new Proxy({} as ReturnType<typeof createTRPCProxyClient<AppRouter>>, {
+  get(_target, prop) {
+    if (!_trpcClient) {
+      _trpcClient = createTRPCProxyClient<AppRouter>({
+        links: [createIpcLink()],
+      })
+    }
+    return _trpcClient[prop as keyof typeof _trpcClient]
+  },
 })

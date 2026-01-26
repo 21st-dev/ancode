@@ -41,7 +41,35 @@
       "idx": 5,
       "version": "6",
       "when": 1769415926979,
-      "tag": "0005_tidy_mauler",
+      "tag": "0005_add_subchat_stats",
+      "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "6",
+      "when": 1769415926980,
+      "tag": "0005_marvelous_master_chief",
+      "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "6",
+      "when": 1769415926981,
+      "tag": "0006_anthropic_multi_account",
+      "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "6",
+      "when": 1769415926982,
+      "tag": "0006_performance_indexes",
+      "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "6",
+      "when": 1769422504998,
+      "tag": "0009_clever_talkback",
       "breakpoints": true
     }
   ]

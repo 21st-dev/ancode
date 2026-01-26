@@ -18,6 +18,7 @@ import {
 import { chats, claudeCodeCredentials, getDatabase, subChats } from "../../db"
 import { createRollbackStash } from "../../git/stash"
 import { checkInternetConnection, checkOllamaStatus, getOllamaConfig } from "../../ollama"
+import { logger } from "../../logger"
 import { publicProcedure, router } from "../index"
 import { buildAgentsOption } from "./agent-utils"
 
@@ -113,13 +114,13 @@ function getClaudeCodeToken(): string | null {
       .get()
 
     if (!cred?.oauthToken) {
-      console.log("[claude] No Claude Code credentials found")
+      logger.debug("No Claude Code credentials found")
       return null
     }
 
     return decryptToken(cred.oauthToken)
   } catch (error) {
-    console.error("[claude] Error getting Claude Code token:", error)
+    logger.error("Error getting Claude Code token", error)
     return null
   }
 }
@@ -227,7 +228,7 @@ function loadMcpStatusFromDisk(): void {
     const data: McpCacheData = JSON.parse(readFileSync(getMcpCachePath(), "utf-8"))
 
     if (data.version !== 1) {
-      console.warn(`[MCP Cache] Unknown version ${data.version}, ignoring`)
+      logger.warn(`MCP Cache: Unknown version ${data.version}, ignoring`)
       diskCacheLastLoadTime = Date.now()
       return
     }
@@ -255,10 +256,10 @@ function loadMcpStatusFromDisk(): void {
 
     diskCacheLastLoadTime = Date.now()
     if (loadedCount > 0) {
-      console.log(`[MCP Cache] Loaded ${loadedCount} cached server statuses`)
+      logger.debug(`MCP Cache: Loaded ${loadedCount} cached server statuses`)
     }
   } catch (error) {
-    console.warn("[MCP Cache] Failed to load from disk:", error)
+    logger.warn("MCP Cache: Failed to load from disk", error)
     diskCacheLastLoadTime = Date.now()
     try {
       if (existsSync(getMcpCachePath())) {
@@ -302,9 +303,9 @@ function saveMcpStatusToDisk(): void {
 
     const totalServers = Array.from(mcpServerStatusCache.values())
       .reduce((sum, map) => sum + map.size, 0)
-    console.log(`[MCP Cache] Saved ${totalServers} statuses to disk`)
+    logger.debug(`MCP Cache: Saved ${totalServers} statuses to disk`)
   } catch (error) {
-    console.error("[MCP Cache] Failed to save to disk:", error)
+    logger.error("MCP Cache: Failed to save to disk", error)
   }
 }
 
@@ -322,23 +323,34 @@ export function clearClaudeCaches() {
   try {
     if (existsSync(getMcpCachePath())) {
       unlinkSync(getMcpCachePath())
-      console.log("[MCP Cache] Cleared disk cache")
+      logger.debug("MCP Cache: Cleared disk cache")
     }
   } catch (error) {
-    console.error("[MCP Cache] Failed to clear disk cache:", error)
+    logger.error("MCP Cache: Failed to clear disk cache", error)
   }
 
-  console.log("[claude] All caches cleared")
+  logger.info("All caches cleared")
 }
 
 /**
  * Warm up MCP server cache by initializing servers for all configured projects
  * This runs once at app startup to populate the cache, so all future sessions
  * can use filtered MCP servers without delays
+ *
+ * NOTE: This is best-effort and should never block app startup or crash the app.
+ * If Claude Code binary is unavailable or fails, we silently skip warmup.
  */
 export async function warmupMcpCache(): Promise<void> {
   try {
     const warmupStart = Date.now()
+
+    // First, check if Claude Code binary exists
+    const binaryPath = getBundledClaudeBinaryPath()
+    if (!existsSync(binaryPath)) {
+      console.log("[MCP Warmup] Claude Code binary not found - skipping warmup")
+      saveMcpStatusToDisk() // Save empty cache
+      return
+    }
 
     // Read ~/.claude.json to get all projects with MCP servers
     const claudeJsonPath = join(os.homedir(), ".claude.json")
@@ -348,11 +360,13 @@ export async function warmupMcpCache(): Promise<void> {
       config = JSON.parse(configContent)
     } catch (err) {
       console.log("[MCP Warmup] No ~/.claude.json found or failed to read - skipping warmup")
+      saveMcpStatusToDisk() // Save empty cache
       return
     }
 
     if (!config.projects || Object.keys(config.projects).length === 0) {
       console.log("[MCP Warmup] No projects configured - skipping warmup")
+      saveMcpStatusToDisk() // Save empty cache
       return
     }
 
@@ -365,6 +379,11 @@ export async function warmupMcpCache(): Promise<void> {
           continue
         }
 
+        // Also verify the project path exists
+        if (!existsSync(projectPath)) {
+          continue
+        }
+
         projectsWithMcp.push({
           path: projectPath,
           servers: (projectConfig as any).mcpServers
@@ -374,6 +393,7 @@ export async function warmupMcpCache(): Promise<void> {
 
     if (projectsWithMcp.length === 0) {
       console.log("[MCP Warmup] No MCP servers configured (excluding worktrees) - skipping warmup")
+      saveMcpStatusToDisk() // Save empty cache
       return
     }
 
@@ -381,49 +401,67 @@ export async function warmupMcpCache(): Promise<void> {
     const sdk = await import("@anthropic-ai/claude-agent-sdk")
     const claudeQuery = sdk.query
 
-    // Warm up each project
-    for (const project of projectsWithMcp) {
+    // Warm up each project with timeout protection
+    const WARMUP_TIMEOUT_MS = 30000 // 30 seconds per project max
 
+    for (const project of projectsWithMcp) {
       try {
-        // Create a minimal query to initialize MCP servers
-        const warmupQuery = claudeQuery({
-          prompt: "ping",
-          options: {
-            cwd: project.path,
-            mcpServers: project.servers,
-            systemPrompt: {
-              type: "preset" as const,
-              preset: "claude_code" as const,
-            },
-            env: buildClaudeEnv(),
-            permissionMode: "bypassPermissions" as const,
-            allowDangerouslySkipPermissions: true,
-          }
+        // Create a timeout promise
+        const timeoutPromise = new Promise<null>((resolve) => {
+          setTimeout(() => resolve(null), WARMUP_TIMEOUT_MS)
         })
 
-        // Wait for init message with MCP server statuses
-        let gotInit = false
-        for await (const msg of warmupQuery) {
-          const msgAny = msg as any
-          if (msgAny.type === "system" && msgAny.subtype === "init" && msgAny.mcp_servers) {
-            // Cache the statuses
-            const statusMap = new Map<string, string>()
-            for (const server of msgAny.mcp_servers) {
-              if (server.name && server.status) {
-                statusMap.set(server.name, server.status)
-              }
+        // Create the warmup promise
+        const warmupPromise = (async () => {
+          const warmupQuery = claudeQuery({
+            prompt: "ping",
+            options: {
+              cwd: project.path,
+              mcpServers: project.servers,
+              systemPrompt: {
+                type: "preset" as const,
+                preset: "claude_code" as const,
+              },
+              env: buildClaudeEnv(),
+              permissionMode: "bypassPermissions" as const,
+              allowDangerouslySkipPermissions: true,
             }
-            mcpServerStatusCache.set(project.path, statusMap)
-            gotInit = true
-            break // We only need the init message
-          }
-        }
+          })
 
-        if (!gotInit) {
-          console.warn(`[MCP Warmup] Did not receive init message for ${project.path}`)
+          // Wait for init message with MCP server statuses
+          for await (const msg of warmupQuery) {
+            const msgAny = msg as any
+            if (msgAny.type === "system" && msgAny.subtype === "init" && msgAny.mcp_servers) {
+              // Cache the statuses
+              const statusMap = new Map<string, string>()
+              for (const server of msgAny.mcp_servers) {
+                if (server.name && server.status) {
+                  statusMap.set(server.name, server.status)
+                }
+              }
+              return statusMap
+            }
+          }
+          return null
+        })()
+
+        // Race between warmup and timeout
+        const result = await Promise.race([warmupPromise, timeoutPromise])
+
+        if (result) {
+          mcpServerStatusCache.set(project.path, result)
+        } else {
+          console.warn(`[MCP Warmup] Timeout or no init for ${project.path}`)
         }
       } catch (err) {
-        console.error(`[MCP Warmup] Failed to warm up MCP for ${project.path}:`, err)
+        // Log but don't throw - warmup failure should not affect app
+        const errMsg = err instanceof Error ? err.message : String(err)
+        // Only log detailed error if not the common "process exited" error
+        if (errMsg.includes("exited with code")) {
+          console.log(`[MCP Warmup] Skipped ${project.path} (Claude Code unavailable)`)
+        } else {
+          console.error(`[MCP Warmup] Failed to warm up MCP for ${project.path}:`, err)
+        }
       }
     }
 
@@ -435,7 +473,9 @@ export async function warmupMcpCache(): Promise<void> {
     const warmupDuration = Date.now() - warmupStart
     console.log(`[MCP Warmup] Initialized ${totalServers} servers across ${projectsWithMcp.length} projects in ${warmupDuration}ms`)
   } catch (error) {
-    console.error("[MCP Warmup] Warmup failed:", error)
+    // Catch-all: warmup should never crash the app
+    console.error("[MCP Warmup] Warmup failed (non-critical):", error)
+    saveMcpStatusToDisk() // Save whatever we have
   }
 }
 
@@ -1609,6 +1649,23 @@ ${prompt}
               ) {
                 errorContext = "Session limit reached"
                 errorCategory = "RATE_LIMIT"
+              } else if (
+                stderrOutput?.includes("No message found with message.uuid") ||
+                err.message?.includes("No message found")
+              ) {
+                // Stale session - the SDK session was cleared/expired but we have old UUID in DB
+                errorContext = "Session expired - please retry your message"
+                errorCategory = "STALE_SESSION"
+                // Clear the stale session ID from database so next request starts fresh
+                try {
+                  db.update(subChats)
+                    .set({ sessionId: null })
+                    .where(eq(subChats.id, input.subChatId))
+                    .run()
+                  console.log(`[claude] Cleared stale session ID for subChat ${input.subChatId}`)
+                } catch (clearErr) {
+                  console.error("[claude] Failed to clear stale session:", clearErr)
+                }
               } else if (
                 err.message?.includes("network") ||
                 err.message?.includes("ECONNREFUSED") ||

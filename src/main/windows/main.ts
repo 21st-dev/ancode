@@ -335,6 +335,17 @@ export function createMainWindow(): BrowserWindow {
   // Read Windows frame preference
   const useNativeFrame = getUseNativeFramePreference()
 
+  // Resolve preload script path
+  const preloadPath = join(__dirname, "../preload/index.js")
+  console.log("[Main] ========== PRELOAD PATH DEBUG ==========")
+  console.log("[Main] __dirname:", __dirname)
+  console.log("[Main] preloadPath:", preloadPath)
+  console.log("[Main] preload exists:", existsSync(preloadPath))
+  console.log("[Main] ===========================================")
+  if (!existsSync(preloadPath)) {
+    console.error("[Main] Preload script not found at:", preloadPath)
+  }
+
   const window = new BrowserWindow({
     width: 1400,
     height: 900,
@@ -355,7 +366,7 @@ export function createMainWindow(): BrowserWindow {
       autoHideMenuBar: true,
     }),
     webPreferences: {
-      preload: join(__dirname, "../preload/index.js"),
+      preload: preloadPath,
       nodeIntegration: false,
       contextIsolation: true,
       sandbox: false, // Required for electron-trpc

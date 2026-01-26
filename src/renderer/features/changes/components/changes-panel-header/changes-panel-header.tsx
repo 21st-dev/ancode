@@ -160,6 +160,8 @@ export function ChangesPanelHeader({
 					<DropdownMenuItem
 						onClick={() => {
 							// TODO: Implement create branch dialog
+							// Issue: Add UI dialog for creating new git branches
+							// Should allow branch name input and optionally set as current branch
 						}}
 						className="text-xs"
 					>

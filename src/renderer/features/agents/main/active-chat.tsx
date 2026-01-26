@@ -3696,7 +3696,9 @@ export function ChatView({
 
       // Desktop without chat (viewing main repo directly)
       if (worktreePath && !chatId) {
-        // TODO: Need to add endpoint that accepts worktreePath directly
+        // TODO: Add endpoint that accepts worktreePath directly
+        // Issue: Need tRPC endpoint for git operations on worktree paths without chat context
+        // This would enable viewing main repo changes without creating a chat session
         return
       }
 

@@ -177,6 +177,8 @@ const HistoryCommitItem = memo(function HistoryCommitItem({
 
 	const handleOpenOnRemote = useCallback(() => {
 		// TODO: Get repository URL and construct commit URL
+		// Issue: Need to fetch git remote URL and build platform-specific commit URL
+		// Should support GitHub, GitLab, Bitbucket URL formats
 		// For now, just show a toast
 		toast.info("Open on remote - not implemented yet");
 	}, []);

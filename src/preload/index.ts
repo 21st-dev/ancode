@@ -1,5 +1,9 @@
 import { contextBridge, ipcRenderer } from "electron"
-import { exposeElectronTRPC } from "trpc-electron/main"
+
+console.log("[Preload] ========== PRELOAD SCRIPT STARTING ==========")
+console.log("[Preload] contextBridge available:", !!contextBridge)
+console.log("[Preload] ipcRenderer available:", !!ipcRenderer)
+console.log("[Preload] process.type:", process.type)
 
 // Only initialize Sentry in production to avoid IPC errors in dev mode
 if (process.env.NODE_ENV === "production") {
@@ -9,7 +13,21 @@ if (process.env.NODE_ENV === "production") {
 }
 
 // Expose tRPC IPC bridge for type-safe communication
-exposeElectronTRPC()
+// Using direct contextBridge implementation instead of trpc-electron's exposeElectronTRPC
+// for better reliability across Electron versions
+const electronTRPC = {
+  sendMessage: (message: unknown) => ipcRenderer.send("trpc-electron", message),
+  onMessage: (callback: (message: unknown) => void) =>
+    ipcRenderer.on("trpc-electron", (_event, message) => callback(message))
+}
+
+try {
+  console.log("[Preload] Attempting to expose electronTRPC...")
+  contextBridge.exposeInMainWorld("electronTRPC", electronTRPC)
+  console.log("[Preload] ✓ electronTRPC exposed successfully")
+} catch (err) {
+  console.error("[Preload] ✗ Failed to expose electronTRPC:", err)
+}
 
 // Expose analytics force flag for testing
 if (process.env.FORCE_ANALYTICS === "true") {

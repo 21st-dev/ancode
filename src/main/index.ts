@@ -37,21 +37,22 @@ if (IS_DEV && app) {
   console.log("[Dev] Using separate userData path:", devUserData)
 }
 
-// Initialize Sentry before app is ready (production only)
+// Initialize Sentry SYNCHRONOUSLY before app is ready (production only)
+// Sentry must be initialized before the 'ready' event fires
 if (app && app.isPackaged && !IS_DEV) {
   const sentryDsn = import.meta.env.MAIN_VITE_SENTRY_DSN
   if (sentryDsn) {
-    // Dynamic import to avoid loading Sentry in dev mode
-    import("@sentry/electron/main")
-      .then((Sentry) => {
-        Sentry.init({
-          dsn: sentryDsn,
-        })
-        console.log("[App] Sentry initialized")
+    try {
+      // Use require() for synchronous initialization - critical for Sentry/Electron
+      // eslint-disable-next-line @typescript-eslint/no-var-requires
+      const Sentry = require("@sentry/electron/main")
+      Sentry.init({
+        dsn: sentryDsn,
       })
-      .catch((error) => {
-        console.warn("[App] Failed to initialize Sentry:", error)
-      })
+      console.log("[App] Sentry initialized (synchronous)")
+    } catch (error) {
+      console.warn("[App] Failed to initialize Sentry:", error)
+    }
   } else {
     console.log("[App] Skipping Sentry initialization (no DSN configured)")
   }

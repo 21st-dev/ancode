@@ -152,8 +152,10 @@ export function Terminal({
         cwd: terminalCwdRef.current || cwd,
         isDark,
         onFileLinkClick: (path, line, column) => {
+          // TODO: Open file in editor at specified line/column
+          // Issue: Implement file opening functionality - could use desktopApi or tRPC endpoint
+          // This would allow clicking file paths in terminal to open them in the editor
           console.log("[Terminal] File link clicked:", path, line, column)
-          // TODO: Open file in editor
         },
         onUrlClick: (url) => {
           console.log("[Terminal] URL clicked:", url)
