@@ -15,7 +15,6 @@ export type TextSelectionSource =
   | { type: "assistant-message"; messageId: string }
   | { type: "diff"; filePath: string; lineNumber?: number; lineType?: "old" | "new" }
   | { type: "tool-edit"; filePath: string; isWrite: boolean }
-  | { type: "plan"; planPath: string }
 
 export interface TextSelectionState {
   selectedText: string | null
@@ -180,25 +179,11 @@ export function TextSelectionProvider({
           "[data-diff-file-path]"
         ) as HTMLElement | null
 
-        // Check for plan sidebar content
-        const planElement = element?.closest?.(
-          "[data-plan-path]"
-        ) as HTMLElement | null
-
         // Build the source based on what we found
-        // Priority: plan > tool-edit > diff > assistant-message
+        // Priority: tool-edit > diff > assistant-message (tool-edit is nested inside assistant-message)
         let source: TextSelectionSource | null = null
 
-        if (planElement) {
-          // Plan selection - extract plan path from data attribute
-          const planPath = planElement.getAttribute("data-plan-path") || "unknown"
-          source = {
-            type: "plan",
-            planPath,
-          }
-        }
-
-        if (!source && toolEditElement) {
+        if (toolEditElement) {
           // Tool edit selection - extract file path from data attribute
           const partType = toolEditElement.getAttribute("data-part-type")
           const isWrite = partType === "tool-Write"

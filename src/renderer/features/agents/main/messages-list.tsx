@@ -286,7 +286,6 @@ export function useStreamingStatus() {
 interface MessageItemWrapperProps {
   messageId: string
   subChatId: string
-  chatId: string
   isMobile: boolean
   sandboxSetupStatus: "cloning" | "ready" | "error"
 }
@@ -358,13 +357,11 @@ function useIsStreaming() {
 const NonStreamingMessageItem = memo(function NonStreamingMessageItem({
   messageId,
   subChatId,
-  chatId,
   isMobile,
   sandboxSetupStatus,
 }: {
   messageId: string
   subChatId: string
-  chatId: string
   isMobile: boolean
   sandboxSetupStatus: "cloning" | "ready" | "error"
 }) {
@@ -380,7 +377,6 @@ const NonStreamingMessageItem = memo(function NonStreamingMessageItem({
       isStreaming={false}
       status="ready"
       subChatId={subChatId}
-      chatId={chatId}
       isMobile={isMobile}
       sandboxSetupStatus={sandboxSetupStatus}
     />
@@ -392,13 +388,11 @@ const NonStreamingMessageItem = memo(function NonStreamingMessageItem({
 const StreamingMessageItem = memo(function StreamingMessageItem({
   messageId,
   subChatId,
-  chatId,
   isMobile,
   sandboxSetupStatus,
 }: {
   messageId: string
   subChatId: string
-  chatId: string
   isMobile: boolean
   sandboxSetupStatus: "cloning" | "ready" | "error"
 }) {
@@ -418,7 +412,6 @@ const StreamingMessageItem = memo(function StreamingMessageItem({
       isStreaming={isStreaming}
       status={status}
       subChatId={subChatId}
-      chatId={chatId}
       isMobile={isMobile}
       sandboxSetupStatus={sandboxSetupStatus}
     />
@@ -475,7 +468,6 @@ function useMessageWithLastStatus(messageId: string) {
 export const MessageItemWrapper = memo(function MessageItemWrapper({
   messageId,
   subChatId,
-  chatId,
   isMobile,
   sandboxSetupStatus,
 }: MessageItemWrapperProps) {
@@ -491,7 +483,6 @@ export const MessageItemWrapper = memo(function MessageItemWrapper({
       <StreamingMessageItem
         messageId={messageId}
         subChatId={subChatId}
-        chatId={chatId}
         isMobile={isMobile}
         sandboxSetupStatus={sandboxSetupStatus}
       />
@@ -503,7 +494,6 @@ export const MessageItemWrapper = memo(function MessageItemWrapper({
     <NonStreamingMessageItem
       messageId={messageId}
       subChatId={subChatId}
-      chatId={chatId}
       isMobile={isMobile}
       sandboxSetupStatus={sandboxSetupStatus}
     />
@@ -522,7 +512,6 @@ export const MessageItemWrapper = memo(function MessageItemWrapper({
 interface MemoizedAssistantMessagesProps {
   assistantMsgIds: string[]
   subChatId: string
-  chatId: string
   isMobile: boolean
   sandboxSetupStatus: "cloning" | "ready" | "error"
 }
@@ -545,7 +534,6 @@ function areMemoizedAssistantMessagesEqual(
 
   // Also check static props
   if (prev.subChatId !== next.subChatId) return false
-  if (prev.chatId !== next.chatId) return false
   if (prev.isMobile !== next.isMobile) return false
   if (prev.sandboxSetupStatus !== next.sandboxSetupStatus) return false
 
@@ -555,7 +543,6 @@ function areMemoizedAssistantMessagesEqual(
 export const MemoizedAssistantMessages = memo(function MemoizedAssistantMessages({
   assistantMsgIds,
   subChatId,
-  chatId,
   isMobile,
   sandboxSetupStatus,
 }: MemoizedAssistantMessagesProps) {
@@ -570,7 +557,6 @@ export const MemoizedAssistantMessages = memo(function MemoizedAssistantMessages
           key={id}
           messageId={id}
           subChatId={subChatId}
-          chatId={chatId}
           isMobile={isMobile}
           sandboxSetupStatus={sandboxSetupStatus}
         />
@@ -728,14 +714,12 @@ export function useMessageGroups() {
 
 interface MessagesListProps {
   subChatId: string
-  chatId: string
   isMobile: boolean
   sandboxSetupStatus: "cloning" | "ready" | "error"
 }
 
 export const MessagesList = memo(function MessagesList({
   subChatId,
-  chatId,
   isMobile,
   sandboxSetupStatus,
 }: MessagesListProps) {
@@ -748,7 +732,6 @@ export const MessagesList = memo(function MessagesList({
           key={id}
           messageId={id}
           subChatId={subChatId}
-          chatId={chatId}
           isMobile={isMobile}
           sandboxSetupStatus={sandboxSetupStatus}
         />
@@ -1015,7 +998,7 @@ export const SimpleIsolatedGroup = memo(function SimpleIsolatedGroup({
         </div>
       )}
 
-      {/* Text mentions (quote/diff/pasted) - NOT sticky */}
+      {/* Text mentions (quote/diff) - NOT sticky */}
       {textMentions.length > 0 && (
         <div className="mb-2 pointer-events-auto">
           <TextMentionBlocks mentions={textMentions} />
@@ -1027,37 +1010,12 @@ export const SimpleIsolatedGroup = memo(function SimpleIsolatedGroup({
         data-user-message-id={userMsg.id}
         className={`[&>div]:!mb-4 pointer-events-auto sticky z-10 ${stickyTopClass}`}
       >
-        {/* Show "Using X" summary when no text but have attachments */}
-        {!textContent.trim() && (imageParts.length > 0 || textMentions.length > 0) ? (
-          <div className="flex justify-start drop-shadow-[0_10px_20px_hsl(var(--background))]" data-user-bubble>
-            <div className="space-y-2 w-full">
-              <div className="bg-input-background border px-3 py-2 rounded-xl text-sm text-muted-foreground italic">
-                {(() => {
-                  const parts: string[] = []
-                  if (imageParts.length > 0) {
-                    parts.push(imageParts.length === 1 ? "image" : `${imageParts.length} images`)
-                  }
-                  const quoteCount = textMentions.filter(m => m.type === "quote" || m.type === "pasted").length
-                  const codeCount = textMentions.filter(m => m.type === "diff").length
-                  if (quoteCount > 0) {
-                    parts.push(quoteCount === 1 ? "selected text" : `${quoteCount} text selections`)
-                  }
-                  if (codeCount > 0) {
-                    parts.push(codeCount === 1 ? "code selection" : `${codeCount} code selections`)
-                  }
-                  return `Using ${parts.join(", ")}`
-                })()}
-              </div>
-            </div>
-          </div>
-        ) : (
-          <UserBubbleComponent
-            messageId={userMsg.id}
-            textContent={textContent}
-            imageParts={[]}
-            skipTextMentionBlocks
-          />
-        )}
+        <UserBubbleComponent
+          messageId={userMsg.id}
+          textContent={textContent}
+          imageParts={[]}
+          skipTextMentionBlocks
+        />
 
         {/* Cloning indicator */}
         {shouldShowCloning && (

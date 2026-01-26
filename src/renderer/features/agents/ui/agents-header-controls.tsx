@@ -9,7 +9,6 @@ import {
   TooltipProvider,
 } from "../../../components/ui/tooltip"
 import { Kbd } from "../../../components/ui/kbd"
-import { useResolvedHotkeyDisplay } from "../../../lib/hotkeys"
 
 interface AgentsHeaderControlsProps {
   isSidebarOpen: boolean
@@ -24,8 +23,6 @@ export function AgentsHeaderControls({
   hasUnseenChanges = false,
   isSubChatsSidebarOpen = false,
 }: AgentsHeaderControlsProps) {
-  const toggleSidebarHotkey = useResolvedHotkeyDisplay("toggle-sidebar")
-
   // Only show open button when both sidebars are closed
   if (isSidebarOpen || isSubChatsSidebarOpen) return null
 
@@ -49,7 +46,7 @@ export function AgentsHeaderControls({
         </TooltipTrigger>
         <TooltipContent>
           Open sidebar
-          {toggleSidebarHotkey && <Kbd>{toggleSidebarHotkey}</Kbd>}
+          <Kbd>⌘\</Kbd>
         </TooltipContent>
       </Tooltip>
     </TooltipProvider>

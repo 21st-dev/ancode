@@ -20,7 +20,6 @@ import { IsolatedMessageGroup } from "./isolated-message-group"
 
 interface IsolatedMessagesSectionProps {
   subChatId: string
-  chatId: string
   isMobile: boolean
   sandboxSetupStatus: "cloning" | "ready" | "error"
   stickyTopClass: string
@@ -49,7 +48,6 @@ function areSectionPropsEqual(
 ): boolean {
   return (
     prev.subChatId === next.subChatId &&
-    prev.chatId === next.chatId &&
     prev.isMobile === next.isMobile &&
     prev.sandboxSetupStatus === next.sandboxSetupStatus &&
     prev.stickyTopClass === next.stickyTopClass &&
@@ -64,7 +62,6 @@ function areSectionPropsEqual(
 
 export const IsolatedMessagesSection = memo(function IsolatedMessagesSection({
   subChatId,
-  chatId,
   isMobile,
   sandboxSetupStatus,
   stickyTopClass,
@@ -103,7 +100,6 @@ export const IsolatedMessagesSection = memo(function IsolatedMessagesSection({
           key={userMsgId}
           userMsgId={userMsgId}
           subChatId={subChatId}
-          chatId={chatId}
           isMobile={isMobile}
           sandboxSetupStatus={sandboxSetupStatus}
           stickyTopClass={stickyTopClass}

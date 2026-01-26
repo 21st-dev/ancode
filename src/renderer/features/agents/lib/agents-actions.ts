@@ -16,8 +16,6 @@ export type AgentActionCategory = "general" | "navigation" | "chat" | "view"
 export interface AgentActionContext {
   // Navigation
   setSelectedChatId?: (id: string | null) => void
-  setSelectedDraftId?: (id: string | null) => void
-  setShowNewChatForm?: (show: boolean) => void
 
   // UI states
   setSidebarOpen?: (open: boolean | ((prev: boolean) => boolean)) => void
@@ -75,12 +73,11 @@ const createNewAgentAction: AgentActionDefinition = {
   hotkey: "cmd+n",
   handler: async (context) => {
     console.log("[Action] create-new-agent handler called")
-    // Clear selected chat
-    context.setSelectedChatId?.(null)
-    // Clear selected draft so form starts empty
-    context.setSelectedDraftId?.(null)
-    // Explicitly show new chat form
-    context.setShowNewChatForm?.(true)
+    console.log("[Action] setSelectedChatId exists:", !!context.setSelectedChatId)
+    if (context.setSelectedChatId) {
+      console.log("[Action] Calling setSelectedChatId(null)")
+      context.setSelectedChatId(null)
+    }
     return { success: true }
   },
 }
@@ -122,21 +119,6 @@ const toggleChatSearchAction: AgentActionDefinition = {
   },
 }
 
-const openKanbanAction: AgentActionDefinition = {
-  id: "open-kanban",
-  label: "Open Kanban board",
-  description: "Open the Kanban board view",
-  category: "view",
-  hotkey: "cmd+shift+k",
-  handler: async (context) => {
-    // Clear selected chat, draft, and new form state to show Kanban view
-    context.setSelectedChatId?.(null)
-    context.setSelectedDraftId?.(null)
-    context.setShowNewChatForm?.(false)
-    return { success: true }
-  },
-}
-
 // ============================================================================
 // ACTION REGISTRY
 // ============================================================================
@@ -147,7 +129,6 @@ export const AGENT_ACTIONS: Record<string, AgentActionDefinition> = {
   "open-settings": openSettingsAction,
   "toggle-sidebar": toggleSidebarAction,
   "toggle-chat-search": toggleChatSearchAction,
-  "open-kanban": openKanbanAction,
 }
 
 export function getAgentAction(id: string): AgentActionDefinition | undefined {

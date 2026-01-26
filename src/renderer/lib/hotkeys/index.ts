@@ -25,14 +25,9 @@ export {
   CATEGORY_LABELS,
 } from "./shortcut-registry"
 
-// Hooks
+// Hook
 export { useHotkeyRecorder } from "./use-hotkey-recorder"
 export type {
   UseHotkeyRecorderOptions,
   UseHotkeyRecorderResult,
 } from "./use-hotkey-recorder"
-
-export {
-  useResolvedHotkeyDisplay,
-  useResolvedHotkeyDisplayWithAlt,
-} from "./use-resolved-hotkey-display"

@@ -4,9 +4,9 @@ import { Streamdown, parseMarkdownIntoBlocks } from "streamdown"
 import remarkBreaks from "remark-breaks"
 import remarkGfm from "remark-gfm"
 import { Copy, Check } from "lucide-react"
+import DOMPurify from "dompurify"
 import { useCodeTheme } from "../lib/hooks/use-code-theme"
 import { highlightCode } from "../lib/themes/shiki-theme-loader"
-import { MermaidBlock } from "./mermaid-block"
 
 // Function to strip emojis from text (only common emojis, preserving markdown symbols)
 export function stripEmojis(text: string): string {
@@ -130,7 +130,7 @@ function CodeBlock({
           tabSize: 2,
         }}
       >
-        <code dangerouslySetInnerHTML={{ __html: htmlContent }} />
+        <code dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(htmlContent) }} />
       </pre>
     </div>
   )
@@ -247,8 +247,8 @@ const sizeStyles: Record<
 }
 
 // Custom code component that uses our theme system
-function createCodeComponent(codeTheme: string, size: MarkdownSize, styles: typeof sizeStyles.md, isStreaming: boolean = false) {
-  return function CodeComponent({ className, children, node, ...props }: any) {
+function createCodeComponent(codeTheme: string, size: MarkdownSize, styles: typeof sizeStyles.md) {
+  return function CodeComponent({ className, children, ...props }: any) {
     const match = /language-(\w+)/.exec(className || "")
     const language = match ? match[1] : undefined
     const codeContent = String(children)
@@ -258,13 +258,6 @@ function createCodeComponent(codeTheme: string, size: MarkdownSize, styles: type
     const isCodeBlock = language || (codeContent.includes("\n") && codeContent.length > 100)
 
     if (isCodeBlock) {
-      // Route mermaid blocks to MermaidBlock component
-      if (language === "mermaid") {
-        // Pass isStreaming to MermaidBlock
-        // When streaming, MermaidBlock shows a placeholder instead of trying to render
-        return <MermaidBlock code={codeContent.replace(/\n$/, "")} size={size} isStreaming={isStreaming} />
-      }
-
       return (
         <CodeBlock
           language={language}
@@ -411,9 +404,9 @@ export const ChatMarkdownRenderer = memo(function ChatMarkdownRenderer({
         </td>
       ),
       pre: ({ children }: any) => <>{children}</>,
-      code: createCodeComponent(codeTheme, size, styles, isStreaming),
+      code: createCodeComponent(codeTheme, size, styles),
     }),
-    [styles, codeTheme, size, isStreaming],
+    [styles, codeTheme, size],
   )
 
   return (

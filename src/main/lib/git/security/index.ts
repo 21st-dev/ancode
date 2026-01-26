@@ -10,7 +10,6 @@
 
 export {
 	gitCheckoutFile,
-	gitCheckoutFiles,
 	gitStageAll,
 	gitStageFile,
 	gitStageFiles,

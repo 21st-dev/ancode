@@ -1,7 +1,7 @@
 import { execFile } from "node:child_process";
 import { randomBytes } from "node:crypto";
 import { mkdir, readFile, stat } from "node:fs/promises";
-import { devNull, homedir } from "node:os";
+import { homedir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
 import simpleGit from "simple-git";
@@ -12,7 +12,6 @@ import {
 } from "unique-names-generator";
 import { checkGitLfsAvailable, getShellEnvironment } from "./shell-env";
 import { executeWorktreeSetup } from "./worktree-config";
-import { generateWorktreeFolderName } from "./worktree-naming";
 
 const execFileAsync = promisify(execFile);
 
@@ -151,21 +150,6 @@ export async function createWorktree(
 			}
 		}
 
-		// Resolve startPoint to commit hash to avoid Windows escaping issues with ^{commit}
-		const git = simpleGit(mainRepoPath);
-		let commitHash: string;
-		try {
-			commitHash = (await git.revparse([`${startPoint}^{commit}`])).trim();
-		} catch {
-			// Fallback to local branch if origin/branch doesn't exist
-			const localBranch = startPoint.replace(/^origin\//, "");
-			try {
-				commitHash = (await git.revparse([`${localBranch}^{commit}`])).trim();
-			} catch {
-				commitHash = (await git.revparse([startPoint])).trim();
-			}
-		}
-
 		await execFileAsync(
 			"git",
 			[
@@ -176,7 +160,10 @@ export async function createWorktree(
 				worktreePath,
 				"-b",
 				branch,
-				commitHash,
+				// Append ^{commit} to force Git to treat the startPoint as a commit,
+				// not a branch ref. This prevents implicit upstream tracking when
+				// creating a new branch from a remote branch like origin/main.
+				`${startPoint}^{commit}`,
 			],
 			{ env, timeout: 120_000 },
 		);
@@ -898,16 +885,15 @@ export interface WorktreeResult {
 /**
  * Create a git worktree for a chat (wrapper for chats.ts)
  * @param projectPath - Path to the main repository
- * @param projectSlug - Sanitized project name for worktree directory
- * @param chatId - Chat ID (used for logging)
+ * @param projectId - Project ID for worktree directory
+ * @param chatId - Chat ID for worktree directory
  * @param selectedBaseBranch - Optional branch to base the worktree off (defaults to auto-detected default branch)
  */
 export async function createWorktreeForChat(
 	projectPath: string,
-	projectSlug: string,
+	projectId: string,
 	chatId: string,
 	selectedBaseBranch?: string,
-	branchType?: "local" | "remote",
 ): Promise<WorktreeResult> {
 	try {
 		const git = simpleGit(projectPath);
@@ -922,16 +908,9 @@ export async function createWorktreeForChat(
 
 		const branch = generateBranchName();
 		const worktreesDir = join(homedir(), ".21st", "worktrees");
-		const projectWorktreeDir = join(worktreesDir, projectSlug);
-		const folderName = generateWorktreeFolderName(projectWorktreeDir);
-		const worktreePath = join(projectWorktreeDir, folderName);
+		const worktreePath = join(worktreesDir, projectId, chatId);
 
-		// Determine startPoint based on branch type
-		// For local branches, use the local ref directly
-		// For remote branches or when type is not specified, use origin/{branch}
-		const startPoint = branchType === "local" ? baseBranch : `origin/${baseBranch}`;
-
-		await createWorktree(projectPath, branch, worktreePath, startPoint);
+		await createWorktree(projectPath, branch, worktreePath, `origin/${baseBranch}`);
 
 		// Run worktree setup commands in BACKGROUND (don't block chat creation)
 		// This allows the user to start chatting immediately while deps install
@@ -1007,7 +986,7 @@ export async function getWorktreeDiff(
 						"diff",
 						"--no-color",
 						"--no-index",
-						devNull,
+						"/dev/null",
 						file,
 					]);
 					if (fileDiff) {
@@ -1043,14 +1022,9 @@ export async function getWorktreeDiff(
 		// All committed - diff against base branch
 		const targetBranch = baseBranch || await getDefaultBranch(worktreePath);
 
-		// Use origin if available, fallback to local branch
-		const baseRef = await refExistsLocally(worktreePath, `origin/${targetBranch}`)
-			? `origin/${targetBranch}`
-			: targetBranch;
-
 		try {
 			const diff = await git.diff([
-				`${baseRef}...HEAD`,
+				`origin/${targetBranch}...HEAD`,
 				"--no-color",
 				"--",
 				":!*.lock",

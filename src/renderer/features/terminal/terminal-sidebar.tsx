@@ -16,12 +16,11 @@ import {
 } from "@/components/ui/icons"
 import { AlignJustify } from "lucide-react"
 import { Kbd } from "@/components/ui/kbd"
-import { useResolvedHotkeyDisplay } from "@/lib/hotkeys"
 import { Terminal } from "./terminal"
 import { TerminalTabs } from "./terminal-tabs"
 import { getDefaultTerminalBg } from "./helpers"
 import {
-  terminalSidebarOpenAtomFamily,
+  terminalSidebarOpenAtom,
   terminalSidebarWidthAtom,
   terminalsAtom,
   activeTerminalIdAtom,
@@ -87,12 +86,7 @@ export function TerminalSidebar({
   isMobileFullscreen = false,
   onClose,
 }: TerminalSidebarProps) {
-  // Per-chat terminal sidebar state
-  const terminalSidebarAtom = useMemo(
-    () => terminalSidebarOpenAtomFamily(chatId),
-    [chatId],
-  )
-  const [isOpen, setIsOpen] = useAtom(terminalSidebarAtom)
+  const [isOpen, setIsOpen] = useAtom(terminalSidebarOpenAtom)
   const [allTerminals, setAllTerminals] = useAtom(terminalsAtom)
   const [allActiveIds, setAllActiveIds] = useAtom(activeTerminalIdAtom)
   const terminalCwds = useAtomValue(terminalCwdAtom)
@@ -100,9 +94,6 @@ export function TerminalSidebar({
   // Theme detection for terminal background
   const { resolvedTheme } = useTheme()
   const isDark = resolvedTheme === "dark"
-
-  // Resolved hotkey for tooltip
-  const toggleTerminalHotkey = useResolvedHotkeyDisplay("toggle-terminal")
   const fullThemeData = useAtomValue(fullThemeDataAtom)
 
   const terminalBg = useMemo(() => {
@@ -475,7 +466,7 @@ export function TerminalSidebar({
               </TooltipTrigger>
               <TooltipContent side="bottom">
                 Close terminal
-                {toggleTerminalHotkey && <Kbd>{toggleTerminalHotkey}</Kbd>}
+                <Kbd>⌘J</Kbd>
               </TooltipContent>
             </Tooltip>
           </div>

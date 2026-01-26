@@ -3,7 +3,6 @@ export { TerminalSidebar } from "./terminal-sidebar"
 export { TerminalSearch } from "./TerminalSearch"
 export {
   terminalSidebarOpenAtom,
-  terminalSidebarOpenAtomFamily,
   terminalSidebarWidthAtom,
   terminalCwdAtom,
   terminalSearchOpenAtom,

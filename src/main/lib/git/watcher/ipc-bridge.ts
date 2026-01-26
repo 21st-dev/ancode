@@ -7,19 +7,20 @@ import { gitCache } from "../cache";
  * Handles subscription/unsubscription from renderer and forwards file change events.
  */
 
-// Track active subscriptions per worktree with subscribing window ID
-// This ensures events are sent to the window that subscribed, not the focused window
-const activeSubscriptions: Map<string, { windowId: number; unsubscribe: () => void }> = new Map();
+// Track active subscriptions per worktree
+const activeSubscriptions: Map<string, () => void> = new Map();
 
 /**
  * Register IPC handlers for git watcher.
  * Call this once during app initialization.
  */
-export function registerGitWatcherIPC(): void {
+export function registerGitWatcherIPC(
+	getWindow: () => BrowserWindow | null,
+): void {
 	// Handle subscription requests from renderer
 	ipcMain.handle(
 		"git:subscribe-watcher",
-		async (event, worktreePath: string) => {
+		async (_event, worktreePath: string) => {
 			if (!worktreePath) return;
 
 			// Already subscribed?
@@ -27,22 +28,12 @@ export function registerGitWatcherIPC(): void {
 				return;
 			}
 
-			// Get the window that made the subscription request
-			const subscribingWindow = BrowserWindow.fromWebContents(event.sender);
-			if (!subscribingWindow || subscribingWindow.isDestroyed()) return;
-
-			const windowId = subscribingWindow.id;
-
 			// Subscribe to file changes (await to ensure watcher is ready)
 			const unsubscribe = await gitWatcherRegistry.subscribe(
 				worktreePath,
-				(watchEvent: GitWatchEvent) => {
-					// Send to the subscribing window, not the focused window
-					const subscription = activeSubscriptions.get(worktreePath);
-					if (!subscription) return;
-
-					const targetWindow = BrowserWindow.fromId(subscription.windowId);
-					if (!targetWindow || targetWindow.isDestroyed()) return;
+				(event: GitWatchEvent) => {
+					const win = getWindow();
+					if (!win || win.isDestroyed()) return;
 
 					// We're watching .git/index and .git/HEAD, so any event means a git operation occurred.
 					// Invalidate status and parsedDiff caches - these are always affected by git operations.
@@ -51,20 +42,16 @@ export function registerGitWatcherIPC(): void {
 					gitCache.invalidateParsedDiff(worktreePath);
 
 					// Send event to renderer
-					try {
-						targetWindow.webContents.send("git:status-changed", {
-							worktreePath: watchEvent.worktreePath,
-							changes: watchEvent.changes,
-						});
-					} catch {
-						// Window may have been destroyed between check and send
-					}
+					win.webContents.send("git:status-changed", {
+						worktreePath: event.worktreePath,
+						changes: event.changes,
+					});
 				},
 			);
 
-			activeSubscriptions.set(worktreePath, { windowId, unsubscribe });
+			activeSubscriptions.set(worktreePath, unsubscribe);
 			console.log(
-				`[GitWatcher] Window ${windowId} subscribed to: ${worktreePath}`,
+				`[GitWatcher] Subscribed to: ${worktreePath}`,
 			);
 		},
 	);
@@ -75,30 +62,16 @@ export function registerGitWatcherIPC(): void {
 		async (_event, worktreePath: string) => {
 			if (!worktreePath) return;
 
-			const subscription = activeSubscriptions.get(worktreePath);
-			if (subscription) {
-				subscription.unsubscribe();
+			const unsubscribe = activeSubscriptions.get(worktreePath);
+			if (unsubscribe) {
+				unsubscribe();
 				activeSubscriptions.delete(worktreePath);
 				console.log(
-					`[GitWatcher] Window ${subscription.windowId} unsubscribed from: ${worktreePath}`,
+					`[GitWatcher] Unsubscribed from: ${worktreePath}`,
 				);
 			}
 		},
 	);
-}
-
-/**
- * Cleanup subscriptions for a specific window.
- * Call this when a window is closed to prevent memory leaks.
- */
-export function cleanupWindowSubscriptions(windowId: number): void {
-	for (const [path, subscription] of activeSubscriptions) {
-		if (subscription.windowId === windowId) {
-			subscription.unsubscribe();
-			activeSubscriptions.delete(path);
-			console.log(`[GitWatcher] Cleaned up subscription for closed window ${windowId}: ${path}`);
-		}
-	}
 }
 
 /**
@@ -107,9 +80,9 @@ export function cleanupWindowSubscriptions(windowId: number): void {
  */
 export async function cleanupGitWatchers(): Promise<void> {
 	// Unsubscribe all
-	const subscriptions = Array.from(activeSubscriptions.values());
-	for (const subscription of subscriptions) {
-		subscription.unsubscribe();
+	const unsubscribers = Array.from(activeSubscriptions.values());
+	for (const unsubscribe of unsubscribers) {
+		unsubscribe();
 	}
 	activeSubscriptions.clear();
 

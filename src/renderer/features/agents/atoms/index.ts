@@ -1,32 +1,11 @@
 import { atom } from "jotai"
 import { atomFamily, atomWithStorage } from "jotai/utils"
-import { atomWithWindowStorage } from "../../../lib/window-storage"
-
-// Agent mode type - extensible for future modes like "debug"
-export type AgentMode = "agent" | "plan"
-
-// Ordered list of modes - Shift+Tab cycles through these
-export const AGENT_MODES: AgentMode[] = ["agent", "plan"]
-
-// Get next mode in cycle (for Shift+Tab toggle)
-export function getNextMode(current: AgentMode): AgentMode {
-  const idx = AGENT_MODES.indexOf(current)
-  return AGENT_MODES[(idx + 1) % AGENT_MODES.length]
-}
 
 // Selected agent chat ID - null means "new chat" view (persisted to restore on reload)
-// Uses window-scoped storage so each Electron window can have its own selected chat
-export const selectedAgentChatIdAtom = atomWithWindowStorage<string | null>(
+export const selectedAgentChatIdAtom = atomWithStorage<string | null>(
   "agents:selectedChatId",
   null,
-  { getOnInit: true },
-)
-
-// Whether the selected chat is a remote (sandbox) chat
-// This is needed because remote and local chats may have the same ID
-export const selectedChatIsRemoteAtom = atomWithWindowStorage<boolean>(
-  "agents:selectedChatIsRemote",
-  false,
+  undefined,
   { getOnInit: true },
 )
 
@@ -38,11 +17,6 @@ export const previousAgentChatIdAtom = atom<string | null>(null)
 // NewChatForm uses this to restore the draft text
 // Reset to null when "New Workspace" is clicked or chat is created
 export const selectedDraftIdAtom = atom<string | null>(null)
-
-// Show new chat form explicitly - true by default so new users see the form, not kanban
-// Set to false when kanban is explicitly opened (via hotkey or button)
-// Set to true when "New Workspace" is clicked
-export const showNewChatFormAtom = atom<boolean>(true)
 
 // Preview paths storage - stores all preview paths keyed by chatId
 const previewPathsStorageAtom = atomWithStorage<Record<string, string>>(
@@ -189,10 +163,10 @@ export type SelectedProject = {
   gitRepo?: string | null
 } | null
 
-// Selected local project - uses window-scoped storage so each window can work with different projects
-export const selectedProjectAtom = atomWithWindowStorage<SelectedProject>(
+export const selectedProjectAtom = atomWithStorage<SelectedProject>(
   "agents:selectedProject",
   null,
+  undefined,
   { getOnInit: true },
 )
 
@@ -210,23 +184,11 @@ export const lastSelectedModelIdAtom = atomWithStorage<string>(
   { getOnInit: true },
 )
 
-// Storage for all sub-chat modes (persisted per subChatId)
-const subChatModesStorageAtom = atomWithStorage<Record<string, AgentMode>>(
-  "agents:subChatModes",
-  {},
+export const isPlanModeAtom = atomWithStorage<boolean>(
+  "agents:isPlanMode",
+  false,
   undefined,
   { getOnInit: true },
-)
-
-// atomFamily to get/set mode per subChatId
-export const subChatModeAtomFamily = atomFamily((subChatId: string) =>
-  atom(
-    (get) => get(subChatModesStorageAtom)[subChatId] ?? "agent",
-    (get, set, newMode: AgentMode) => {
-      const current = get(subChatModesStorageAtom)
-      set(subChatModesStorageAtom, { ...current, [subChatId]: newMode })
-    },
-  ),
 )
 
 // Model ID to full Claude model string mapping
@@ -236,10 +198,11 @@ export const MODEL_ID_MAP: Record<string, string> = {
   haiku: "haiku",
 }
 
-// Sidebar state - window-scoped so each window has independent sidebar visibility
-export const agentsSidebarOpenAtom = atomWithWindowStorage<boolean>(
+// Sidebar state
+export const agentsSidebarOpenAtom = atomWithStorage<boolean>(
   "agents-sidebar-open",
   true,
+  undefined,
   { getOnInit: true },
 )
 
@@ -259,10 +222,10 @@ export const agentsPreviewSidebarWidthAtom = atomWithStorage<number>(
   { getOnInit: true },
 )
 
-// Preview sidebar open state - window-scoped
-export const agentsPreviewSidebarOpenAtom = atomWithWindowStorage<boolean>(
+export const agentsPreviewSidebarOpenAtom = atomWithStorage<boolean>(
   "agents-preview-sidebar-open",
   true,
+  undefined,
   { getOnInit: true },
 )
 
@@ -296,15 +259,16 @@ export type DiffViewDisplayMode = "side-peek" | "center-peek" | "full-page"
 
 export const diffViewDisplayModeAtom = atomWithStorage<DiffViewDisplayMode>(
   "agents:diffViewDisplayMode",
-  "center-peek", // default to dialog for new users
+  "side-peek", // default to current behavior
   undefined,
   { getOnInit: true },
 )
 
-// Diff sidebar open state storage - window-scoped, stores per chatId
-const diffSidebarOpenStorageAtom = atomWithWindowStorage<Record<string, boolean>>(
+// Diff sidebar open state storage - stores per chatId (persisted)
+const diffSidebarOpenStorageAtom = atomWithStorage<Record<string, boolean>>(
   "agents:diffSidebarOpen",
   {},
+  undefined,
   { getOnInit: true },
 )
 
@@ -346,9 +310,10 @@ export const diffSidebarOpenAtomFamily = atomFamily((chatId: string) =>
 
 // Legacy global atom - kept for backwards compatibility, maps to empty string key
 // TODO: Remove after migration
-export const agentsDiffSidebarOpenAtom = atomWithWindowStorage<boolean>(
+export const agentsDiffSidebarOpenAtom = atomWithStorage<boolean>(
   "agents-diff-sidebar-open",
   false,
+  undefined,
   { getOnInit: true },
 )
 
@@ -371,10 +336,9 @@ export const diffFilesCollapsedAtomFamily = atomFamily((chatId: string) =>
 )
 
 // Sub-chats display mode - tabs (horizontal) or sidebar (vertical list)
-// Window-scoped so each window can have its own layout preference
-export const agentsSubChatsSidebarModeAtom = atomWithWindowStorage<
+export const agentsSubChatsSidebarModeAtom = atomWithStorage<
   "tabs" | "sidebar"
->("agents-subchats-mode", "tabs", { getOnInit: true })
+>("agents-subchats-mode", "tabs", undefined, { getOnInit: true })
 
 // Sub-chats sidebar width (left side of chat area)
 export const agentsSubChatsSidebarWidthAtom = atomWithStorage<number>(
@@ -556,62 +520,21 @@ export const lastSelectedWorkModeAtom = atomWithStorage<WorkMode>(
 )
 
 // Last selected branch per project (persisted)
-// Maps projectId -> { name: string, type: "local" | "remote" }
-// Custom storage with migration from old string format
-const lastSelectedBranchesStorage = {
-  getItem: (key: string, initialValue: Record<string, { name: string; type: "local" | "remote" }>) => {
-    const storedValue = localStorage.getItem(key)
-    if (!storedValue) return initialValue
-
-    try {
-      const parsed = JSON.parse(storedValue)
-
-      // Migrate old format: Record<string, string> -> Record<string, { name, type }>
-      const migrated: Record<string, { name: string; type: "local" | "remote" }> = {}
-      for (const [projectId, value] of Object.entries(parsed)) {
-        if (typeof value === "string") {
-          // Old format: string branch name -> assume "local" type
-          migrated[projectId] = { name: value, type: "local" }
-        } else if (value && typeof value === "object" && "name" in value && "type" in value) {
-          // New format: already migrated
-          migrated[projectId] = value as { name: string; type: "local" | "remote" }
-        }
-      }
-
-      // Save migrated data back to localStorage
-      if (Object.keys(migrated).length > 0) {
-        localStorage.setItem(key, JSON.stringify(migrated))
-      }
-
-      return migrated
-    } catch {
-      return initialValue
-    }
-  },
-  setItem: (key: string, value: Record<string, { name: string; type: "local" | "remote" }>) => {
-    localStorage.setItem(key, JSON.stringify(value))
-  },
-  removeItem: (key: string) => {
-    localStorage.removeItem(key)
-  },
-}
-
-export const lastSelectedBranchesAtom = atomWithStorage<
-  Record<string, { name: string; type: "local" | "remote" }>
->(
+// Maps projectId -> branchName
+export const lastSelectedBranchesAtom = atomWithStorage<Record<string, string>>(
   "agents:lastSelectedBranches",
   {},
-  lastSelectedBranchesStorage,
+  undefined,
   { getOnInit: true },
 )
 
 // Compacting status per sub-chat
 // Set<subChatId> - subChats currently being compacted
-export const compactingSubChatsAtom = atom<Set<string>>(new Set())
+export const compactingSubChatsAtom = atom<Set<string>>(new Set<string>())
 
 // Track IDs of chats/subchats created in this browser session (NOT persisted - resets on reload)
 // Used to determine whether to show placeholder + typewriter effect
-export const justCreatedIdsAtom = atom<Set<string>>(new Set())
+export const justCreatedIdsAtom = atom<Set<string>>(new Set<string>())
 
 // Pending user questions from AskUserQuestion tool
 // Set when Claude requests user input, cleared when answered or skipped
@@ -636,12 +559,8 @@ export const pendingUserQuestionsAtom = atom<Map<string, PendingUserQuestion>>(n
 export type PendingUserQuestions = PendingUserQuestion
 
 // Track sub-chats with pending plan approval (plan ready but not yet implemented)
-// Map<subChatId, parentChatId> - allows filtering by workspace
-export const pendingPlanApprovalsAtom = atom<Map<string, string>>(new Map())
-
-// Pending "Build plan" trigger - set by ChatView sidebar, consumed by ChatViewInner
-// Contains subChatId to approve, null when no pending approval
-export const pendingBuildPlanSubChatIdAtom = atom<string | null>(null)
+// Set<subChatId>
+export const pendingPlanApprovalsAtom = atom<Set<string>>(new Set<string>())
 
 // Store AskUserQuestion results by toolUseId for real-time updates
 // Map<toolUseId, result>
@@ -650,7 +569,7 @@ export const askUserQuestionResultsAtom = atom<Map<string, unknown>>(new Map())
 // Unified undo stack for workspace and sub-chat archivation
 // Supports Cmd+Z to restore the last archived item (workspace or sub-chat)
 export type UndoItem =
-  | { type: "workspace"; chatId: string; timeoutId: ReturnType<typeof setTimeout>; isRemote?: boolean }
+  | { type: "workspace"; chatId: string; timeoutId: ReturnType<typeof setTimeout> }
   | { type: "subchat"; subChatId: string; chatId: string; timeoutId: ReturnType<typeof setTimeout> }
 
 export const undoStackAtom = atom<UndoItem[]>([])
@@ -680,136 +599,6 @@ export const viewedFilesAtomFamily = atomFamily((chatId: string) =>
     (get, set, newState: Record<string, ViewedFileState>) => {
       const current = get(viewedFilesStorageAtom)
       set(viewedFilesStorageAtom, { ...current, [chatId]: newState })
-    },
-  ),
-)
-
-// Open Locally dialog trigger - set to chatId to open dialog for that chat
-export const openLocallyChatIdAtom = atom<string | null>(null)
-
-// Plan sidebar state atoms
-
-// Plan sidebar width (global, persisted)
-export const agentsPlanSidebarWidthAtom = atomWithStorage<number>(
-  "agents-plan-sidebar-width",
-  500,
-  undefined,
-  { getOnInit: true },
-)
-
-// Plan sidebar open state storage - stores per chatId (persisted)
-// Uses window-scoped storage so each window can have independent plan sidebar states
-const planSidebarOpenStorageAtom = atomWithWindowStorage<Record<string, boolean>>(
-  "agents:planSidebarOpen",
-  {},
-  { getOnInit: true },
-)
-
-// atomFamily to get/set plan sidebar open state per chatId
-export const planSidebarOpenAtomFamily = atomFamily((chatId: string) =>
-  atom(
-    (get) => get(planSidebarOpenStorageAtom)[chatId] ?? false,
-    (get, set, isOpen: boolean) => {
-      const current = get(planSidebarOpenStorageAtom)
-      set(planSidebarOpenStorageAtom, { ...current, [chatId]: isOpen })
-    },
-  ),
-)
-
-// Current plan path storage - stores per chatId (runtime only, not persisted)
-const currentPlanPathStorageAtom = atom<Record<string, string | null>>({})
-
-// atomFamily to get/set current plan path per chatId
-export const currentPlanPathAtomFamily = atomFamily((chatId: string) =>
-  atom(
-    (get) => get(currentPlanPathStorageAtom)[chatId] ?? null,
-    (get, set, planPath: string | null) => {
-      const current = get(currentPlanPathStorageAtom)
-      set(currentPlanPathStorageAtom, { ...current, [chatId]: planPath })
-    },
-  ),
-)
-
-// Per-chat plan edit refetch trigger - incremented when an Edit on a plan file completes
-// Used to trigger sidebar refetch when plan content changes
-const planEditRefetchTriggerStorageAtom = atom<Record<string, number>>({})
-
-export const planEditRefetchTriggerAtomFamily = atomFamily((chatId: string) =>
-  atom(
-    (get) => get(planEditRefetchTriggerStorageAtom)[chatId] ?? 0,
-    (get, set) => {
-      const current = get(planEditRefetchTriggerStorageAtom)
-      const currentValue = current[chatId] ?? 0
-      set(planEditRefetchTriggerStorageAtom, { ...current, [chatId]: currentValue + 1 })
-    },
-  ),
-)
-
-// ============================================================================
-// Diff Data Cache (per workspace) - prevents data loss when switching workspaces
-// ============================================================================
-
-// ParsedDiffFile type (same as in shared/changes-types.ts but avoiding import cycle)
-export interface CachedParsedDiffFile {
-  key: string
-  oldPath: string
-  newPath: string
-  diffText: string
-  isBinary: boolean
-  additions: number
-  deletions: number
-  isValid: boolean
-  fileLang: string | null
-  isNewFile: boolean
-  isDeletedFile: boolean
-}
-
-export interface DiffStatsCache {
-  fileCount: number
-  additions: number
-  deletions: number
-  isLoading: boolean
-  hasChanges: boolean
-}
-
-export interface WorkspaceDiffCache {
-  parsedFileDiffs: CachedParsedDiffFile[] | null
-  diffStats: DiffStatsCache
-  prefetchedFileContents: Record<string, string>
-  diffContent: string | null
-}
-
-// Default stats for loading state
-const DEFAULT_DIFF_STATS: DiffStatsCache = {
-  fileCount: 0,
-  additions: 0,
-  deletions: 0,
-  isLoading: true,
-  hasChanges: false,
-}
-
-// Runtime cache for diff data per workspace (not persisted)
-const workspaceDiffCacheStorageAtom = atom<Record<string, WorkspaceDiffCache>>({})
-
-// Default cache value
-const DEFAULT_DIFF_CACHE: WorkspaceDiffCache = {
-  parsedFileDiffs: null,
-  diffStats: DEFAULT_DIFF_STATS,
-  prefetchedFileContents: {},
-  diffContent: null,
-}
-
-export const workspaceDiffCacheAtomFamily = atomFamily((chatId: string) =>
-  atom(
-    (get) => get(workspaceDiffCacheStorageAtom)[chatId] ?? DEFAULT_DIFF_CACHE,
-    (get, set, update: WorkspaceDiffCache | ((prev: WorkspaceDiffCache) => WorkspaceDiffCache)) => {
-      const current = get(workspaceDiffCacheStorageAtom)
-      const prevCache = current[chatId] ?? DEFAULT_DIFF_CACHE
-      const newCache = typeof update === 'function' ? update(prevCache) : update
-      set(workspaceDiffCacheStorageAtom, {
-        ...current,
-        [chatId]: newCache,
-      })
     },
   ),
 )

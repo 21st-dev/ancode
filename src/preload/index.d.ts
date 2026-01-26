@@ -25,7 +25,7 @@ export interface DesktopApi {
   getVersion: () => Promise<string>
 
   // Auto-update
-  checkForUpdates: (force?: boolean) => Promise<UpdateInfo | null>
+  checkForUpdates: () => Promise<UpdateInfo | null>
   downloadUpdate: () => Promise<boolean>
   installUpdate: () => void
   onUpdateChecking: (callback: () => void) => () => void

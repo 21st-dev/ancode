@@ -1,4 +1,4 @@
-import { useState, useMemo, useCallback } from "react"
+import { useState, useMemo } from "react"
 import { useAtom, useAtomValue } from "jotai"
 import { FolderOpen } from "lucide-react"
 import { showOfflineModeFeaturesAtom } from "../../../lib/atoms"
@@ -39,35 +39,20 @@ function ProjectIcon({
   className?: string
   isOffline?: boolean
 }) {
-  const [isLoaded, setIsLoaded] = useState(false)
-  const [hasError, setHasError] = useState(false)
-
-  const handleLoad = useCallback(() => setIsLoaded(true), [])
-  const handleError = useCallback(() => setHasError(true), [])
-
-  // In offline mode or on error, don't try to load remote images
-  if (isOffline || hasError || !gitOwner || gitProvider !== "github") {
+  // In offline mode, don't try to load remote images
+  if (!isOffline && gitOwner && gitProvider === "github") {
     return (
-      <FolderOpen
-        className={`${className} text-muted-foreground flex-shrink-0`}
-      />
-    )
-  }
-
-  return (
-    <div className={`${className} relative flex-shrink-0`}>
-      {/* Placeholder background while loading */}
-      {!isLoaded && (
-        <div className="absolute inset-0 rounded-sm bg-muted" />
-      )}
       <img
         src={`https://github.com/${gitOwner}.png?size=64`}
         alt={gitOwner}
-        className={`${className} rounded-sm flex-shrink-0 ${isLoaded ? 'opacity-100' : 'opacity-0'}`}
-        onLoad={handleLoad}
-        onError={handleError}
+        className={`${className} rounded-sm flex-shrink-0`}
       />
-    </div>
+    )
+  }
+  return (
+    <FolderOpen
+      className={`${className} text-muted-foreground flex-shrink-0`}
+    />
   )
 }
 

@@ -188,23 +188,6 @@ export function areExploringGroupPropsEqual(
 }
 
 /**
- * Check if a file path is a plan file.
- * Plan files are stored in the claude-sessions directory under /plans/
- */
-export function isPlanFile(filePath: string): boolean {
-  // Check for official plan location in claude-sessions
-  if (filePath.includes("claude-sessions") && filePath.includes("/plans/")) {
-    return true
-  }
-  // Also check for plan files by name pattern (for backwards compatibility)
-  const fileName = filePath.split("/").pop()?.toLowerCase() || ""
-  if (fileName.includes("plan") && fileName.endsWith(".md")) {
-    return true
-  }
-  return false
-}
-
-/**
  * Compare function for AgentAskUserQuestionTool which has different props structure.
  * Uses cache-based comparison for AI SDK in-place mutations.
  */

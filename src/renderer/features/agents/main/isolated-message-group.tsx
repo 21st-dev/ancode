@@ -31,7 +31,6 @@ import { extractTextMentions, TextMentionBlocks } from "../mentions/render-file-
 interface IsolatedMessageGroupProps {
   userMsgId: string
   subChatId: string
-  chatId: string
   isMobile: boolean
   sandboxSetupStatus: "cloning" | "ready" | "error"
   stickyTopClass: string
@@ -61,7 +60,6 @@ function areGroupPropsEqual(
   return (
     prev.userMsgId === next.userMsgId &&
     prev.subChatId === next.subChatId &&
-    prev.chatId === next.chatId &&
     prev.isMobile === next.isMobile &&
     prev.sandboxSetupStatus === next.sandboxSetupStatus &&
   prev.stickyTopClass === next.stickyTopClass &&
@@ -77,7 +75,6 @@ function areGroupPropsEqual(
 export const IsolatedMessageGroup = memo(function IsolatedMessageGroup({
   userMsgId,
   subChatId,
-  chatId,
   isMobile,
   sandboxSetupStatus,
   stickyTopClass,
@@ -95,7 +92,6 @@ export const IsolatedMessageGroup = memo(function IsolatedMessageGroup({
   const isStreaming = useAtomValue(isStreamingAtom)
 
   // Extract user message content
-  // Note: file-content parts are hidden from UI but sent to agent
   const rawTextContent =
     userMsg?.parts
       ?.filter((p: any) => p.type === "text")
@@ -122,11 +118,8 @@ export const IsolatedMessageGroup = memo(function IsolatedMessageGroup({
   const shouldShowSetupError =
     sandboxSetupStatus === "error" && isLastGroup && assistantIds.length === 0
 
-  // Check if this is an image-only message (no text content and no text mentions)
+  // Check if this is an image-only message (no text content)
   const isImageOnlyMessage = imageParts.length > 0 && !textContent.trim() && textMentions.length === 0
-
-  // Check if this is an attachment-only message (no text but has images or text mentions)
-  const isAttachmentOnlyMessage = !textContent.trim() && (imageParts.length > 0 || textMentions.length > 0)
 
   return (
     <MessageGroupWrapper isLastGroup={isLastGroup}>
@@ -142,49 +135,24 @@ export const IsolatedMessageGroup = memo(function IsolatedMessageGroup({
         </div>
       )}
 
-      {/* Text mentions (quote/diff/pasted) - NOT sticky */}
+      {/* Text mentions (quote/diff) - NOT sticky */}
       {textMentions.length > 0 && (
         <div className="mb-2 pointer-events-auto">
           <TextMentionBlocks mentions={textMentions} />
         </div>
       )}
 
-      {/* User message text - sticky (or attachment-only summary bubble) */}
+      {/* User message text - sticky (or image-only bubble) */}
       <div
         data-user-message-id={userMsgId}
         className={`[&>div]:!mb-4 pointer-events-auto sticky z-10 ${stickyTopClass}`}
       >
-        {/* Show "Using X" summary when no text but have attachments */}
-        {isAttachmentOnlyMessage && !isImageOnlyMessage ? (
-          <div className="flex justify-start drop-shadow-[0_10px_20px_hsl(var(--background))]" data-user-bubble>
-            <div className="space-y-2 w-full">
-              <div className="bg-input-background border px-3 py-2 rounded-xl text-sm text-muted-foreground italic">
-              {(() => {
-                const parts: string[] = []
-                if (imageParts.length > 0) {
-                  parts.push(imageParts.length === 1 ? "image" : `${imageParts.length} images`)
-                }
-                const quoteCount = textMentions.filter(m => m.type === "quote" || m.type === "pasted").length
-                const codeCount = textMentions.filter(m => m.type === "diff").length
-                if (quoteCount > 0) {
-                  parts.push(quoteCount === 1 ? "selected text" : `${quoteCount} text selections`)
-                }
-                if (codeCount > 0) {
-                  parts.push(codeCount === 1 ? "code selection" : `${codeCount} code selections`)
-                }
-                return `Using ${parts.join(", ")}`
-              })()}
-              </div>
-            </div>
-          </div>
-        ) : (
-          <UserBubbleComponent
-            messageId={userMsgId}
-            textContent={textContent}
-            imageParts={isImageOnlyMessage ? imageParts : []}
-            skipTextMentionBlocks={!isImageOnlyMessage}
-          />
-        )}
+        <UserBubbleComponent
+          messageId={userMsgId}
+          textContent={textContent}
+          imageParts={isImageOnlyMessage ? imageParts : []}
+          skipTextMentionBlocks={!isImageOnlyMessage}
+        />
 
         {/* Cloning indicator */}
         {shouldShowCloning && (
@@ -224,7 +192,6 @@ export const IsolatedMessageGroup = memo(function IsolatedMessageGroup({
         <MemoizedAssistantMessages
           assistantMsgIds={assistantIds}
           subChatId={subChatId}
-          chatId={chatId}
           isMobile={isMobile}
           sandboxSetupStatus={sandboxSetupStatus}
         />

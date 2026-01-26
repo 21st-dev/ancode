@@ -4,8 +4,6 @@ import react from "@vitejs/plugin-react"
 import tailwindcss from "tailwindcss"
 import autoprefixer from "autoprefixer"
 
-const isDev = process.env.NODE_ENV !== "production"
-
 export default defineConfig({
   main: {
     plugins: [
@@ -50,14 +48,7 @@ export default defineConfig({
     },
   },
   renderer: {
-    plugins: [
-      react({
-        // In dev mode, use WDYR as JSX import source to track ALL component re-renders
-        jsxImportSource: isDev
-          ? "@welldone-software/why-did-you-render"
-          : undefined,
-      }),
-    ],
+    plugins: [react()],
     resolve: {
       alias: {
         "@": resolve(__dirname, "src/renderer"),

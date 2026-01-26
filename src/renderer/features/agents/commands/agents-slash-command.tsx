@@ -18,7 +18,6 @@ import {
   filterBuiltinCommands,
   BUILTIN_SLASH_COMMANDS,
 } from "./builtin-commands"
-import type { AgentMode } from "../atoms"
 
 interface AgentsSlashCommandProps {
   isOpen: boolean
@@ -27,7 +26,7 @@ interface AgentsSlashCommandProps {
   searchText: string
   position: { top: number; left: number }
   projectPath?: string
-  mode?: AgentMode
+  isPlanMode?: boolean
   disabledCommands?: string[]
 }
 
@@ -39,7 +38,7 @@ export const AgentsSlashCommand = memo(function AgentsSlashCommand({
   searchText,
   position,
   projectPath,
-  mode,
+  isPlanMode,
   disabledCommands,
 }: AgentsSlashCommandProps) {
   const dropdownRef = useRef<HTMLDivElement>(null)
@@ -126,16 +125,16 @@ export const AgentsSlashCommand = memo(function AgentsSlashCommand({
     let builtinFiltered = filterBuiltinCommands(debouncedSearchText)
 
     // Hide /plan when already in Plan mode, hide /agent when already in Agent mode
-    if (mode !== undefined) {
+    if (isPlanMode !== undefined) {
       builtinFiltered = builtinFiltered.filter((cmd) => {
-        if (mode === "plan" && cmd.name === "plan") return false
-        if (mode === "agent" && cmd.name === "agent") return false
+        if (isPlanMode && cmd.name === "plan") return false
+        if (!isPlanMode && cmd.name === "agent") return false
         return true
       })
     }
 
     // Filter out disabled commands
-    if (disabledCommands?.length) {
+    if (disabledCommands && disabledCommands.length > 0) {
       builtinFiltered = builtinFiltered.filter(
         (cmd) => !disabledCommands.includes(cmd.name),
       )
@@ -152,11 +151,9 @@ export const AgentsSlashCommand = memo(function AgentsSlashCommand({
       )
     }
 
-    // Sort all commands by name length (shorter = closer match), then alphabetically for stability
-    return [...customFiltered, ...builtinFiltered].sort(
-      (a, b) => a.name.length - b.name.length || a.name.localeCompare(b.name),
-    )
-  }, [debouncedSearchText, customCommands, mode, disabledCommands])
+    // Return custom commands first, then builtin
+    return [...customFiltered, ...builtinFiltered]
+  }, [debouncedSearchText, customCommands, isPlanMode, disabledCommands])
 
   // Track previous values for smarter selection reset
   const prevIsOpenRef = useRef(isOpen)

@@ -30,51 +30,37 @@ const CDN_BASE = "https://cdn.21st.dev/releases/desktop"
 const MIN_CHECK_INTERVAL = 60 * 1000 // 1 minute
 let lastCheckTime = 0
 
-let getAllWindows: (() => BrowserWindow[]) | null = null
+let mainWindow: (() => BrowserWindow | null) | null = null
 
 /**
- * Send update event to all renderer windows
- * Update events are app-wide and should be visible in all windows
+ * Send update event to renderer process
  */
-function sendToAllRenderers(channel: string, data?: unknown) {
-  const windows = getAllWindows?.() ?? BrowserWindow.getAllWindows()
-  for (const win of windows) {
-    try {
-      if (win && !win.isDestroyed()) {
-        win.webContents.send(channel, data)
-      }
-    } catch {
-      // Window may have been destroyed between check and send
-    }
+function sendToRenderer(channel: string, data?: unknown) {
+  const win = mainWindow?.()
+  if (win && !win.isDestroyed()) {
+    win.webContents.send(channel, data)
   }
 }
 
 /**
  * Initialize the auto-updater with event handlers and IPC
  */
-export async function initAutoUpdater(getWindows: () => BrowserWindow[]) {
-  getAllWindows = getWindows
+export async function initAutoUpdater(getWindow: () => BrowserWindow | null) {
+  mainWindow = getWindow
 
   // Initialize config
   initAutoUpdaterConfig()
 
   // Configure feed URL to point to R2 CDN
-  // Note: We use a custom request headers to bypass CDN cache
   autoUpdater.setFeedURL({
     provider: "generic",
     url: CDN_BASE,
   })
 
-  // Add cache-busting to update requests
-  autoUpdater.requestHeaders = {
-    "Cache-Control": "no-cache, no-store, must-revalidate",
-    "Pragma": "no-cache",
-  }
-
   // Event: Checking for updates
   autoUpdater.on("checking-for-update", () => {
     log.info("[AutoUpdater] Checking for updates...")
-    sendToAllRenderers("update:checking")
+    sendToRenderer("update:checking")
   })
 
   // Event: Update available
@@ -85,7 +71,7 @@ export async function initAutoUpdater(getWindows: () => BrowserWindow[]) {
     if (setUpdateAvailable) {
       setUpdateAvailable(true, info.version)
     }
-    sendToAllRenderers("update:available", {
+    sendToRenderer("update:available", {
       version: info.version,
       releaseDate: info.releaseDate,
       releaseNotes: info.releaseNotes,
@@ -95,7 +81,7 @@ export async function initAutoUpdater(getWindows: () => BrowserWindow[]) {
   // Event: No update available
   autoUpdater.on("update-not-available", (info: UpdateInfo) => {
     log.info(`[AutoUpdater] App is up to date (v${info.version})`)
-    sendToAllRenderers("update:not-available", {
+    sendToRenderer("update:not-available", {
       version: info.version,
     })
   })
@@ -106,7 +92,7 @@ export async function initAutoUpdater(getWindows: () => BrowserWindow[]) {
       `[AutoUpdater] Download progress: ${progress.percent.toFixed(1)}% ` +
         `(${formatBytes(progress.transferred)}/${formatBytes(progress.total)})`,
     )
-    sendToAllRenderers("update:progress", {
+    sendToRenderer("update:progress", {
       percent: progress.percent,
       bytesPerSecond: progress.bytesPerSecond,
       transferred: progress.transferred,
@@ -122,7 +108,7 @@ export async function initAutoUpdater(getWindows: () => BrowserWindow[]) {
     if (setUpdateAvailable) {
       setUpdateAvailable(false)
     }
-    sendToAllRenderers("update:downloaded", {
+    sendToRenderer("update:downloaded", {
       version: info.version,
       releaseDate: info.releaseDate,
       releaseNotes: info.releaseNotes,
@@ -132,7 +118,7 @@ export async function initAutoUpdater(getWindows: () => BrowserWindow[]) {
   // Event: Error
   autoUpdater.on("error", (error: Error) => {
     log.error("[AutoUpdater] Error:", error.message)
-    sendToAllRenderers("update:error", error.message)
+    sendToRenderer("update:error", error.message)
   })
 
   // Register IPC handlers
@@ -146,29 +132,13 @@ export async function initAutoUpdater(getWindows: () => BrowserWindow[]) {
  */
 function registerIpcHandlers() {
   // Check for updates
-  ipcMain.handle("update:check", async (_event, force?: boolean) => {
+  ipcMain.handle("update:check", async () => {
     if (!app.isPackaged) {
       log.info("[AutoUpdater] Skipping update check in dev mode")
       return null
     }
     try {
-      // If force is true, add cache-busting timestamp to URL
-      if (force) {
-        const cacheBuster = `?t=${Date.now()}`
-        autoUpdater.setFeedURL({
-          provider: "generic",
-          url: `${CDN_BASE}${cacheBuster}`,
-        })
-        log.info("[AutoUpdater] Force check with cache-busting:", `${CDN_BASE}${cacheBuster}`)
-      }
       const result = await autoUpdater.checkForUpdates()
-      // Reset feed URL back to normal after force check
-      if (force) {
-        autoUpdater.setFeedURL({
-          provider: "generic",
-          url: CDN_BASE,
-        })
-      }
       return result?.updateInfo || null
     } catch (error) {
       log.error("[AutoUpdater] Check failed:", error)
@@ -250,7 +220,7 @@ export async function downloadUpdate() {
  * Check for updates when window gains focus
  * This is more natural than checking on an interval
  */
-export function setupFocusUpdateCheck(_getWindows: () => BrowserWindow[]) {
+export function setupFocusUpdateCheck(getWindow: () => BrowserWindow | null) {
   // Listen for window focus events
   app.on("browser-window-focus", () => {
     log.info("[AutoUpdater] Window focused - checking for updates")

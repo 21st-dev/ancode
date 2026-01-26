@@ -4,17 +4,14 @@ import { useEffect, useMemo, useRef, useState } from "react"
 import { useAtom, useAtomValue, useSetAtom } from "jotai"
 // import { useSearchParams, useRouter } from "next/navigation" // Desktop doesn't use next/navigation
 // Desktop: mock Next.js navigation hooks
-const useSearchParams = () => ({ get: () => null })
-const useRouter = () => ({ push: () => {}, replace: () => {} })
+const useSearchParams = () => ({ get: (_key: string) => null as string | null })
+const useRouter = () => ({ push: (_url: string) => {}, replace: (_url: string, _opts?: { scroll?: boolean }) => {} })
 // Desktop: mock Clerk hooks
 const useUser = () => ({ user: null })
-const useClerk = () => ({ signOut: () => {} })
+const useClerk = () => ({ signOut: async (_opts?: { redirectUrl?: string }) => {} })
 import {
   selectedAgentChatIdAtom,
-  selectedChatIsRemoteAtom,
   previousAgentChatIdAtom,
-  selectedDraftIdAtom,
-  showNewChatFormAtom,
   agentsMobileViewModeAtom,
   agentsPreviewSidebarOpenAtom,
   agentsSidebarOpenAtom,
@@ -28,11 +25,8 @@ import {
   subChatsQuickSwitchOpenAtom,
   subChatsQuickSwitchSelectedIndexAtom,
   ctrlTabTargetAtom,
-  betaKanbanEnabledAtom,
-  chatSourceModeAtom,
 } from "../../../lib/atoms"
 import { NewChatForm } from "../main/new-chat-form"
-import { KanbanView } from "../../kanban"
 import { ChatView } from "../main/active-chat"
 import { api } from "../../../lib/mock-api"
 import { trpc } from "../../../lib/trpc"
@@ -41,7 +35,7 @@ import { AgentsSidebar } from "../../sidebar/agents-sidebar"
 import { AgentsSubChatsSidebar } from "../../sidebar/agents-subchats-sidebar"
 import { AgentPreview } from "./agent-preview"
 import { AgentDiffView } from "./agent-diff-view"
-import { TerminalSidebar, terminalSidebarOpenAtomFamily } from "../../terminal"
+import { TerminalSidebar, terminalSidebarOpenAtom } from "../../terminal"
 import {
   useAgentSubChatStore,
   type SubChatMeta,
@@ -64,12 +58,6 @@ const useIsAdmin = () => false
 // Main Component
 export function AgentsContent() {
   const [selectedChatId, setSelectedChatId] = useAtom(selectedAgentChatIdAtom)
-  const setSelectedChatIsRemote = useSetAtom(selectedChatIsRemoteAtom)
-  const setChatSourceMode = useSetAtom(chatSourceModeAtom)
-  const chatSourceMode = useAtomValue(chatSourceModeAtom)
-  const selectedDraftId = useAtomValue(selectedDraftIdAtom)
-  const showNewChatForm = useAtomValue(showNewChatFormAtom)
-  const betaKanbanEnabled = useAtomValue(betaKanbanEnabledAtom)
   const [selectedTeamId] = useAtom(selectedTeamIdAtom)
   const [sidebarOpen, setSidebarOpen] = useAtom(agentsSidebarOpenAtom)
   const [previewSidebarOpen, setPreviewSidebarOpen] = useAtom(
@@ -79,12 +67,7 @@ export function AgentsContent() {
   const [subChatsSidebarMode, setSubChatsSidebarMode] = useAtom(
     agentsSubChatsSidebarModeAtom,
   )
-  // Per-chat terminal sidebar state
-  const terminalSidebarAtom = useMemo(
-    () => terminalSidebarOpenAtomFamily(selectedChatId || ""),
-    [selectedChatId],
-  )
-  const setTerminalSidebarOpen = useSetAtom(terminalSidebarAtom)
+  const setTerminalSidebarOpen = useSetAtom(terminalSidebarOpenAtom)
 
   const hasOpenedSubChatsSidebar = useRef(false)
   const wasSubChatsSidebarOpen = useRef(false)
@@ -146,19 +129,6 @@ export function AgentsContent() {
       setActiveSubChat: state.setActiveSubChat,
     }))
   )
-
-  // Update window title when active sub-chat changes
-  const activeSubChatName = useMemo(() => {
-    if (!activeSubChatId) return null
-    const subChat = allSubChats.find((sc) => sc.id === activeSubChatId)
-    return subChat?.name ?? null
-  }, [activeSubChatId, allSubChats])
-
-  useEffect(() => {
-    if (typeof window !== "undefined" && window.desktopApi?.setWindowTitle) {
-      window.desktopApi.setWindowTitle(activeSubChatName || "")
-    }
-  }, [activeSubChatName])
 
   // Fetch teams for header
   const { data: teams } = api.teams.getUserTeams.useQuery(undefined, {
@@ -258,7 +228,7 @@ export function AgentsContent() {
   }, [isMobile, selectedChatId, mobileViewMode, setMobileViewMode])
 
   // On mobile: when in terminal mode, sync with terminal sidebar close
-  const terminalSidebarOpen = useAtomValue(terminalSidebarAtom)
+  const terminalSidebarOpen = useAtomValue(terminalSidebarOpenAtom)
   useEffect(() => {
     // If terminal sidebar closed while in terminal mode, go back to chat
     if (isMobile && mobileViewMode === "terminal" && !terminalSidebarOpen) {
@@ -288,7 +258,7 @@ export function AgentsContent() {
   const sortedChats = agentChats
     ? [...agentChats].sort(
         (a, b) =>
-          new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime(),
+          new Date(b.updatedAt ?? 0).getTime() - new Date(a.updatedAt ?? 0).getTime(),
       )
     : []
 
@@ -427,8 +397,8 @@ export function AgentsContent() {
             // Get sorted chat list
             const sortedChats = [...agentChats].sort(
               (a, b) =>
-                new Date(b.updated_at).getTime() -
-                new Date(a.updated_at).getTime(),
+                new Date(b.updatedAt ?? 0).getTime() -
+                new Date(a.updatedAt ?? 0).getTime(),
             )
             isNavigatingRef.current = true
             setTimeout(() => {
@@ -438,9 +408,6 @@ export function AgentsContent() {
             // If no chat selected, select first one
             if (!selectedChatId) {
               setSelectedChatId(sortedChats[0].id)
-              // agentChats are local chats only, so always set isRemote to false
-              setSelectedChatIsRemote(false)
-              setChatSourceMode("local")
               return
             }
 
@@ -451,8 +418,6 @@ export function AgentsContent() {
 
             if (currentIndex === -1) {
               setSelectedChatId(sortedChats[0].id)
-              setSelectedChatIsRemote(false)
-              setChatSourceMode("local")
               return
             }
 
@@ -471,8 +436,6 @@ export function AgentsContent() {
             }
 
             setSelectedChatId(sortedChats[nextIndex].id)
-            setSelectedChatIsRemote(false)
-            setChatSourceMode("local")
           }
           return
         }
@@ -484,9 +447,6 @@ export function AgentsContent() {
 
           if (selectedChat) {
             setSelectedChatId(selectedChat.id)
-            // agentChats are local chats only
-            setSelectedChatIsRemote(false)
-            setChatSourceMode("local")
           }
 
           setQuickSwitchOpen(false)
@@ -859,7 +819,7 @@ export function AgentsContent() {
           >
             {selectedChatId ? (
               <ChatView
-                key={`${chatSourceMode}-${selectedChatId}`}
+                key={selectedChatId}
                 chatId={selectedChatId}
                 isSidebarOpen={false}
                 onToggleSidebar={() => {}}
@@ -931,7 +891,7 @@ export function AgentsContent() {
             isSidebarOpen={sidebarOpen}
             onBackToChats={() => setSidebarOpen((prev) => !prev)}
             isLoading={isLoadingSubChats}
-            agentName={chatData?.name}
+            agentName={chatData?.name ?? undefined}
           />
         </ResizableSidebar>
 
@@ -943,7 +903,7 @@ export function AgentsContent() {
           {selectedChatId ? (
             <div className="h-full flex flex-col relative overflow-hidden">
               <ChatView
-                key={`${chatSourceMode}-${selectedChatId}`}
+                key={selectedChatId}
                 chatId={selectedChatId}
                 isSidebarOpen={sidebarOpen}
                 onToggleSidebar={() => setSidebarOpen((prev) => !prev)}
@@ -951,12 +911,6 @@ export function AgentsContent() {
                 selectedTeamImageUrl={selectedTeam?.image_url}
               />
             </div>
-          ) : selectedDraftId || showNewChatForm ? (
-            <div className="h-full flex flex-col relative overflow-hidden">
-              <NewChatForm key={`new-chat-${newChatFormKeyRef.current}`} />
-            </div>
-          ) : betaKanbanEnabled ? (
-            <KanbanView />
           ) : (
             <div className="h-full flex flex-col relative overflow-hidden">
               <NewChatForm key={`new-chat-${newChatFormKeyRef.current}`} />

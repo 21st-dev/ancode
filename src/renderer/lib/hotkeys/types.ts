@@ -6,14 +6,12 @@ export type ShortcutActionId =
   | "show-shortcuts"
   | "open-settings"
   | "toggle-sidebar"
-  | "toggle-details"
   | "undo-archive"
   // Workspaces
   | "new-workspace"
   | "search-workspaces"
   | "archive-workspace"
   | "quick-switch-workspaces"
-  | "open-kanban"
   // Agents
   | "new-agent"
   | "search-chats"
@@ -29,7 +27,6 @@ export type ShortcutActionId =
   | "toggle-terminal"
   | "open-diff"
   | "create-pr"
-  | "voice-input"
 
 /**
  * Category for organizing shortcuts in the UI

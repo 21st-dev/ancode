@@ -2,7 +2,6 @@ import { execSync, spawn } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
-import { buildExtendedPath, isWindows } from "./platform";
 
 interface ClaudeCredentials {
   claudeAiOauth?: {
@@ -243,14 +242,23 @@ export function isTokenExpired(expiresAt?: number): boolean {
 
 /**
  * Build extended PATH with common installation locations
- * This is necessary because when running from Finder/Dock (macOS) or
- * Start Menu (Windows), the PATH may not include directories where
- * claude CLI is installed
- *
- * Delegates to platform provider for cross-platform support.
+ * This is necessary because when running from Finder/Dock, the PATH
+ * may not include directories where claude CLI is installed
  */
 function getExtendedPath(): string {
-  return buildExtendedPath(process.env.PATH);
+  const home = homedir();
+  const extendedPaths = [
+    '/opt/homebrew/bin',
+    '/usr/local/bin',
+    `${home}/.local/bin`,
+    `${home}/.bun/bin`,
+    `${home}/.cargo/bin`,
+    '/opt/local/bin',
+    `${home}/.nvm/versions/node/*/bin`, // Common Node.js installations
+  ].filter(Boolean);
+
+  const currentPath = process.env.PATH || '';
+  return [...extendedPaths, ...currentPath.split(':')].join(':');
 }
 
 /**
@@ -260,7 +268,7 @@ function getExtendedPath(): string {
 export function isClaudeCliInstalled(): boolean {
   try {
     // Use 'where' on Windows, 'which' on Unix-like systems
-    const command = isWindows() ? 'where claude' : 'which claude';
+    const command = process.platform === 'win32' ? 'where claude' : 'which claude';
     const fullPath = getExtendedPath();
 
     execSync(command, {

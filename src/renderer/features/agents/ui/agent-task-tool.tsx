@@ -43,29 +43,51 @@ export const AgentTaskTool = memo(function AgentTaskTool({
 
   // Track elapsed time for running tasks
   const [elapsedMs, setElapsedMs] = useState(0)
+  const startTimeRef = useRef<number | null>(null)
+  // Track if time became inaccurate due to window being hidden
+  const [isTimeInaccurate, setIsTimeInaccurate] = useState(false)
 
   const description = part.input?.description || ""
 
-  // Use startedAt from backend for persistent timing across re-renders
-  const startedAt = part.startedAt as number | undefined
-
-  // Track elapsed time while task is running using backend timestamp
+  // Track elapsed time while task is running
   useEffect(() => {
-    if (isPending && startedAt) {
-      // Set initial elapsed time immediately
-      setElapsedMs(Date.now() - startedAt)
-
+    if (isPending) {
+      // Start tracking time
+      if (startTimeRef.current === null) {
+        startTimeRef.current = Date.now()
+      }
       const interval = setInterval(() => {
-        setElapsedMs(Date.now() - startedAt)
+        if (startTimeRef.current !== null) {
+          setElapsedMs(Date.now() - startTimeRef.current)
+        }
       }, 1000)
       return () => clearInterval(interval)
     }
-  }, [isPending, startedAt])
+  }, [isPending])
+
+  // Detect when window visibility changes - time becomes inaccurate when hidden
+  useEffect(() => {
+    if (!isPending) return
+
+    const handleVisibilityChange = () => {
+      if (document.hidden) {
+        // Window became hidden while task is running - time will be inaccurate
+        setIsTimeInaccurate(true)
+      }
+    }
+
+    document.addEventListener("visibilitychange", handleVisibilityChange)
+    return () => {
+      document.removeEventListener("visibilitychange", handleVisibilityChange)
+    }
+  }, [isPending])
 
   // Use output duration from Claude Code if available, otherwise use our tracked time
   const outputDuration = part.output?.duration || part.output?.duration_ms
   const displayMs = !isPending && outputDuration ? outputDuration : elapsedMs
-  const elapsedTimeDisplay = formatElapsedTime(displayMs)
+  // Hide time if it became inaccurate while running, but show final time from output
+  const shouldShowTime = !isPending || !isTimeInaccurate
+  const elapsedTimeDisplay = shouldShowTime ? formatElapsedTime(displayMs) : ""
 
   // Auto-scroll to bottom when streaming and new nested tools added
   useEffect(() => {

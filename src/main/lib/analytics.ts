@@ -5,55 +5,14 @@
 
 import { PostHog } from "posthog-node"
 import { app } from "electron"
-import * as fs from "fs"
-import * as path from "path"
 
-// PostHog configuration - hardcoded key for opensource users, env var override for internal builds
-// This enables analytics for all users including those building from source
-const POSTHOG_DESKTOP_KEY = import.meta.env.MAIN_VITE_POSTHOG_KEY || "phc_wM7gbrJhOLTvynyhnhPkrVGDc5mKRSXsLGQHqM3T3vq"
+// PostHog configuration from environment
+const POSTHOG_DESKTOP_KEY = import.meta.env.MAIN_VITE_POSTHOG_KEY
 const POSTHOG_HOST = import.meta.env.MAIN_VITE_POSTHOG_HOST || "https://us.i.posthog.com"
 
 let posthog: PostHog | null = null
 let currentUserId: string | null = null
 let userOptedOut = false // Synced from renderer
-
-// track first launch using a marker file
-const FIRST_LAUNCH_MARKER = ".first_launch_tracked"
-
-function getFirstLaunchMarkerPath(): string {
-  try {
-    return path.join(app.getPath("userData"), FIRST_LAUNCH_MARKER)
-  } catch {
-    // app not ready yet
-    return ""
-  }
-}
-
-function isFirstLaunch(): boolean {
-  const markerPath = getFirstLaunchMarkerPath()
-  if (!markerPath) return false
-
-  try {
-    return !fs.existsSync(markerPath)
-  } catch {
-    return false
-  }
-}
-
-function markFirstLaunchTracked(): void {
-  const markerPath = getFirstLaunchMarkerPath()
-  if (!markerPath) return
-
-  try {
-    fs.writeFileSync(markerPath, new Date().toISOString())
-  } catch {
-    // ignore errors writing marker
-  }
-}
-
-// Cached user properties for analytics enrichment
-let cachedSubscriptionPlan: string | null = null
-let cachedConnectionMethod: string | null = null
 
 // Check if we're in development mode
 // Set FORCE_ANALYTICS=true to test analytics in development
@@ -72,15 +31,12 @@ function isDev(): boolean {
  */
 function getCommonProperties() {
   return {
-    source: "desktop", // Unified source for desktop vs web analytics
+    source: "desktop_main",
     app_version: app.getVersion(),
     platform: process.platform,
     arch: process.arch,
     electron_version: process.versions.electron,
     node_version: process.versions.node,
-    // Analytics enrichment properties
-    subscription_plan: cachedSubscriptionPlan,
-    connection_method: cachedConnectionMethod,
   }
 }
 
@@ -89,21 +45,6 @@ function getCommonProperties() {
  */
 export function setOptOut(optedOut: boolean) {
   userOptedOut = optedOut
-}
-
-/**
- * Set subscription plan (called after fetching from API)
- */
-export function setSubscriptionPlan(plan: string) {
-  cachedSubscriptionPlan = plan
-}
-
-/**
- * Set connection method (called from renderer via IPC)
- * Values: "claude-subscription" | "api-key" | "custom-model"
- */
-export function setConnectionMethod(method: string) {
-  cachedConnectionMethod = method
 }
 
 /**
@@ -194,9 +135,6 @@ export function getCurrentUserId(): string | null {
  */
 export function reset() {
   currentUserId = null
-  // Reset cached analytics properties
-  cachedSubscriptionPlan = null
-  cachedConnectionMethod = null
   // PostHog Node.js SDK doesn't have a reset method
   // Events will be sent as anonymous until next identify
 }
@@ -219,22 +157,9 @@ export async function shutdown() {
  * Track app opened event
  */
 export function trackAppOpened() {
-  const firstLaunch = isFirstLaunch()
-
   capture("desktop_opened", {
-    first_launch: firstLaunch,
+    first_launch: false, // TODO: track first launch
   })
-
-  if (firstLaunch) {
-    // mark as tracked so subsequent opens don't count as first launch
-    markFirstLaunchTracked()
-
-    // also fire a separate first_launch event for funnel analysis
-    capture("first_launch", {
-      app_version: app.getVersion(),
-      platform: process.platform,
-    })
-  }
 }
 
 /**
@@ -267,13 +192,11 @@ export function trackWorkspaceCreated(workspace: {
   id: string
   projectId: string
   useWorktree: boolean
-  repository?: string
 }) {
   capture("workspace_created", {
     workspace_id: workspace.id,
     project_id: workspace.projectId,
     use_worktree: workspace.useWorktree,
-    repository: workspace.repository,
   })
 }
 
@@ -300,12 +223,12 @@ export function trackWorkspaceDeleted(workspaceId: string) {
  */
 export function trackMessageSent(data: {
   workspaceId: string
-  subChatId?: string
+  messageLength: number
   mode: "plan" | "agent"
 }) {
   capture("message_sent", {
     workspace_id: data.workspaceId,
-    sub_chat_id: data.subChatId,
+    message_length: data.messageLength,
     mode: data.mode,
   })
 }
@@ -316,41 +239,9 @@ export function trackMessageSent(data: {
 export function trackPRCreated(data: {
   workspaceId: string
   prNumber: number
-  repository?: string
-  mode?: "worktree" | "local"
 }) {
   capture("pr_created", {
     workspace_id: data.workspaceId,
     pr_number: data.prNumber,
-    repository: data.repository,
-    mode: data.mode,
-  })
-}
-
-/**
- * Track commit created
- */
-export function trackCommitCreated(data: {
-  workspaceId: string
-  filesChanged: number
-  mode: "worktree" | "local"
-}) {
-  capture("commit_created", {
-    workspace_id: data.workspaceId,
-    files_changed: data.filesChanged,
-    mode: data.mode,
-  })
-}
-
-/**
- * Track sub-chat created
- */
-export function trackSubChatCreated(data: {
-  workspaceId: string
-  subChatId: string
-}) {
-  capture("sub_chat_created", {
-    workspace_id: data.workspaceId,
-    sub_chat_id: data.subChatId,
   })
 }

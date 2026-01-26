@@ -85,8 +85,6 @@ import {
   SvelteIcon,
   AstroIcon,
   SwiftIcon,
-  PDFIcon,
-  SVGIcon,
 } from "../../../icons/framework-icons"
 
 interface ChangedFile {
@@ -172,8 +170,6 @@ const KNOWN_FILE_ICON_EXTENSIONS = new Set([
   "svelte",
   "astro",
   "swift",
-  "pdf",
-  "svg",
 ])
 
 // Get file icon component based on file extension
@@ -312,10 +308,6 @@ export function getFileIconByExtension(
       return AstroIcon
     case "swift":
       return SwiftIcon
-    case "pdf":
-      return PDFIcon
-    case "svg":
-      return SVGIcon
     default:
       return returnNullForUnknown ? null : FilesIcon
   }
@@ -760,16 +752,14 @@ export const AgentsFileMention = memo(function AgentsFileMention({
         matchesMultiWordSearch(file.filePath, searchLower),
       )
       .map((file) => {
-        // Use displayPath (relative path) for UI display, filePath only for internal ID
-        const displayPath = file.displayPath || file.filePath
-        const pathParts = displayPath.split("/")
-        const fileName = pathParts.pop() || displayPath
+        const pathParts = file.filePath.split("/")
+        const fileName = pathParts.pop() || file.filePath
         const dirPath = pathParts.join("/") || "/"
 
         return {
           id: `changed:${file.filePath}`,
           label: fileName,
-          path: displayPath,
+          path: file.filePath,
           repository: repository || "",
           truncatedPath: dirPath,
           additions: file.additions,

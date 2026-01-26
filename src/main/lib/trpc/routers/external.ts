@@ -1,16 +1,7 @@
 import { shell } from "electron";
 import { spawn } from "node:child_process";
-import * as os from "node:os";
-import * as path from "node:path";
 import { z } from "zod";
 import { publicProcedure, router } from "../index";
-
-function expandTilde(filePath: string): string {
-	if (filePath.startsWith("~/") || filePath === "~") {
-		return path.join(os.homedir(), filePath.slice(1));
-	}
-	return filePath;
-}
 
 /**
  * External router for shell operations (open in finder, open in editor, etc.)
@@ -18,9 +9,8 @@ function expandTilde(filePath: string): string {
 export const externalRouter = router({
 	openInFinder: publicProcedure
 		.input(z.string())
-		.mutation(async ({ input: inputPath }) => {
-			const expandedPath = expandTilde(inputPath);
-			shell.showItemInFolder(expandedPath);
+		.mutation(async ({ input: path }) => {
+			shell.showItemInFolder(path);
 			return { success: true };
 		}),
 

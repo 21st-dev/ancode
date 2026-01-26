@@ -31,6 +31,7 @@ import {
 import { cn } from "../../../lib/utils"
 import {
   agentsDebugModeAtom,
+  isPlanModeAtom,
   justCreatedIdsAtom,
   lastSelectedAgentIdAtom,
   lastSelectedBranchesAtom,
@@ -38,13 +39,9 @@ import {
   lastSelectedRepoAtom,
   lastSelectedWorkModeAtom,
   selectedAgentChatIdAtom,
-  selectedChatIsRemoteAtom,
   selectedDraftIdAtom,
   selectedProjectAtom,
-  getNextMode,
-  type AgentMode,
 } from "../atoms"
-import { defaultAgentModeAtom } from "../../../lib/atoms"
 import { ProjectSelector } from "../components/project-selector"
 import { WorkModeSelector } from "../components/work-mode-selector"
 // import { selectedTeamIdAtom } from "@/lib/atoms/team"
@@ -57,8 +54,6 @@ import {
   normalizeCustomClaudeConfig,
   showOfflineModeFeaturesAtom,
   selectedOllamaModelAtom,
-  customHotkeysAtom,
-  chatSourceModeAtom,
 } from "../../../lib/atoms"
 // Desktop uses real tRPC
 import { toast } from "sonner"
@@ -70,26 +65,16 @@ import {
   type SlashCommandOption,
 } from "../commands"
 import { useAgentsFileUpload } from "../hooks/use-agents-file-upload"
-import { usePastedTextFiles } from "../hooks/use-pasted-text-files"
 import { useFocusInputOnEnter } from "../hooks/use-focus-input-on-enter"
 import { useToggleFocusOnCmdEsc } from "../hooks/use-toggle-focus-on-cmd-esc"
 import {
-  useVoiceRecording,
-  blobToBase64,
-  getAudioFormat,
-} from "../../../lib/hooks/use-voice-recording"
-import { getResolvedHotkey } from "../../../lib/hotkeys"
-import {
   AgentsFileMention,
   AgentsMentionsEditor,
-  MENTION_PREFIXES,
   type AgentsMentionsEditorHandle,
   type FileMentionOption,
 } from "../mentions"
 import { AgentImageItem } from "../ui/agent-image-item"
-import { AgentPastedTextItem } from "../ui/agent-pasted-text-item"
 import { AgentsHeaderControls } from "../ui/agents-header-controls"
-import { VoiceWaveIndicator } from "../ui/voice-wave-indicator"
 // import { CreateBranchDialog } from "@/app/(alpha)/agents/{components}/create-branch-dialog"
 import {
   PromptInput,
@@ -122,11 +107,10 @@ const CodexIcon = (props: React.SVGProps<SVGSVGElement>) => (
 
 // Hook to get available models (including offline models if Ollama is available and debug enabled)
 function useAvailableModels() {
-  const showOfflineFeatures = useAtomValue(showOfflineModeFeaturesAtom)
   const { data: ollamaStatus } = trpc.ollama.getStatus.useQuery(undefined, {
-    refetchInterval: showOfflineFeatures ? 30000 : false,
-    enabled: showOfflineFeatures, // Only query Ollama when offline mode is enabled
+    refetchInterval: 30000,
   })
+  const showOfflineFeatures = useAtomValue(showOfflineModeFeaturesAtom)
 
   const baseModels = CLAUDE_MODELS
 
@@ -178,8 +162,6 @@ export function NewChatForm({
   const [hasContent, setHasContent] = useState(false)
   const [selectedTeamId] = useAtom(selectedTeamIdAtom)
   const [selectedChatId, setSelectedChatId] = useAtom(selectedAgentChatIdAtom)
-  const setSelectedChatIsRemote = useSetAtom(selectedChatIsRemoteAtom)
-  const setChatSourceMode = useSetAtom(chatSourceModeAtom)
   const [selectedDraftId, setSelectedDraftId] = useAtom(selectedDraftIdAtom)
   const [sidebarOpen, setSidebarOpen] = useAtom(agentsSidebarOpenAtom)
 
@@ -220,14 +202,7 @@ export function NewChatForm({
   const [lastSelectedModelId, setLastSelectedModelId] = useAtom(
     lastSelectedModelIdAtom,
   )
-  // Mode for new chat - uses user's default preference directly
-  // Note: defaultAgentMode is initialized synchronously via atomWithStorage with getOnInit: true
-  const defaultAgentMode = useAtomValue(defaultAgentModeAtom)
-  const [agentMode, setAgentMode] = useState<AgentMode>(() => defaultAgentMode)
-  // Toggle mode helper
-  const toggleMode = useCallback(() => {
-    setAgentMode(getNextMode)
-  }, [])
+  const [isPlanMode, setIsPlanMode] = useAtom(isPlanModeAtom)
   const [workMode, setWorkMode] = useAtom(lastSelectedWorkModeAtom)
   const debugMode = useAtomValue(agentsDebugModeAtom)
   const customClaudeConfig = useAtomValue(customClaudeConfigAtom)
@@ -303,22 +278,18 @@ export function NewChatForm({
     lastSelectedBranchesAtom,
   )
   const [branchSearch, setBranchSearch] = useState("")
-  const [selectedBranchType, setSelectedBranchType] = useState<
-    "local" | "remote" | undefined
-  >(undefined)
 
   // Get/set selected branch for current project (persisted per project)
   const selectedBranch = validatedProject?.id
-    ? lastSelectedBranches[validatedProject.id]?.name || ""
+    ? lastSelectedBranches[validatedProject.id] || ""
     : ""
   const setSelectedBranch = useCallback(
-    (branch: string, type?: "local" | "remote") => {
-      if (validatedProject?.id && type) {
+    (branch: string) => {
+      if (validatedProject?.id) {
         setLastSelectedBranches((prev) => ({
           ...prev,
-          [validatedProject.id]: { name: branch, type },
+          [validatedProject.id]: branch,
         }))
-        setSelectedBranchType(type)
       }
     },
     [validatedProject?.id, setLastSelectedBranches],
@@ -326,20 +297,6 @@ export function NewChatForm({
   const branchListRef = useRef<HTMLDivElement>(null)
   const editorRef = useRef<AgentsMentionsEditorHandle>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
-
-  // Restore selectedBranchType from persisted storage when project changes
-  useEffect(() => {
-    if (validatedProject?.id) {
-      const stored = lastSelectedBranches[validatedProject.id]
-      if (stored?.type) {
-        setSelectedBranchType(stored.type)
-      } else {
-        setSelectedBranchType(undefined)
-      }
-    } else {
-      setSelectedBranchType(undefined)
-    }
-  }, [validatedProject?.id, lastSelectedBranches])
 
   // Image upload hook
   const {
@@ -349,19 +306,6 @@ export function NewChatForm({
     clearImages,
     isUploading,
   } = useAgentsFileUpload()
-
-  // Pasted text files - use a stable temp ID for new chat
-  const tempPastedIdRef = useRef(`new-chat-${Date.now()}`)
-  const {
-    pastedTexts,
-    addPastedText,
-    removePastedText,
-    clearPastedTexts,
-  } = usePastedTextFiles(tempPastedIdRef.current)
-
-  // File contents cache - stores content for file mentions (keyed by mentionId)
-  // This content gets added to the prompt when sending, without showing a separate card
-  const fileContentsRef = useRef<Map<string, string>>(new Map())
 
   // Mention dropdown state
   const [showMentionDropdown, setShowMentionDropdown] = useState(false)
@@ -390,166 +334,6 @@ export function NewChatForm({
   const [modeDropdownOpen, setModeDropdownOpen] = useState(false)
   const [isModelDropdownOpen, setIsModelDropdownOpen] = useState(false)
 
-  // Voice input state
-  const customHotkeys = useAtomValue(customHotkeysAtom)
-  const {
-    isRecording: isVoiceRecording,
-    audioLevel: voiceAudioLevel,
-    startRecording,
-    stopRecording,
-    cancelRecording,
-  } = useVoiceRecording()
-  const [isTranscribing, setIsTranscribing] = useState(false)
-  const transcribeMutation = trpc.voice.transcribe.useMutation()
-
-  // Check if voice input is available (authenticated OR has OPENAI_API_KEY)
-  const { data: voiceAvailability } = trpc.voice.isAvailable.useQuery()
-  const isVoiceAvailable = voiceAvailability?.available ?? false
-
-  // Voice input handlers
-  const handleVoiceMouseDown = useCallback(async () => {
-    if (isUploading || isTranscribing || isVoiceRecording) return
-    try {
-      await startRecording()
-    } catch (err) {
-      console.error("[NewChatForm] Failed to start recording:", err)
-    }
-  }, [isUploading, isTranscribing, isVoiceRecording, startRecording])
-
-  const handleVoiceMouseUp = useCallback(async () => {
-    if (!isVoiceRecording) return
-    try {
-      const blob = await stopRecording()
-      if (blob.size < 1000) {
-        console.log("[NewChatForm] Recording too short, ignoring")
-        return
-      }
-      setIsTranscribing(true)
-      const base64 = await blobToBase64(blob)
-      const format = getAudioFormat(blob.type)
-      const result = await transcribeMutation.mutateAsync({ audio: base64, format })
-      if (result.text && result.text.trim()) {
-        const currentValue = editorRef.current?.getValue() || ""
-        // Clean transcribed text - remove any remaining whitespace issues
-        const transcribed = result.text
-          .replace(/[\r\n\t]+/g, " ")
-          .replace(/ +/g, " ")
-          .trim()
-        // Add space separator only if current text exists and doesn't end with whitespace
-        const needsSpace = currentValue.length > 0 && !/\s$/.test(currentValue)
-        const newValue = currentValue + (needsSpace ? " " : "") + transcribed
-        editorRef.current?.setValue(newValue)
-        setHasContent(true)
-      }
-    } catch (err) {
-      console.error("[NewChatForm] Transcription failed:", err)
-    } finally {
-      setIsTranscribing(false)
-    }
-  }, [isVoiceRecording, stopRecording, transcribeMutation])
-
-  const handleVoiceMouseLeave = useCallback(() => {
-    if (isVoiceRecording) {
-      cancelRecording()
-    }
-  }, [isVoiceRecording, cancelRecording])
-
-  // Voice hotkey listener (push-to-talk: hold to record, release to transcribe)
-  useEffect(() => {
-    const voiceHotkey = getResolvedHotkey("voice-input", customHotkeys)
-    if (!voiceHotkey) return
-
-    // Parse hotkey once
-    const parts = voiceHotkey.split("+").map(p => p.toLowerCase())
-    const modifiers = parts.filter(p => ["cmd", "meta", "ctrl", "opt", "alt", "shift"].includes(p))
-    const mainKey = parts.find(p => !["cmd", "meta", "ctrl", "opt", "alt", "shift"].includes(p))
-
-    const needsCmd = modifiers.includes("cmd") || modifiers.includes("meta")
-    const needsShift = modifiers.includes("shift")
-    const needsCtrl = modifiers.includes("ctrl")
-    const needsAlt = modifiers.includes("alt") || modifiers.includes("opt")
-
-    // For modifier-only hotkeys (like ctrl+opt), we track when all modifiers are pressed
-    const isModifierOnlyHotkey = !mainKey
-
-    const modifiersMatch = (e: KeyboardEvent) => {
-      return (
-        e.metaKey === needsCmd &&
-        e.shiftKey === needsShift &&
-        e.ctrlKey === needsCtrl &&
-        e.altKey === needsAlt
-      )
-    }
-
-    const matchesHotkey = (e: KeyboardEvent) => {
-      if (isModifierOnlyHotkey) {
-        // For modifier-only: just check if all required modifiers are pressed
-        return modifiersMatch(e)
-      }
-
-      // For regular hotkey with main key
-      const keyMatches =
-        e.key.toLowerCase() === mainKey ||
-        e.code.toLowerCase() === mainKey ||
-        e.code.toLowerCase() === `key${mainKey}` ||
-        (mainKey === "space" && e.code === "Space")
-
-      return keyMatches && modifiersMatch(e)
-    }
-
-    // Check if any modifier key is released
-    const isModifierRelease = (e: KeyboardEvent) => {
-      const key = e.key.toLowerCase()
-      return key === "control" || key === "alt" || key === "meta" || key === "shift"
-    }
-
-    // Check if the released key is the main key (not a modifier)
-    const isMainKeyRelease = (e: KeyboardEvent) => {
-      if (isModifierOnlyHotkey) {
-        return isModifierRelease(e)
-      }
-      const eventKey = e.key.toLowerCase()
-      return (
-        eventKey === mainKey ||
-        e.code.toLowerCase() === mainKey ||
-        e.code.toLowerCase() === `key${mainKey}` ||
-        (mainKey === "space" && e.code === "Space")
-      )
-    }
-
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (!matchesHotkey(e)) return
-      if (e.repeat) return // Ignore key repeat
-
-      e.preventDefault()
-      e.stopPropagation()
-
-      // Start recording on keydown
-      if (!isVoiceRecording && !isTranscribing) {
-        handleVoiceMouseDown()
-      }
-    }
-
-    const handleKeyUp = (e: KeyboardEvent) => {
-      // Stop recording when the main key (or any modifier for modifier-only hotkeys) is released
-      if (!isMainKeyRelease(e)) return
-
-      // Only stop if we're currently recording
-      if (isVoiceRecording) {
-        e.preventDefault()
-        e.stopPropagation()
-        handleVoiceMouseUp()
-      }
-    }
-
-    window.addEventListener("keydown", handleKeyDown, true)
-    window.addEventListener("keyup", handleKeyUp, true)
-    return () => {
-      window.removeEventListener("keydown", handleKeyDown, true)
-      window.removeEventListener("keyup", handleKeyUp, true)
-    }
-  }, [customHotkeys, isVoiceRecording, isTranscribing, handleVoiceMouseDown, handleVoiceMouseUp])
-
   // Shift+Tab handler for mode switching (now handled inside input component via onShiftTab prop)
 
   // Keyboard shortcut: Enter to focus input when not already focused
@@ -560,7 +344,14 @@ export function NewChatForm({
 
   // Fetch repos from team
   // Desktop: no remote repos, we use local projects
-  const reposData = { repositories: [] }
+  type Repository = {
+    id: string
+    name: string
+    full_name: string
+    sandbox_status: "error" | "ready" | "not_setup" | "in_progress" | null
+    pushed_at?: string | null
+  }
+  const reposData: { repositories: Repository[] } = { repositories: [] }
   const isLoadingRepos = false
 
   // Memoize repos arrays to prevent useEffect from running on every keystroke
@@ -629,7 +420,7 @@ export function NewChatForm({
         id: firstRepo.id,
         name: firstRepo.name,
         full_name: firstRepo.full_name,
-        sandbox_status: firstRepo.sandbox_status,
+        sandbox_status: firstRepo.sandbox_status ?? undefined,
       })
     }
 
@@ -645,44 +436,39 @@ export function NewChatForm({
     },
   )
 
-  const fetchRemoteMutation = trpc.changes.fetchRemote.useMutation()
-
-  // Manual refresh branches
-  const handleRefreshBranches = useCallback(() => {
-    if (validatedProject?.path) {
-      fetchRemoteMutation.mutate(
-        { worktreePath: validatedProject.path },
-        {
-          onSuccess: () => {
-            branchesQuery.refetch()
-          },
-          onError: (error) => {
-            console.error("Failed to fetch remote branches:", error)
-          },
-        },
-      )
-    }
-  }, [validatedProject?.path, fetchRemoteMutation, branchesQuery])
-
   // Transform branch data to match web app format
   const branches = useMemo(() => {
     if (!branchesQuery.data) return []
 
     const { local, remote, defaultBranch } = branchesQuery.data
-    const result: Array<{
-      name: string
-      type: "local" | "remote"
-      protected: boolean
-      isDefault: boolean
-      committedAt: string | null
-      authorName: null
-    }> = []
 
-    // Add local branches
+    // Combine local and remote branches, preferring local info
+    const branchMap = new Map<
+      string,
+      {
+        name: string
+        protected: boolean
+        isDefault: boolean
+        committedAt: string | null
+        authorName: null
+      }
+    >()
+
+    // Add remote branches first
+    for (const name of remote) {
+      branchMap.set(name, {
+        name,
+        protected: false,
+        isDefault: name === defaultBranch,
+        committedAt: null,
+        authorName: null,
+      })
+    }
+
+    // Override with local branches (they have commit dates)
     for (const { branch, lastCommitDate } of local) {
-      result.push({
+      branchMap.set(branch, {
         name: branch,
-        type: "local",
         protected: false,
         isDefault: branch === defaultBranch,
         committedAt: lastCommitDate
@@ -692,23 +478,18 @@ export function NewChatForm({
       })
     }
 
-    // Add remote branches
-    for (const name of remote) {
-      result.push({
-        name: name,
-        type: "remote",
-        protected: false,
-        isDefault: name === defaultBranch,
-        committedAt: null,
-        authorName: null,
-      })
-    }
-
-    // Sort: default first, then local, then remote, alphabetically
-    return result.sort((a, b) => {
+    // Sort: default first, then by commit date
+    return Array.from(branchMap.values()).sort((a, b) => {
       if (a.isDefault && !b.isDefault) return -1
       if (!a.isDefault && b.isDefault) return 1
-      if (a.type !== b.type) return a.type === "local" ? -1 : 1
+      // Sort by commit date (most recent first)
+      if (a.committedAt && b.committedAt) {
+        return (
+          new Date(b.committedAt).getTime() - new Date(a.committedAt).getTime()
+        )
+      }
+      if (a.committedAt) return -1
+      if (b.committedAt) return 1
       return a.name.localeCompare(b.name)
     })
   }, [branchesQuery.data])
@@ -753,26 +534,13 @@ export function NewChatForm({
       validatedProject?.id &&
       !selectedBranch
     ) {
-      // Find the default branch in the branches list to get its type
-      // Prefer local over remote if both exist
-      const defaultBranchObj = branches.find(
-        (b) => b.name === branchesQuery.data.defaultBranch && b.isDefault && b.type === "local",
-      ) || branches.find(
-        (b) => b.name === branchesQuery.data.defaultBranch && b.isDefault && b.type === "remote",
-      )
-      // Fallback to "local" if branch not found in list (shouldn't happen but prevents empty selector)
-      const branchType = defaultBranchObj?.type || "local"
-      setSelectedBranch(
-        branchesQuery.data.defaultBranch,
-        branchType,
-      )
+      setSelectedBranch(branchesQuery.data.defaultBranch)
     }
   }, [
     branchesQuery.data?.defaultBranch,
     validatedProject?.id,
     selectedBranch,
     setSelectedBranch,
-    branches,
   ])
 
   // Auto-focus input when NewChatForm is shown (when clicking "New Chat")
@@ -801,20 +569,12 @@ export function NewChatForm({
     prevSelectedDraftIdRef.current = selectedDraftId
 
     if (!selectedDraftId) {
-      // No draft selected - only clear if we had a draft before (user clicked "New Workspace")
-      // Don't clear if user is currently typing (currentDraftIdRef has a value)
-      if (hadDraftBefore) {
-        currentDraftIdRef.current = null
-        lastSavedTextRef.current = ""
-        if (editorRef.current) {
-          editorRef.current.clear()
-          setHasContent(false)
-        }
-
-        // Fetch remote branches in background when starting new workspace
-        if (validatedProject?.path) {
-          handleRefreshBranches()
-        }
+      // No draft selected - clear editor if we had a draft before (user clicked "New Workspace")
+      currentDraftIdRef.current = null
+      lastSavedTextRef.current = ""
+      if (hadDraftBefore && editorRef.current) {
+        editorRef.current.clear()
+        setHasContent(false)
       }
       return
     }
@@ -838,7 +598,7 @@ export function NewChatForm({
         return () => clearTimeout(timeoutId)
       }
     }
-  }, [selectedDraftId, handleRefreshBranches, validatedProject?.path])
+  }, [selectedDraftId])
 
   // Mark draft as visible when component unmounts (user navigates away)
   // This ensures the draft only appears in the sidebar after leaving the form
@@ -875,17 +635,12 @@ export function NewChatForm({
   const utils = trpc.useUtils()
   const createChatMutation = trpc.chats.create.useMutation({
     onSuccess: (data) => {
-      // Clear editor, images, pasted texts, and file contents cache only on success
+      // Clear editor and images only on success
       editorRef.current?.clear()
       clearImages()
-      clearPastedTexts()
-      fileContentsRef.current.clear()
       clearCurrentDraft()
       utils.chats.list.invalidate()
       setSelectedChatId(data.id)
-      // New chats are always local
-      setSelectedChatIsRemote(false)
-      setChatSourceMode("local")
       // Track this chat and its first subchat as just created for typewriter effect
       const ids = [data.id]
       if (data.subChats?.[0]?.id) {
@@ -958,18 +713,12 @@ export function NewChatForm({
     // Get value from uncontrolled editor
     let message = editorRef.current?.getValue() || ""
 
-    // Allow send if there's text, images, or pasted text files
-    const hasText = message.trim().length > 0
-    const hasImages = images.filter((img) => !img.isLoading && img.url).length > 0
-    const hasPastedTexts = pastedTexts.length > 0
-
-    if ((!hasText && !hasImages && !hasPastedTexts) || !selectedProject) {
+    if (!message.trim() || !selectedProject) {
       return
     }
 
     // Check if message is a slash command with arguments (e.g. "/hello world")
-    // Note: 's' flag makes '.' match newlines, so multi-line arguments are captured
-    const slashMatch = message.match(/^\/(\S+)\s*(.*)$/s)
+    const slashMatch = message.match(/^\/(\S+)\s*(.*)$/)
     if (slashMatch) {
       const [, commandName, args] = slashMatch
 
@@ -983,7 +732,7 @@ export function NewChatForm({
           const commands = await trpcUtils.commands.list.fetch({
             projectPath: validatedProject?.path,
           })
-          const cmd = commands.find((c) => c.name.toLowerCase() === commandName.toLowerCase())
+          const cmd = commands.find((c) => c.name === commandName)
 
           if (cmd) {
             const { content } = await trpcUtils.commands.getContent.fetch({
@@ -999,7 +748,7 @@ export function NewChatForm({
       }
     }
 
-    // Build message parts array (images first, then text, then hidden file contents)
+    // Build message parts array (images first, then text)
     type MessagePart =
       | { type: "text"; text: string }
       | {
@@ -1010,11 +759,6 @@ export function NewChatForm({
             filename?: string
             base64Data?: string
           }
-        }
-      | {
-          type: "file-content"
-          filePath: string
-          content: string
         }
 
     const parts: MessagePart[] = images
@@ -1029,36 +773,8 @@ export function NewChatForm({
         },
       }))
 
-    // Add pasted text as pasted mentions (format: pasted:size:preview|filepath)
-    // Using | as separator since filepath can contain colons
-    let finalMessage = message.trim()
-    if (pastedTexts.length > 0) {
-      const pastedMentions = pastedTexts
-        .map((pt) => {
-          // Sanitize preview to remove special characters that break mention parsing
-          const sanitizedPreview = pt.preview.replace(/[:\[\]|]/g, "")
-          return `@[${MENTION_PREFIXES.PASTED}${pt.size}:${sanitizedPreview}|${pt.filePath}]`
-        })
-        .join(" ")
-      finalMessage = pastedMentions + (finalMessage ? " " + finalMessage : "")
-    }
-
-    if (finalMessage) {
-      parts.push({ type: "text" as const, text: finalMessage })
-    }
-
-    // Add cached file contents as hidden parts (sent to agent but not displayed in UI)
-    // These are from dropped text files - content is embedded so agent sees it immediately
-    if (fileContentsRef.current.size > 0) {
-      for (const [mentionId, content] of fileContentsRef.current.entries()) {
-        // Extract file path from mentionId (file:local:path or file:external:path)
-        const filePath = mentionId.replace(/^file:(local|external):/, "")
-        parts.push({
-          type: "file-content" as const,
-          filePath,
-          content,
-        })
-      }
+    if (message.trim()) {
+      parts.push({ type: "text" as const, text: message.trim() })
     }
 
     // Create chat with selected project, branch, and initial message
@@ -1068,23 +784,19 @@ export function NewChatForm({
       initialMessageParts: parts.length > 0 ? parts : undefined,
       baseBranch:
         workMode === "worktree" ? selectedBranch || undefined : undefined,
-      branchType:
-        workMode === "worktree" ? selectedBranchType : undefined,
       useWorktree: workMode === "worktree",
-      mode: agentMode,
+      mode: isPlanMode ? "plan" : "agent",
     })
-    // Editor, images, and pasted texts are cleared in onSuccess callback
+    // Editor and images are cleared in onSuccess callback
   }, [
     selectedProject,
     validatedProject?.path,
     createChatMutation,
     hasContent,
     selectedBranch,
-    selectedBranchType,
     workMode,
     images,
-    pastedTexts,
-    agentMode,
+    isPlanMode,
     trpcUtils,
   ])
 
@@ -1217,36 +929,58 @@ export function NewChatForm({
       editorRef.current?.clearSlashCommand()
       setShowSlashDropdown(false)
 
-      // Handle builtin commands that change app state (no text input needed)
+      // Handle builtin commands
       if (command.category === "builtin") {
         switch (command.name) {
           case "clear":
             editorRef.current?.clear()
-            return
+            break
           case "plan":
-            if (agentMode !== "plan") {
-              setAgentMode("plan")
+            if (!isPlanMode) {
+              setIsPlanMode(true)
             }
-            return
+            break
           case "agent":
-            if (agentMode === "plan") {
-              setAgentMode("agent")
+            if (isPlanMode) {
+              setIsPlanMode(false)
             }
-            return
+            break
+          // Prompt-based commands - auto-send to agent
+          case "review":
+          case "pr-comments":
+          case "release-notes":
+          case "security-review": {
+            const prompt =
+              COMMAND_PROMPTS[command.name as keyof typeof COMMAND_PROMPTS]
+            if (prompt) {
+              editorRef.current?.setValue(prompt)
+              // Auto-send the prompt to agent
+              setTimeout(() => handleSend(), 0)
+            }
+            break
+          }
         }
+        return
       }
 
-      // For all other commands (builtin prompts and custom):
-      // insert the command and let user add arguments or press Enter to send
-      editorRef.current?.setValue(`/${command.name} `)
+      // Handle custom commands
+      if (command.argumentHint) {
+        // Command expects arguments - insert command and let user add args
+        editorRef.current?.setValue(`/${command.name} `)
+      } else if (command.prompt) {
+        // Command without arguments - send immediately
+        editorRef.current?.setValue(command.prompt)
+        setTimeout(() => handleSend(), 0)
+      }
     },
-    [agentMode],
+    [isPlanMode, setIsPlanMode, handleSend],
   )
 
-  // Paste handler for images, plain text, and large text (saved as files)
+  // Paste handler for images and plain text
+  // Uses async text insertion to prevent UI freeze with large text
   const handlePaste = useCallback(
-    (e: React.ClipboardEvent) => handlePasteEvent(e, handleAddAttachments, addPastedText),
-    [handleAddAttachments, addPastedText],
+    (e: React.ClipboardEvent) => handlePasteEvent(e, handleAddAttachments),
+    [handleAddAttachments],
   )
 
   // Drag and drop handlers
@@ -1265,128 +999,14 @@ export function NewChatForm({
     setIsDragOver(false)
   }, [])
 
-  // Text file extensions that should have content read and attached
-  const TEXT_FILE_EXTENSIONS = new Set([
-    // Code
-    ".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs",
-    ".py", ".rb", ".go", ".rs", ".java", ".kt", ".swift", ".c", ".cpp", ".h", ".hpp",
-    ".cs", ".php", ".lua", ".r", ".m", ".mm", ".scala", ".clj", ".ex", ".exs",
-    ".hs", ".elm", ".erl", ".fs", ".fsx", ".ml", ".v", ".vhdl", ".zig",
-    // Config/Data
-    ".json", ".yaml", ".yml", ".toml", ".xml", ".ini", ".env", ".conf", ".cfg",
-    ".properties", ".plist",
-    // Web
-    ".html", ".htm", ".css", ".scss", ".sass", ".less", ".vue", ".svelte", ".astro",
-    // Documentation
-    ".md", ".mdx", ".rst", ".txt", ".text",
-    // Graphics (text-based)
-    ".svg",
-    // Shell/Scripts
-    ".sh", ".bash", ".zsh", ".fish", ".ps1", ".bat", ".cmd",
-    // Other
-    ".sql", ".graphql", ".gql", ".prisma", ".dockerfile", ".makefile",
-    ".gitignore", ".gitattributes", ".editorconfig", ".eslintrc", ".prettierrc",
-  ])
-
-  const MAX_FILE_SIZE_FOR_CONTENT = 100 * 1024 // 100KB - files larger than this only get path mention
-
-  // Image extensions that should be handled as attachments (base64)
-  const IMAGE_EXTENSIONS = new Set([".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp"])
-
   const handleDrop = useCallback(
-    async (e: React.DragEvent) => {
+    (e: React.DragEvent) => {
       e.preventDefault()
       setIsDragOver(false)
-      const droppedFiles = Array.from(e.dataTransfer.files)
-
-      // Separate images from other files
-      const imageFiles: File[] = []
-      const otherFiles: File[] = []
-
-      for (const file of droppedFiles) {
-        const ext = file.name.includes(".") ? "." + file.name.split(".").pop()?.toLowerCase() : ""
-        if (IMAGE_EXTENSIONS.has(ext)) {
-          imageFiles.push(file)
-        } else {
-          otherFiles.push(file)
-        }
-      }
-
-      // Handle images via existing attachment system (base64)
-      if (imageFiles.length > 0) {
-        handleAddAttachments(imageFiles)
-      }
-
-      // Process other files - for text files, read content and add as file mention
-      for (const file of otherFiles) {
-        // Get file path using Electron's webUtils API (more reliable than file.path)
-        const filePath: string | undefined = window.webUtils?.getPathForFile?.(file) || (file as File & { path?: string }).path
-
-        let mentionId: string
-        let mentionPath: string
-
-        // Check if file is inside the project
-        if (
-          validatedProject?.path &&
-          filePath &&
-          filePath.startsWith(validatedProject.path)
-        ) {
-          // Project file: use relative path with file:local: prefix
-          const relativePath = filePath
-            .slice(validatedProject.path.length)
-            .replace(/^\//, "")
-          mentionId = `file:local:${relativePath}`
-          mentionPath = relativePath
-        } else if (filePath) {
-          // External file: use absolute path with file:external: prefix
-          mentionId = `file:external:${filePath}`
-          mentionPath = filePath
-        } else {
-          // Fallback: use filename only
-          mentionId = `file:external:${file.name}`
-          mentionPath = file.name
-        }
-
-        const fileName = file.name
-        const ext = fileName.includes(".") ? "." + fileName.split(".").pop()?.toLowerCase() : ""
-        // Files without extension are likely directories or special files - skip content reading
-        const hasExtension = ext !== ""
-        const isTextFile = hasExtension && TEXT_FILE_EXTENSIONS.has(ext)
-        const isSmallEnough = file.size <= MAX_FILE_SIZE_FOR_CONTENT
-
-        // For text files that are small enough, read content and store it
-        // Show file chip, content will be added to prompt on send
-        if (isTextFile && isSmallEnough && filePath) {
-          // Add file chip for visual representation
-          editorRef.current?.insertMention({
-            id: mentionId,
-            label: fileName,
-            path: mentionPath,
-            repository: "local",
-            type: "file",
-          })
-
-          // Read and cache content (will be added to prompt on send)
-          try {
-            const content = await trpcUtils.files.readFile.fetch({ filePath })
-            fileContentsRef.current.set(mentionId, content)
-          } catch (err) {
-            // If reading fails, chip is still there - agent can try to read via path
-            console.error(`[handleDrop] Failed to read file content ${filePath}:`, err)
-          }
-        } else {
-          // For binary files, large files - add as mention only
-          // mentionPath contains full absolute path for external files
-          editorRef.current?.insertMention({
-            id: mentionId,
-            label: fileName,
-            path: mentionPath,
-            repository: "local",
-            type: "file",
-          })
-        }
-      }
-
+      const files = Array.from(e.dataTransfer.files).filter((f) =>
+        f.type.startsWith("image/"),
+      )
+      handleAddAttachments(files)
       // Focus after state update - use double rAF to wait for React render
       requestAnimationFrame(() => {
         requestAnimationFrame(() => {
@@ -1394,12 +1014,12 @@ export function NewChatForm({
         })
       })
     },
-    [validatedProject?.path, handleAddAttachments, trpcUtils],
+    [handleAddAttachments],
   )
 
-  // Context items for images and pasted text files
+  // Context items for images
   const contextItems =
-    images.length > 0 || pastedTexts.length > 0 ? (
+    images.length > 0 ? (
       <div className="flex flex-wrap gap-[6px]">
         {(() => {
           // Build allImages array for gallery navigation
@@ -1424,16 +1044,6 @@ export function NewChatForm({
             />
           ))
         })()}
-        {pastedTexts.map((pt) => (
-          <AgentPastedTextItem
-            key={pt.id}
-            filePath={pt.filePath}
-            filename={pt.filename}
-            size={pt.size}
-            preview={pt.preview}
-            onRemove={() => removePastedText(pt.id)}
-          />
-        ))}
       </div>
     ) : null
 
@@ -1528,7 +1138,7 @@ export function NewChatForm({
                       onCloseSlashTrigger={handleCloseSlashTrigger}
                       onContentChange={handleContentChange}
                       onSubmit={handleSend}
-                      onShiftTab={toggleMode}
+                      onShiftTab={() => setIsPlanMode((prev) => !prev)}
                       placeholder="Plan, @ for context, / for commands"
                       className={cn(
                         "bg-transparent max-h-[240px] overflow-y-auto p-1",
@@ -1558,12 +1168,12 @@ export function NewChatForm({
                         }}
                       >
                         <DropdownMenuTrigger className="flex items-center gap-1.5 px-2 py-1 text-sm text-muted-foreground hover:text-foreground transition-[background-color,color] duration-150 ease-out rounded-md hover:bg-muted/50 outline-offset-2 focus-visible:outline focus-visible:outline-2 focus-visible:outline-ring/70">
-                          {agentMode === "plan" ? (
+                          {isPlanMode ? (
                             <PlanIcon className="h-3.5 w-3.5" />
                           ) : (
                             <AgentIcon className="h-3.5 w-3.5" />
                           )}
-                          <span>{agentMode === "plan" ? "Plan" : "Agent"}</span>
+                          <span>{isPlanMode ? "Plan" : "Agent"}</span>
                           <IconChevronDown className="h-3 w-3 shrink-0 opacity-50" />
                         </DropdownMenuTrigger>
                         <DropdownMenuContent
@@ -1580,7 +1190,7 @@ export function NewChatForm({
                                 tooltipTimeoutRef.current = null
                               }
                               setModeTooltip(null)
-                              setAgentMode("agent")
+                              setIsPlanMode(false)
                               setModeDropdownOpen(false)
                             }}
                             className="justify-between gap-2"
@@ -1624,7 +1234,7 @@ export function NewChatForm({
                               <AgentIcon className="w-4 h-4 text-muted-foreground" />
                               <span>Agent</span>
                             </div>
-                            {agentMode !== "plan" && (
+                            {!isPlanMode && (
                               <CheckIcon className="h-3.5 w-3.5 ml-auto shrink-0" />
                             )}
                           </DropdownMenuItem>
@@ -1636,7 +1246,7 @@ export function NewChatForm({
                                 tooltipTimeoutRef.current = null
                               }
                               setModeTooltip(null)
-                              setAgentMode("plan")
+                              setIsPlanMode(true)
                               setModeDropdownOpen(false)
                             }}
                             className="justify-between gap-2"
@@ -1679,7 +1289,7 @@ export function NewChatForm({
                               <PlanIcon className="w-4 h-4 text-muted-foreground" />
                               <span>Plan</span>
                             </div>
-                            {agentMode === "plan" && (
+                            {isPlanMode && (
                               <CheckIcon className="h-3.5 w-3.5 ml-auto shrink-0" />
                             )}
                           </DropdownMenuItem>
@@ -1830,20 +1440,16 @@ export function NewChatForm({
                           e.target.value = "" // Reset to allow same file selection
                         }}
                       />
-                      {/* Voice wave indicator or Attachment button */}
-                      {isVoiceRecording ? (
-                        <VoiceWaveIndicator isRecording={isVoiceRecording} audioLevel={voiceAudioLevel} />
-                      ) : (
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          className="h-7 w-7 rounded-sm outline-offset-2 focus-visible:outline focus-visible:outline-2 focus-visible:outline-ring/70"
-                          onClick={() => fileInputRef.current?.click()}
-                          disabled={images.length >= 5}
-                        >
-                          <AttachIcon className="h-4 w-4" />
-                        </Button>
-                      )}
+                      {/* Attachment button */}
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-7 w-7 rounded-sm outline-offset-2 focus-visible:outline focus-visible:outline-2 focus-visible:outline-ring/70"
+                        onClick={() => fileInputRef.current?.click()}
+                        disabled={images.length >= 5}
+                      >
+                        <AttachIcon className="h-4 w-4" />
+                      </Button>
                       <div className="ml-1">
                         <AgentSendButton
                           isStreaming={false}
@@ -1854,14 +1460,7 @@ export function NewChatForm({
                             !hasContent || !selectedProject || isUploading,
                           )}
                           onClick={handleSend}
-                          mode={agentMode}
-                          hasContent={hasContent}
-                          showVoiceInput={isVoiceAvailable}
-                          isRecording={isVoiceRecording}
-                          isTranscribing={isTranscribing}
-                          onVoiceMouseDown={handleVoiceMouseDown}
-                          onVoiceMouseUp={handleVoiceMouseUp}
-                          onVoiceMouseLeave={handleVoiceMouseLeave}
+                          isPlanMode={isPlanMode}
                         />
                       </div>
                     </div>
@@ -1963,14 +1562,13 @@ export function NewChatForm({
                                   const branch =
                                     filteredBranches[virtualItem.index]
                                   const isSelected =
-                                    (selectedBranch === branch.name &&
-                                      selectedBranchType === branch.type) ||
-                                    (!selectedBranch && branch.isDefault && branch.type === "local")
+                                    selectedBranch === branch.name ||
+                                    (!selectedBranch && branch.isDefault)
                                   return (
                                     <button
-                                      key={`${branch.type}-${branch.name}`}
+                                      key={branch.name}
                                       onClick={() => {
-                                        setSelectedBranch(branch.name, branch.type)
+                                        setSelectedBranch(branch.name)
                                         setBranchPopoverOpen(false)
                                         setBranchSearch("")
                                       }}
@@ -1988,16 +1586,6 @@ export function NewChatForm({
                                       <BranchIcon className="h-4 w-4 text-muted-foreground shrink-0" />
                                       <span className="truncate flex-1">
                                         {branch.name}
-                                      </span>
-                                      <span
-                                        className={cn(
-                                          "text-[10px] px-1.5 py-0.5 rounded shrink-0",
-                                          branch.type === "local"
-                                            ? "bg-blue-500/10 text-blue-500"
-                                            : "bg-orange-500/10 text-orange-500",
-                                        )}
-                                      >
-                                        {branch.type}
                                       </span>
                                       {branch.committedAt && (
                                         <span className="text-xs text-muted-foreground/70 shrink-0">
@@ -2035,7 +1623,7 @@ export function NewChatForm({
                         branchesQuery.data?.defaultBranch || "main"
                       }
                       onBranchCreated={(branchName) => {
-                        setSelectedBranch(branchName, "local")
+                        setSelectedBranch(branchName)
                       }}
                     />
                   )}
@@ -2106,7 +1694,7 @@ export function NewChatForm({
                   searchText={slashSearchText}
                   position={slashPosition}
                   projectPath={validatedProject?.path}
-                  mode={agentMode}
+                  isPlanMode={isPlanMode}
                   disabledCommands={["clear"]}
                 />
               </div>

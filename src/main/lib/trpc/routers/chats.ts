@@ -16,7 +16,6 @@ import {
   fetchGitHubPRStatus,
   getWorktreeDiff,
   removeWorktree,
-  sanitizeProjectName,
 } from "../../git"
 import { computeContentHash, gitCache } from "../../git/cache"
 import { splitUnifiedDiffByFile } from "../../git/diff-parser"
@@ -265,17 +264,10 @@ export const chatsRouter = router({
                   base64Data: z.string().optional(),
                 }),
               }),
-              // Hidden file content - sent to agent but not displayed in UI
-              z.object({
-                type: z.literal("file-content"),
-                filePath: z.string(),
-                content: z.string(),
-              }),
             ]),
           )
           .optional(),
         baseBranch: z.string().optional(), // Branch to base the worktree off
-        branchType: z.enum(["local", "remote"]).optional(), // Whether baseBranch is local or remote
         useWorktree: z.boolean().default(true), // If false, work directly in project dir
         mode: z.enum(["plan", "agent"]).default("agent"),
       }),
@@ -346,15 +338,12 @@ export const chatsRouter = router({
         console.log(
           "[chats.create] creating worktree with baseBranch:",
           input.baseBranch,
-          "type:",
-          input.branchType,
         )
         const result = await createWorktreeForChat(
           project.path,
-          sanitizeProjectName(project.name),
+          project.id,
           chat.id,
           input.baseBranch,
-          input.branchType,
         )
         console.log("[chats.create] worktree result:", result)
 
@@ -722,19 +711,7 @@ export const chatsRouter = router({
       }
 
       // 5. Truncate messages to include up to and including the target message
-      let truncatedMessages = messages.slice(0, targetIndex + 1)
-
-      // 5.5. Clear any old shouldResume flags, then set on the target message
-      truncatedMessages = truncatedMessages.map((m: any, i: number) => {
-        const { shouldResume, ...restMeta } = m.metadata || {}
-        return {
-          ...m,
-          metadata: {
-            ...restMeta,
-            ...(i === truncatedMessages.length - 1 && { shouldResume: true }),
-          },
-        }
-      })
+      const truncatedMessages = messages.slice(0, targetIndex + 1)
 
       // 6. Update the sub-chat with truncated messages
       db.update(subChats)
@@ -1084,9 +1061,8 @@ export const chatsRouter = router({
 
       // Fallback: Generate commit message with conventional commits style
       const fileNames = files.map((f) => {
-        const filePath = f.newPath !== "/dev/null" ? f.newPath : f.oldPath
-        // Note: Git diff paths always use forward slashes
-        return path.posix.basename(filePath) || filePath
+        const path = f.newPath !== "/dev/null" ? f.newPath : f.oldPath
+        return path.split("/").pop() || path
       })
 
       // Detect commit type from file changes
@@ -1529,7 +1505,7 @@ export const chatsRouter = router({
 
   /**
    * Get sub-chats with pending plan approvals
-   * Uses mode field as source of truth: mode="plan" + completed ExitPlanMode = pending approval
+   * Parses messages to find ExitPlanMode tool calls without subsequent "Implement plan" user message
    * Logic must match active-chat.tsx hasUnapprovedPlan
    * REQUIRES openSubChatIds to avoid loading all sub-chats (performance optimization)
    */
@@ -1543,12 +1519,11 @@ export const chatsRouter = router({
       return []
     }
 
-    // Query only the specified sub-chats, including mode for filtering
+    // Query only the specified sub-chats (VS Code style: load only what's needed)
     const allSubChats = db
       .select({
         chatId: subChats.chatId,
         subChatId: subChats.id,
-        mode: subChats.mode,
         messages: subChats.messages,
       })
       .from(subChats)
@@ -1558,13 +1533,7 @@ export const chatsRouter = router({
     const pendingApprovals: Array<{ subChatId: string; chatId: string }> = []
 
     for (const row of allSubChats) {
-      if (!row.subChatId || !row.chatId) continue
-
-      // If mode is "agent", plan is already approved - skip
-      if (row.mode === "agent") continue
-
-      // Only check for ExitPlanMode in plan mode sub-chats
-      if (!row.messages) continue
+      if (!row.messages || !row.subChatId || !row.chatId) continue
 
       try {
         const messages = JSON.parse(row.messages) as Array<{
@@ -1573,23 +1542,30 @@ export const chatsRouter = router({
           parts?: Array<{
             type: string
             text?: string
-            output?: unknown
           }>
         }>
 
-        // Check if there's a completed ExitPlanMode in messages
-        const hasCompletedExitPlanMode = (): boolean => {
+        // Traverse messages from end to find unapproved ExitPlanMode
+        // Logic matches active-chat.tsx hasUnapprovedPlan
+        const checkHasUnapprovedPlan = (): boolean => {
           for (let i = messages.length - 1; i >= 0; i--) {
             const msg = messages[i]
             if (!msg) continue
 
-            // If assistant message with completed ExitPlanMode, we found an unapproved plan
+            // If user message says "Build plan" or "Implement plan" (exact match), plan is already approved
+            if (msg.role === "user") {
+              const textPart = msg.parts?.find((p) => p.type === "text")
+              const text = textPart?.text || ""
+              const normalizedText = text.trim().toLowerCase()
+              if (normalizedText === "implement plan" || normalizedText === "build plan") {
+                return false // Plan was approved
+              }
+            }
+
+            // If assistant message with ExitPlanMode that has output.plan, we found an unapproved plan
             if (msg.role === "assistant" && msg.parts) {
-              const exitPlanPart = msg.parts.find(
-                (p) => p.type === "tool-ExitPlanMode"
-              )
-              // Check if ExitPlanMode is completed (has output, even if empty)
-              if (exitPlanPart && exitPlanPart.output !== undefined) {
+              const exitPlanPart = msg.parts.find((p) => p.type === "tool-ExitPlanMode") as { output?: { plan?: string } } | undefined
+              if (exitPlanPart?.output?.plan) {
                 return true
               }
             }
@@ -1597,7 +1573,9 @@ export const chatsRouter = router({
           return false
         }
 
-        if (hasCompletedExitPlanMode()) {
+        const hasUnapprovedPlan = checkHasUnapprovedPlan()
+
+        if (hasUnapprovedPlan) {
           pendingApprovals.push({
             subChatId: row.subChatId,
             chatId: row.chatId,
@@ -1642,314 +1620,6 @@ export const chatsRouter = router({
         // Worktree path doesn't exist or git error
         console.warn("[getWorktreeStatus] Error checking worktree:", error)
         return { hasWorktree: false, uncommittedCount: 0 }
-      }
-    }),
-
-  /**
-   * Export a chat conversation to various formats.
-   * Supports exporting entire workspace or a single sub-chat.
-   * Useful for sharing, backup, or importing into other tools.
-   */
-  exportChat: publicProcedure
-    .input(
-      z.object({
-        chatId: z.string(),
-        subChatId: z.string().optional(), // If provided, export only this sub-chat
-        format: z.enum(["json", "markdown", "text"]).default("markdown"),
-      }),
-    )
-    .query(async ({ input }) => {
-      const db = getDatabase()
-      const chat = db
-        .select()
-        .from(chats)
-        .where(eq(chats.id, input.chatId))
-        .get()
-
-      if (!chat) {
-        throw new Error("Chat not found")
-      }
-
-      const project = db
-        .select()
-        .from(projects)
-        .where(eq(projects.id, chat.projectId))
-        .get()
-
-      // Query sub-chats: either a specific one or all for the chat
-      let chatSubChats
-      if (input.subChatId) {
-        // Export single sub-chat
-        const singleSubChat = db
-          .select()
-          .from(subChats)
-          .where(and(
-            eq(subChats.id, input.subChatId),
-            eq(subChats.chatId, input.chatId) // Ensure sub-chat belongs to this chat
-          ))
-          .get()
-
-        if (!singleSubChat) {
-          throw new Error("Sub-chat not found")
-        }
-        chatSubChats = [singleSubChat]
-      } else {
-        // Export all sub-chats
-        chatSubChats = db
-          .select()
-          .from(subChats)
-          .where(eq(subChats.chatId, input.chatId))
-          .orderBy(subChats.createdAt)
-          .all()
-      }
-
-      // parse messages from sub-chats
-      const allMessages: Array<{
-        subChatId: string
-        subChatName: string | null
-        messages: Array<{
-          id: string
-          role: string
-          parts: Array<{ type: string; text?: string; [key: string]: any }>
-          metadata?: any
-        }>
-      }> = []
-
-      for (const subChat of chatSubChats) {
-        try {
-          const messages = JSON.parse(subChat.messages || "[]")
-          allMessages.push({
-            subChatId: subChat.id,
-            subChatName: subChat.name,
-            messages,
-          })
-        } catch {
-          // skip invalid json
-        }
-      }
-
-      // Sanitize filename - remove characters that are invalid on Windows/macOS/Linux
-      const sanitizeFilename = (name: string): string => {
-        return name
-          .replace(/[<>:"/\\|?*\x00-\x1F]/g, "_") // Invalid chars
-          .replace(/\s+/g, "_") // Replace spaces with underscores
-          .replace(/_+/g, "_") // Collapse multiple underscores
-          .replace(/^_|_$/g, "") // Trim underscores from ends
-          .slice(0, 100) // Limit length
-          || "chat" // Fallback if empty
-      }
-
-      // Use sub-chat name if exporting single sub-chat, otherwise use chat name
-      const exportName = input.subChatId && chatSubChats[0]?.name
-        ? `${chat.name || "chat"}-${chatSubChats[0].name}`
-        : (chat.name || "chat")
-      const safeFilename = sanitizeFilename(exportName)
-
-      if (input.format === "json") {
-        return {
-          format: "json" as const,
-          content: JSON.stringify(
-            {
-              exportedAt: new Date().toISOString(),
-              chat: {
-                id: chat.id,
-                name: chat.name,
-                createdAt: chat.createdAt,
-                branch: chat.branch,
-                baseBranch: chat.baseBranch,
-                prUrl: chat.prUrl,
-              },
-              project: project
-                ? {
-                    id: project.id,
-                    name: project.name,
-                    path: project.path,
-                  }
-                : null,
-              conversations: allMessages,
-            },
-            null,
-            2,
-          ),
-          filename: `${safeFilename}-${chat.id.slice(0, 8)}.json`,
-        }
-      }
-
-      if (input.format === "text") {
-        // plain text format
-        let text = `# ${chat.name || "Untitled Chat"}\n`
-        text += `exported: ${new Date().toISOString()}\n`
-        if (project) {
-          text += `project: ${project.name}\n`
-        }
-        text += `\n---\n\n`
-
-        for (const subChatData of allMessages) {
-          if (subChatData.subChatName) {
-            text += `## ${subChatData.subChatName}\n\n`
-          }
-
-          for (const msg of subChatData.messages) {
-            const role = msg.role === "user" ? "You" : "Assistant"
-            text += `${role}:\n`
-
-            for (const part of msg.parts || []) {
-              if (part.type === "text" && part.text) {
-                text += `${part.text}\n`
-              } else if (part.type?.startsWith("tool-") && part.toolName) {
-                text += `[used ${part.toolName} tool]\n`
-              }
-            }
-            text += "\n"
-          }
-        }
-
-        return {
-          format: "text" as const,
-          content: text,
-          filename: `${safeFilename}-${chat.id.slice(0, 8)}.txt`,
-        }
-      }
-
-      // markdown format (default)
-      let markdown = `# ${chat.name || "Untitled Chat"}\n\n`
-      markdown += `**Exported:** ${new Date().toISOString()}\n\n`
-      if (project) {
-        markdown += `**Project:** ${project.name}\n\n`
-      }
-      if (chat.branch) {
-        markdown += `**Branch:** \`${chat.branch}\`\n\n`
-      }
-      if (chat.prUrl) {
-        markdown += `**PR:** [${chat.prUrl}](${chat.prUrl})\n\n`
-      }
-      markdown += `---\n\n`
-
-      for (const subChatData of allMessages) {
-        if (subChatData.subChatName) {
-          markdown += `## ${subChatData.subChatName}\n\n`
-        }
-
-        for (const msg of subChatData.messages) {
-          const role = msg.role === "user" ? "**You**" : "**Assistant**"
-          markdown += `### ${role}\n\n`
-
-          for (const part of msg.parts || []) {
-            if (part.type === "text" && part.text) {
-              markdown += `${part.text}\n\n`
-            } else if (part.type?.startsWith("tool-") && part.toolName) {
-              const toolName = part.toolName
-              if (toolName === "Bash" && part.input?.command) {
-                markdown += `\`\`\`bash\n${part.input.command}\n\`\`\`\n\n`
-              } else if (
-                (toolName === "Edit" || toolName === "Write") &&
-                part.input?.file_path
-              ) {
-                markdown += `> Modified: \`${part.input.file_path}\`\n\n`
-              } else if (toolName === "Read" && part.input?.file_path) {
-                markdown += `> Read: \`${part.input.file_path}\`\n\n`
-              } else {
-                markdown += `> *Used ${toolName} tool*\n\n`
-              }
-            }
-          }
-        }
-      }
-
-      return {
-        format: "markdown" as const,
-        content: markdown,
-        filename: `${safeFilename}-${chat.id.slice(0, 8)}.md`,
-      }
-    }),
-
-  /**
-   * Get basic stats for a chat (message count, tool usage, etc.)
-   * Supports both full chat stats and individual sub-chat stats.
-   * Useful for showing chat summary in sidebar or export dialogs.
-   */
-  getChatStats: publicProcedure
-    .input(z.object({
-      chatId: z.string(),
-      subChatId: z.string().optional(), // If provided, return stats for only this sub-chat
-    }))
-    .query(({ input }) => {
-      const db = getDatabase()
-
-      let chatSubChats
-      if (input.subChatId) {
-        // Get stats for a single sub-chat
-        const singleSubChat = db
-          .select()
-          .from(subChats)
-          .where(and(
-            eq(subChats.id, input.subChatId),
-            eq(subChats.chatId, input.chatId)
-          ))
-          .get()
-
-        chatSubChats = singleSubChat ? [singleSubChat] : []
-      } else {
-        // Get stats for all sub-chats
-        chatSubChats = db
-          .select()
-          .from(subChats)
-          .where(eq(subChats.chatId, input.chatId))
-          .all()
-      }
-
-      let messageCount = 0
-      let userMessageCount = 0
-      let assistantMessageCount = 0
-      let toolCalls = 0
-      const toolUsage: Record<string, number> = {}
-      let totalInputTokens = 0
-      let totalOutputTokens = 0
-
-      for (const subChat of chatSubChats) {
-        try {
-          const messages = JSON.parse(subChat.messages || "[]") as Array<{
-            role: string
-            parts?: Array<{ type: string; toolName?: string }>
-            metadata?: { usage?: { inputTokens?: number; outputTokens?: number } }
-          }>
-
-          for (const msg of messages) {
-            messageCount++
-            if (msg.role === "user") {
-              userMessageCount++
-            } else if (msg.role === "assistant") {
-              assistantMessageCount++
-
-              // count tool calls
-              for (const part of msg.parts || []) {
-                if (part.type?.startsWith("tool-") && part.toolName) {
-                  toolCalls++
-                  toolUsage[part.toolName] = (toolUsage[part.toolName] || 0) + 1
-                }
-              }
-
-              // aggregate token usage
-              if (msg.metadata?.usage) {
-                totalInputTokens += msg.metadata.usage.inputTokens || 0
-                totalOutputTokens += msg.metadata.usage.outputTokens || 0
-              }
-            }
-          }
-        } catch {
-          // skip invalid json
-        }
-      }
-
-      return {
-        messageCount,
-        userMessageCount,
-        assistantMessageCount,
-        toolCalls,
-        toolUsage,
-        totalInputTokens,
-        totalOutputTokens,
-        subChatCount: chatSubChats.length,
       }
     }),
 })

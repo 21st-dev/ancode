@@ -75,6 +75,14 @@ export function createTransformer(options?: { emitSdkMessageUuid?: boolean; isUs
   }
 
   return function* transform(msg: any): Generator<UIMessageChunk> {
+    // Emit UUID early for rollback support (before abort can happen)
+    // This ensures frontend has sdkMessageUuid even if streaming is interrupted
+    if (emitSdkMessageUuid && msg.type === "assistant" && msg.uuid) {
+      yield {
+        type: "message-metadata",
+        messageMetadata: { sdkMessageUuid: msg.uuid }
+      }
+    }
 
     // Debug: log ALL message types to understand what SDK sends
     if (isUsingOllama) {
@@ -198,7 +206,7 @@ export function createTransformer(options?: { emitSdkMessageUuid?: boolean; isUs
         yield {
           type: "tool-input-start",
           toolCallId: currentToolCallId,
-          toolName: currentToolName,
+          toolName: currentToolName!, // Non-null: just assigned above with fallback
         }
       }
 

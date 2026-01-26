@@ -1,7 +1,7 @@
 "use client"
 
 import { memo, useState, useMemo, useEffect, useRef, useCallback } from "react"
-import { useAtom, useAtomValue } from "jotai"
+import { useAtom } from "jotai"
 import { TextShimmer } from "../../../components/ui/text-shimmer"
 import {
   IconSpinner,
@@ -18,7 +18,6 @@ import { cn } from "../../../lib/utils"
 import { Circle } from "lucide-react"
 import { AgentToolCall } from "./agent-tool-call"
 import { currentTodosAtomFamily } from "../atoms"
-import { alwaysExpandTodoListAtom } from "../../../lib/atoms"
 
 export interface TodoItem {
   content: string
@@ -311,9 +310,6 @@ export const AgentTodoTool = memo(function AgentTodoTool({
   chatStatus,
   subChatId,
 }: AgentTodoToolProps) {
-  // User preference for always expanded to-do list
-  const alwaysExpandTodoList = useAtomValue(alwaysExpandTodoListAtom)
-
   // Synced todos state - scoped per subChatId to prevent cross-chat conflicts
   // Uses a stable key to ensure proper isolation between different sub-chats
   const todosAtom = useMemo(
@@ -324,42 +320,20 @@ export const AgentTodoTool = memo(function AgentTodoTool({
   const syncedTodos = todoState.todos
   const creationToolCallId = todoState.creationToolCallId
 
-  // Use refs to track values without triggering effect re-runs
+  // Use ref to track syncedTodos without triggering effect re-runs
   // This prevents infinite loops when the effect updates the atom
   const syncedTodosRef = useRef(syncedTodos)
   syncedTodosRef.current = syncedTodos
-
-  const creationToolCallIdRef = useRef(creationToolCallId)
-  creationToolCallIdRef.current = creationToolCallId
 
   // Get todos from input or output.newTodos
   const rawOldTodos = part.output?.oldTodos || []
   const newTodos = part.input?.todos || part.output?.newTodos || []
 
-  // Check if we're still streaming input (data not yet complete)
-  const isStreaming = part.state === "input-streaming"
-
   // Determine if this is the creation tool call
   // A tool call is the "creation" if:
   // 1. It's the first tool call (creationToolCallId is null) OR
   // 2. It matches the stored creationToolCallId
-  // 3. NEW: This is a new generation - detected when:
-  //    - output.oldTodos explicitly exists and is empty (server confirmed this is a new list)
-  //    - we have newTodos (creation always has new todos)
-  //    - there are existing syncedTodos from previous generation
-  //    - this is a different tool call than the stored creation one
-  // IMPORTANT: Check if output.oldTodos is explicitly an empty array, not just missing
-  // If output doesn't exist yet or oldTodos is undefined, we can't determine if it's new generation
-  const hasOutputWithEmptyOldTodos = part.output !== undefined &&
-    'oldTodos' in part.output &&
-    Array.isArray(part.output.oldTodos) &&
-    part.output.oldTodos.length === 0
-  const isNewGeneration = hasOutputWithEmptyOldTodos &&
-    newTodos.length > 0 &&
-    syncedTodos.length > 0 &&
-    creationToolCallId !== null &&
-    creationToolCallId !== part.toolCallId
-  const isCreationToolCall = creationToolCallId === null || creationToolCallId === part.toolCallId || isNewGeneration
+  const isCreationToolCall = creationToolCallId === null || creationToolCallId === part.toolCallId
 
   // Use syncedTodos as fallback for oldTodos when output hasn't arrived yet
   // This prevents flickering: without this, when a new tool call arrives with
@@ -386,17 +360,9 @@ export const AgentTodoTool = memo(function AgentTodoTool({
     [oldTodos, newTodos],
   )
 
-  // State for expanded/collapsed - initialize based on user preference
-  const [isExpanded, setIsExpanded] = useState(alwaysExpandTodoList)
+  // State for expanded/collapsed
+  const [isExpanded, setIsExpanded] = useState(false)
   const { isPending } = getToolStatus(part, chatStatus)
-
-  // Sync isExpanded with alwaysExpandTodoList preference when it changes
-  // Only auto-expand, don't auto-collapse (respect user's manual collapse)
-  useEffect(() => {
-    if (alwaysExpandTodoList && !isExpanded) {
-      setIsExpanded(true)
-    }
-  }, [alwaysExpandTodoList]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // Memoized click handlers to prevent inline function re-creation
   const handleToggleExpand = useCallback(() => {
@@ -422,38 +388,15 @@ export const AgentTodoTool = memo(function AgentTodoTool({
   // This keeps the creation tool in sync with all updates
   useEffect(() => {
     if (newTodos.length > 0) {
-      // Use refs to get current values without adding them to dependencies
-      // This prevents infinite loops: effect updates atom -> state changes -> effect runs again
+      // Use ref to get current syncedTodos without adding it to dependencies
+      // This prevents infinite loops: effect updates atom -> syncedTodos changes -> effect runs again
       const currentSyncedTodos = syncedTodosRef.current
-      const currentCreationToolCallId = creationToolCallIdRef.current
-
-      // Compute these inside the effect to avoid dependency issues
-      // These values depend on syncedTodos/creationToolCallId which change when we call setTodoState
-      const hasOutputWithEmptyOldTodos = part.output !== undefined &&
-        'oldTodos' in part.output &&
-        Array.isArray(part.output.oldTodos) &&
-        part.output.oldTodos.length === 0
-
-      const isNewGenerationLocal = hasOutputWithEmptyOldTodos &&
-        newTodos.length > 0 &&
-        currentSyncedTodos.length > 0 &&
-        currentCreationToolCallId !== null &&
-        currentCreationToolCallId !== part.toolCallId
-
-      const isCreationToolCallLocal = currentCreationToolCallId === null ||
-        currentCreationToolCallId === part.toolCallId ||
-        isNewGenerationLocal
 
       // Only update if:
       // 1. This is the creation tool call (always update), OR
       // 2. newTodos has at least as many items as syncedTodos (prevents partial streaming overwrites)
       // During streaming, JSON parsing may return partial arrays, causing temporary drops in length
-      const shouldUpdate = isCreationToolCallLocal || newTodos.length >= currentSyncedTodos.length
-
-      // If this is a new generation, reset the creationToolCallId to this tool call
-      const newCreationId = isNewGenerationLocal
-        ? part.toolCallId
-        : (currentCreationToolCallId === null ? part.toolCallId : currentCreationToolCallId)
+      const shouldUpdate = isCreationToolCall || newTodos.length >= currentSyncedTodos.length
 
       if (shouldUpdate) {
         // Prevent infinite loop: check if todos actually changed before updating
@@ -461,52 +404,31 @@ export const AgentTodoTool = memo(function AgentTodoTool({
         const newTodosJson = JSON.stringify(newTodos)
         const syncedTodosJson = JSON.stringify(currentSyncedTodos)
 
-        if (newTodosJson !== syncedTodosJson || currentCreationToolCallId !== newCreationId) {
+        if (newTodosJson !== syncedTodosJson) {
+          const newCreationId = creationToolCallId === null ? part.toolCallId : creationToolCallId
           setTodoState({ todos: newTodos, creationToolCallId: newCreationId })
         }
       }
     }
-  }, [newTodos, setTodoState, part.toolCallId, part.output])
+  }, [newTodos, setTodoState, creationToolCallId, part.toolCallId, isCreationToolCall])
 
-  // For UPDATE tool calls while streaming, show "Updating..." placeholder
-  // This check MUST come BEFORE the newTodos.length === 0 check
-  // Otherwise we return null when newTodos is empty during streaming updates
-  if (!isCreationToolCall && isStreaming) {
-    return (
-      <div className="flex items-start gap-1.5 py-0.5 rounded-md px-2">
-        <div className="flex-1 min-w-0 flex items-center gap-1.5">
-          <div className="text-xs text-muted-foreground flex items-center gap-1.5 min-w-0">
-            <span className="font-medium whitespace-nowrap flex-shrink-0">
-              <TextShimmer
-                as="span"
-                duration={1.2}
-                className="inline-flex items-center text-xs leading-none h-4 m-0"
-              >
-                Updating to-dos...
-              </TextShimmer>
-            </span>
-          </div>
-        </div>
-      </div>
-    )
-  }
+  // Check if we're still streaming input (data not yet complete)
+  const isStreaming = part.state === "input-streaming"
 
-  // Early streaming state - show placeholder for CREATION only
+  // Early streaming state - show placeholder
   if (
     newTodos.length === 0 ||
     (isStreaming && !part.input?.todos)
   ) {
     // For update tool calls (not creation), return null to avoid showing placeholder
-    // Note: This branch is only reached when !isStreaming (update streaming handled above)
     if (!isCreationToolCall) {
       return null
     }
 
     // For creation tool calls, show the placeholder - also sticky with top offset
-    // z-[5] ensures todo stays below user message (z-10) when both are sticky
     return (
       <div
-        className="mx-2 sticky z-[5] bg-background"
+        className="mx-2 sticky bg-background"
         style={{ top: 'calc(var(--user-message-height, 28px) - 29px)' }}
       >
         <div className="rounded-lg border border-border bg-muted/30 px-2.5 py-1.5">
@@ -531,9 +453,30 @@ export const AgentTodoTool = memo(function AgentTodoTool({
     )
   }
 
+  // For UPDATE tool calls while streaming, show "Updating..." placeholder
+  // This prevents showing intermediate/incorrect states during streaming
+  if (!isCreationToolCall && isStreaming) {
+    return (
+      <div className="flex items-start gap-1.5 py-0.5 rounded-md px-2">
+        <div className="flex-1 min-w-0 flex items-center gap-1.5">
+          <div className="text-xs text-muted-foreground flex items-center gap-1.5 min-w-0">
+            <span className="font-medium whitespace-nowrap flex-shrink-0">
+              <TextShimmer
+                as="span"
+                duration={1.2}
+                className="inline-flex items-center text-xs leading-none h-4 m-0"
+              >
+                Updating todos...
+              </TextShimmer>
+            </span>
+          </div>
+        </div>
+      </div>
+    )
+  }
+
   // COMPACT MODE: Single update - render as simple tool call
-  // Skip compact mode if user prefers always expanded and this is the creation tool call
-  if (changes.type === "single" && !(alwaysExpandTodoList && isCreationToolCall)) {
+  if (changes.type === "single") {
     const change = changes.items[0]
     // Use stable icon reference from TOOL_CALL_ICONS map
     const IconComponent = TOOL_CALL_ICONS[change.newStatus] || TOOL_CALL_ICONS.pending
@@ -556,8 +499,7 @@ export const AgentTodoTool = memo(function AgentTodoTool({
   }
 
   // COMPACT MODE: Multiple updates - render as custom component with icons
-  // Skip compact mode if user prefers always expanded and this is the creation tool call
-  if (changes.type === "multiple" && !(alwaysExpandTodoList && isCreationToolCall)) {
+  if (changes.type === "multiple") {
     const completedChanges = changes.items.filter(
       (c) => c.newStatus === "completed",
     ).length
@@ -566,7 +508,7 @@ export const AgentTodoTool = memo(function AgentTodoTool({
     ).length
 
     // Build summary title
-    let summaryTitle = "Updated to-dos"
+    let summaryTitle = "Updated todos"
     if (completedChanges > 0 && startedChanges === 0) {
       summaryTitle = `Finished ${completedChanges} ${completedChanges === 1 ? "task" : "tasks"}`
     } else if (startedChanges > 0 && completedChanges === 0) {
@@ -623,14 +565,7 @@ export const AgentTodoTool = memo(function AgentTodoTool({
   const completedCount = displayTodos.filter(
     (t) => t.status === "completed",
   ).length
-  const inProgressCount = displayTodos.filter(
-    (t) => t.status === "in_progress",
-  ).length
   const totalTodos = displayTodos.length
-
-  // For visual progress, count completed + in_progress tasks
-  // This way when a task starts, the segment fills immediately
-  const visualProgress = completedCount + inProgressCount
 
   // Find current task (first in_progress, or first pending if none in progress)
   const currentTask = displayTodos.find((t) => t.status === "in_progress")
@@ -646,8 +581,7 @@ export const AgentTodoTool = memo(function AgentTodoTool({
       className={cn(
         "mx-2",
         // Make entire creation todo sticky
-        // z-[5] ensures todo stays below user message (z-10) when both are sticky
-        isCreationToolCall && "sticky z-[5] bg-background"
+        isCreationToolCall && "sticky bg-background"
       )}
       style={isCreationToolCall ? {
         // Offset so TOP BLOCK (title) goes fully under user message
@@ -661,7 +595,7 @@ export const AgentTodoTool = memo(function AgentTodoTool({
         onClick={handleToggleExpand}
         role="button"
         aria-expanded={isExpanded}
-        aria-label={`To-do list with ${totalTodos} items. Click to ${isExpanded ? "collapse" : "expand"}`}
+        aria-label={`Todo list with ${totalTodos} items. Click to ${isExpanded ? "collapse" : "expand"}`}
         tabIndex={0}
         onKeyDown={handleKeyDown}
       >
@@ -671,7 +605,7 @@ export const AgentTodoTool = memo(function AgentTodoTool({
             To-dos
           </span>
           <span className="text-xs text-muted-foreground truncate flex-1">
-            {displayTodos[0]?.content || "To-do list"}
+            {displayTodos[0]?.content || "Todo List"}
           </span>
           {/* Expand/Collapse icon */}
           <div className="relative w-4 h-4 flex-shrink-0">
@@ -706,7 +640,7 @@ export const AgentTodoTool = memo(function AgentTodoTool({
               </div>
             ) : (
               <ProgressCircle
-                completed={visualProgress}
+                completed={completedCount}
                 total={totalTodos}
                 size={16}
                 className="flex-shrink-0"

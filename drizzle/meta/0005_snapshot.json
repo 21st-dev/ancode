@@ -1,7 +1,7 @@
 {
   "version": "6",
   "dialect": "sqlite",
-  "id": "0284f691-83e5-43d8-8e73-0918cc3435e8",
+  "id": "80d37e81-2636-4849-9967-e72494489501",
   "prevId": "a5b2c3d4-e5f6-7890-abcd-ef1234567890",
   "tables": {
     "chats": {
@@ -86,10 +86,17 @@
         }
       },
       "indexes": {
-        "chats_worktree_path_idx": {
-          "name": "chats_worktree_path_idx",
+        "chats_project_id_idx": {
+          "name": "chats_project_id_idx",
           "columns": [
-            "worktree_path"
+            "project_id"
+          ],
+          "isUnique": false
+        },
+        "chats_updated_at_idx": {
+          "name": "chats_updated_at_idx",
+          "columns": [
+            "updated_at"
           ],
           "isUnique": false
         }
@@ -226,6 +233,13 @@
             "path"
           ],
           "isUnique": true
+        },
+        "projects_updated_at_idx": {
+          "name": "projects_updated_at_idx",
+          "columns": [
+            "updated_at"
+          ],
+          "isUnique": false
         }
       },
       "foreignKeys": {},
@@ -302,7 +316,15 @@
           "autoincrement": false
         }
       },
-      "indexes": {},
+      "indexes": {
+        "sub_chats_chat_id_idx": {
+          "name": "sub_chats_chat_id_idx",
+          "columns": [
+            "chat_id"
+          ],
+          "isUnique": false
+        }
+      },
       "foreignKeys": {
         "sub_chats_chat_id_chats_id_fk": {
           "name": "sub_chats_chat_id_chats_id_fk",

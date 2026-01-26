@@ -1,8 +1,7 @@
 import { z } from "zod"
 import { router, publicProcedure } from "../index"
-import { readdir, stat, readFile, writeFile, mkdir } from "node:fs/promises"
+import { readdir, stat } from "node:fs/promises"
 import { join, relative, basename } from "node:path"
-import { app } from "electron"
 
 // Directories to ignore when scanning
 const IGNORED_DIRS = new Set([
@@ -261,58 +260,5 @@ export const filesRouter = router({
     .mutation(({ input }) => {
       fileListCache.delete(input.projectPath)
       return { success: true }
-    }),
-
-  /**
-   * Read file contents from filesystem
-   */
-  readFile: publicProcedure
-    .input(z.object({ filePath: z.string() }))
-    .query(async ({ input }) => {
-      const { filePath } = input
-
-      try {
-        const content = await readFile(filePath, "utf-8")
-        return content
-      } catch (error) {
-        console.error(`[files] Error reading file ${filePath}:`, error)
-        throw new Error(`Failed to read file: ${error instanceof Error ? error.message : "Unknown error"}`)
-      }
-    }),
-
-  /**
-   * Write pasted text to a file in the session's pasted directory
-   * Used for large text pastes that shouldn't be embedded inline
-   */
-  writePastedText: publicProcedure
-    .input(
-      z.object({
-        subChatId: z.string(),
-        text: z.string(),
-        filename: z.string().optional(),
-      })
-    )
-    .mutation(async ({ input }) => {
-      const { subChatId, text, filename } = input
-
-      // Create pasted directory in session folder
-      const sessionDir = join(app.getPath("userData"), "claude-sessions", subChatId)
-      const pastedDir = join(sessionDir, "pasted")
-      await mkdir(pastedDir, { recursive: true })
-
-      // Generate filename with timestamp
-      const finalFilename = filename || `pasted_${Date.now()}.txt`
-      const filePath = join(pastedDir, finalFilename)
-
-      // Write file
-      await writeFile(filePath, text, "utf-8")
-
-      console.log(`[files] Wrote pasted text to ${filePath} (${text.length} bytes)`)
-
-      return {
-        filePath,
-        filename: finalFilename,
-        size: text.length,
-      }
     }),
 })

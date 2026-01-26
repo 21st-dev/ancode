@@ -1,26 +1,20 @@
 "use client"
 
 import React, { useMemo, useRef, useEffect, useState, useCallback, memo } from "react"
-import { useAtom, useAtomValue, useSetAtom } from "jotai"
+import { useAtom, useAtomValue } from "jotai"
 import { trpc } from "../../../lib/trpc"
 import {
   archivePopoverOpenAtom,
   archiveSearchQueryAtom,
   selectedAgentChatIdAtom,
-  selectedChatIsRemoteAtom,
 } from "../atoms"
-import { showWorkspaceIconAtom, chatSourceModeAtom } from "../../../lib/atoms"
-import {
-  useRemoteArchivedChats,
-  useRestoreRemoteChat,
-} from "../../../lib/hooks/use-remote-chats"
+import { showWorkspaceIconAtom } from "../../../lib/atoms"
 import { Input } from "../../../components/ui/input"
 import {
   SearchIcon,
   ArchiveIcon,
   IconTextUndo,
   GitHubLogo,
-  CloudIcon,
 } from "../../../components/ui/icons"
 import {
   Popover,
@@ -28,41 +22,6 @@ import {
   PopoverTrigger,
 } from "../../../components/ui/popover"
 import { cn } from "../../../lib/utils"
-
-// GitHub avatar with loading placeholder
-function GitHubAvatar({
-  gitOwner,
-  className = "h-4 w-4",
-}: {
-  gitOwner: string
-  className?: string
-}) {
-  const [isLoaded, setIsLoaded] = useState(false)
-  const [hasError, setHasError] = useState(false)
-
-  const handleLoad = useCallback(() => setIsLoaded(true), [])
-  const handleError = useCallback(() => setHasError(true), [])
-
-  if (hasError) {
-    return <GitHubLogo className={cn(className, "text-muted-foreground flex-shrink-0")} />
-  }
-
-  return (
-    <div className={cn(className, "relative flex-shrink-0")}>
-      {/* Placeholder background while loading */}
-      {!isLoaded && (
-        <div className="absolute inset-0 rounded-sm bg-muted" />
-      )}
-      <img
-        src={`https://github.com/${gitOwner}.png?size=64`}
-        alt={gitOwner}
-        className={cn(className, "rounded-sm flex-shrink-0", isLoaded ? 'opacity-100' : 'opacity-0')}
-        onLoad={handleLoad}
-        onError={handleError}
-      />
-    </div>
-  )
-}
 
 // Format relative time - moved outside component to avoid recreation
 const formatTime = (dateInput: Date | string) => {
@@ -82,23 +41,16 @@ const formatTime = (dateInput: Date | string) => {
   return `${Math.floor(diffDays / 365)}y`
 }
 
-// Normalized chat type for archive popover (works with both local and remote chats)
-interface NormalizedArchivedChat {
-  id: string
-  name: string | null
-  branch: string | null
-  projectId: string | null
-  repository: string | null
-  gitOwner: string | null
-  gitProvider: string | null
-  updatedAt: Date | string | null
-  archivedAt: Date | string | null
-  isRemote: boolean
-}
-
 // Memoized chat item component to prevent unnecessary re-renders
 interface ArchiveChatItemProps {
-  chat: NormalizedArchivedChat
+  chat: {
+    id: string
+    name: string | null
+    branch: string | null
+    projectId: string
+    updatedAt: Date | null
+    archivedAt: Date | null
+  }
   index: number
   isSelected: boolean
   isCurrentChat: boolean
@@ -123,12 +75,14 @@ const ArchiveChatItem = memo(function ArchiveChatItem({
   setRef,
 }: ArchiveChatItemProps) {
   const branch = chat.branch
-  // For local chats, use projectsMap; for remote chats, use chat properties directly
-  const project = chat.projectId ? projectsMap.get(chat.projectId) : null
-  const gitOwner = chat.gitOwner || project?.gitOwner
-  const gitRepo = chat.repository || project?.gitRepo
-  const gitProvider = chat.gitProvider || project?.gitProvider
+  const project = projectsMap.get(chat.projectId)
+  const gitOwner = project?.gitOwner
+  const gitRepo = project?.gitRepo
+  const gitProvider = project?.gitProvider
   const isGitHubRepo = gitProvider === "github" && !!gitOwner
+  const avatarUrl = isGitHubRepo
+    ? `https://github.com/${gitOwner}.png?size=64`
+    : null
 
   const repoName = gitRepo || project?.name
   const displayText = branch
@@ -165,8 +119,23 @@ const ArchiveChatItem = memo(function ArchiveChatItem({
       <div className="flex items-start gap-2.5">
         {showIcon && (
           <div className="pt-0.5">
-            {isGitHubRepo && gitOwner ? (
-              <GitHubAvatar gitOwner={gitOwner} />
+            {isGitHubRepo ? (
+              avatarUrl ? (
+                <img
+                  src={avatarUrl}
+                  alt={gitOwner || "GitHub"}
+                  className="h-4 w-4 rounded-sm flex-shrink-0"
+                />
+              ) : (
+                <GitHubLogo
+                  className={cn(
+                    "h-4 w-4 flex-shrink-0 transition-colors duration-75",
+                    isSelected
+                      ? "text-foreground"
+                      : "text-muted-foreground",
+                  )}
+                />
+              )
             ) : (
               <GitHubLogo
                 className={cn(
@@ -197,13 +166,9 @@ const ArchiveChatItem = memo(function ArchiveChatItem({
             </button>
           </div>
           <div className="flex items-center justify-between gap-2">
-            <div className="flex items-center gap-1 text-[11px] text-muted-foreground/60 truncate min-w-0">
-              {/* Cloud icon for remote chats */}
-              {chat.isRemote && (
-                <CloudIcon className="h-2.5 w-2.5 flex-shrink-0" />
-              )}
-              <span className="truncate">{displayText}</span>
-            </div>
+            <span className="text-[11px] text-muted-foreground/60 truncate">
+              {displayText}
+            </span>
             <div className="flex items-center gap-1.5 flex-shrink-0 text-[11px]">
               {stats && (stats.additions > 0 || stats.deletions > 0) && (
                 <>
@@ -212,7 +177,10 @@ const ArchiveChatItem = memo(function ArchiveChatItem({
                 </>
               )}
               <span className="text-muted-foreground/60">
-                {formatTime(chat.updatedAt ?? new Date())}
+                {formatTime(
+                  chat.updatedAt?.toISOString() ??
+                    new Date().toISOString(),
+                )}
               </span>
             </div>
           </div>
@@ -236,35 +204,26 @@ export const ArchivePopover = memo(function ArchivePopover({ trigger }: ArchiveP
   const popoverContentRef = useRef<HTMLDivElement>(null)
   const chatItemRefs = useRef<(HTMLDivElement | null)[]>([])
   const [selectedChatId, setSelectedChatId] = useAtom(selectedAgentChatIdAtom)
-  const [selectedChatIsRemote, setSelectedChatIsRemote] = useAtom(selectedChatIsRemoteAtom)
-  const setChatSourceMode = useSetAtom(chatSourceModeAtom)
   const showWorkspaceIcon = useAtomValue(showWorkspaceIconAtom)
 
   // Get utils outside of callbacks - hooks must be called at top level
   const utils = trpc.useUtils()
 
-  // Local archived chats (always fetch)
-  const { data: localArchivedChats, isLoading: isLocalLoading } = trpc.chats.listArchived.useQuery(
+  const { data: archivedChats, isLoading } = trpc.chats.listArchived.useQuery(
     {},
     { enabled: open },
   )
 
-  // Remote archived chats (always fetch)
-  const { data: remoteArchivedChats, isLoading: isRemoteLoading } = useRemoteArchivedChats()
+  // Fetch all projects for git info
+  const { data: projects } = trpc.projects.list.useQuery()
 
-  // Loading if either is loading
-  const isLoading = isLocalLoading || isRemoteLoading
-
-  // Fetch all projects for git info (for local chats)
-  const { data: projects } = trpc.projects.list.useQuery(undefined)
-
-  // Collect chat IDs for file stats query (only local chats)
+  // Collect chat IDs for file stats query
   const archivedChatIds = useMemo(() => {
-    if (!localArchivedChats) return []
-    return localArchivedChats.map((chat) => chat.id)
-  }, [localArchivedChats])
+    if (!archivedChats) return []
+    return archivedChats.map((chat) => chat.id)
+  }, [archivedChats])
 
-  // Fetch file stats for archived local chats
+  // Fetch file stats for archived chats
   const { data: fileStatsData } = trpc.chats.getFileStats.useQuery(
     { chatIds: archivedChatIds },
     { enabled: open && archivedChatIds.length > 0 },
@@ -282,8 +241,7 @@ export const ArchivePopover = memo(function ArchivePopover({ trigger }: ArchiveP
     return new Map(fileStatsData.map((s) => [s.chatId, { additions: s.additions, deletions: s.deletions }]))
   }, [fileStatsData])
 
-  // Local restore mutation
-  const localRestoreMutation = trpc.chats.restore.useMutation({
+  const restoreMutation = trpc.chats.restore.useMutation({
     onSuccess: (restoredChat) => {
       // Optimistically add restored chat to the main list cache
       if (restoredChat) {
@@ -300,59 +258,11 @@ export const ArchivePopover = memo(function ArchivePopover({ trigger }: ArchiveP
     },
   })
 
-  // Remote restore mutation
-  const remoteRestoreMutation = useRestoreRemoteChat()
-
-  // Normalize and merge archived chats from both sources
-  const normalizedChats = useMemo((): NormalizedArchivedChat[] => {
-    const merged: NormalizedArchivedChat[] = []
-
-    // Add local chats
-    if (localArchivedChats) {
-      for (const chat of localArchivedChats) {
-        merged.push({
-          id: chat.id,
-          name: chat.name,
-          branch: chat.branch,
-          projectId: chat.projectId,
-          repository: null,
-          gitOwner: null,
-          gitProvider: null,
-          updatedAt: chat.updatedAt,
-          archivedAt: chat.archivedAt,
-          isRemote: false,
-        })
-      }
-    }
-
-    // Add remote chats with prefixed IDs
-    if (remoteArchivedChats) {
-      for (const chat of remoteArchivedChats) {
-        const meta = chat.meta
-        const repository = meta?.repository
-        const gitOwner = repository?.split("/")[0] ?? null
-
-        merged.push({
-          id: `remote_${chat.id}`,
-          name: chat.name,
-          branch: meta?.branch ?? null,
-          projectId: null,
-          repository: repository ?? null,
-          gitOwner,
-          gitProvider: repository ? "github" : null,
-          updatedAt: chat.updated_at,
-          archivedAt: (chat as unknown as { archived_at?: string }).archived_at ?? null,
-          isRemote: true,
-        })
-      }
-    }
-
-    return merged
-  }, [remoteArchivedChats, localArchivedChats])
-
   // Filter and sort archived chats (always newest first)
   const filteredChats = useMemo(() => {
-    return normalizedChats
+    if (!archivedChats) return []
+
+    return archivedChats
       .filter((chat) => {
         // Search filter by name only
         if (
@@ -363,12 +273,11 @@ export const ArchivePopover = memo(function ArchivePopover({ trigger }: ArchiveP
         }
         return true
       })
-      .sort((a, b) => {
-        const aTime = a.archivedAt ? new Date(a.archivedAt).getTime() : 0
-        const bTime = b.archivedAt ? new Date(b.archivedAt).getTime() : 0
-        return bTime - aTime
-      })
-  }, [normalizedChats, searchQuery])
+      .sort(
+        (a, b) =>
+          new Date(b.archivedAt!).getTime() - new Date(a.archivedAt!).getTime(),
+      )
+  }, [archivedChats, searchQuery])
 
   // Clear search query and sync selected index when popover opens
   useEffect(() => {
@@ -407,26 +316,12 @@ export const ArchivePopover = memo(function ArchivePopover({ trigger }: ArchiveP
       e.preventDefault()
       const chat = filteredChats[selectedIndex]
       if (chat) {
-        if (chat.isRemote) {
-          // Extract original ID from prefixed remote ID
-          const originalId = chat.id.replace(/^remote_/, '')
-          remoteRestoreMutation.mutate(originalId, {
-            onSuccess: () => {
-              setSelectedChatId(originalId)
-              setSelectedChatIsRemote(true)
-              setChatSourceMode("sandbox")
-            },
-          })
-        } else {
-          localRestoreMutation.mutate({ id: chat.id })
-          setSelectedChatId(chat.id)
-          setSelectedChatIsRemote(false)
-          setChatSourceMode("local")
-        }
+        restoreMutation.mutate({ id: chat.id })
+        setSelectedChatId(chat.id)
         setOpen(false)
       }
     }
-  }, [filteredChats, selectedIndex, localRestoreMutation, remoteRestoreMutation, setSelectedChatId, setSelectedChatIsRemote, setChatSourceMode, setOpen])
+  }, [filteredChats, selectedIndex, restoreMutation, setSelectedChatId, setOpen])
 
   // Reset selected index and clear refs when search changes
   useEffect(() => {
@@ -447,41 +342,19 @@ export const ArchivePopover = memo(function ArchivePopover({ trigger }: ArchiveP
 
   // Auto-close popover when archive becomes empty
   useEffect(() => {
-    if (open && normalizedChats && normalizedChats.length === 0) {
+    if (open && archivedChats && archivedChats.length === 0) {
       setOpen(false)
     }
-  }, [normalizedChats, open, setOpen])
+  }, [archivedChats, open, setOpen])
 
   // Memoized callbacks for chat items
   const handleSelectChat = useCallback((id: string) => {
-    const isRemote = id.startsWith('remote_')
-    const originalId = isRemote ? id.replace(/^remote_/, '') : id
-    setSelectedChatId(originalId)
-    setSelectedChatIsRemote(isRemote)
-    // Sync chatSourceMode for ChatView to load data from correct source
-    setChatSourceMode(isRemote ? "sandbox" : "local")
-  }, [setSelectedChatId, setSelectedChatIsRemote, setChatSourceMode])
+    setSelectedChatId(id)
+  }, [setSelectedChatId])
 
   const handleRestoreChat = useCallback((id: string) => {
-    // Check if this is a remote chat by its prefixed ID
-    const isRemote = id.startsWith('remote_')
-    if (isRemote) {
-      // Extract original ID from prefixed remote ID
-      const originalId = id.replace(/^remote_/, '')
-      remoteRestoreMutation.mutate(originalId, {
-        onSuccess: () => {
-          setSelectedChatId(originalId)
-          setSelectedChatIsRemote(true)
-          setChatSourceMode("sandbox")
-        },
-      })
-    } else {
-      localRestoreMutation.mutate({ id })
-      setSelectedChatId(id)
-      setSelectedChatIsRemote(false)
-      setChatSourceMode("local")
-    }
-  }, [localRestoreMutation, remoteRestoreMutation, setSelectedChatId, setSelectedChatIsRemote, setChatSourceMode])
+    restoreMutation.mutate({ id })
+  }, [restoreMutation])
 
   const handleSetRef = useCallback((index: number, el: HTMLDivElement | null) => {
     chatItemRefs.current[index] = el
@@ -533,17 +406,13 @@ export const ArchivePopover = memo(function ArchivePopover({ trigger }: ArchiveP
               </p>
             </div>
           ) : (
-            filteredChats.map((chat, index) => {
-              // For remote chats, compare without prefix
-              const chatOriginalId = chat.isRemote ? chat.id.replace(/^remote_/, '') : chat.id
-              const isCurrentChat = selectedChatId === chatOriginalId && selectedChatIsRemote === chat.isRemote
-              return (
+            filteredChats.map((chat, index) => (
               <ArchiveChatItem
                 key={chat.id}
                 chat={chat}
                 index={index}
                 isSelected={index === selectedIndex}
-                isCurrentChat={isCurrentChat}
+                isCurrentChat={selectedChatId === chat.id}
                 showIcon={showWorkspaceIcon}
                 projectsMap={projectsMap}
                 stats={fileStatsMap.get(chat.id)}
@@ -551,7 +420,7 @@ export const ArchivePopover = memo(function ArchivePopover({ trigger }: ArchiveP
                 onRestore={handleRestoreChat}
                 setRef={handleSetRef}
               />
-            )})
+            ))
           )}
         </div>
       </PopoverContent>

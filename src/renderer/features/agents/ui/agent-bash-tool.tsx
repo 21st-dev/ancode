@@ -121,7 +121,7 @@ export const AgentBashTool = memo(function AgentBashTool({
       <div
         onClick={() => hasMoreOutput && !isPending && setIsOutputExpanded(!isOutputExpanded)}
         className={cn(
-          "flex items-center justify-between pl-2.5 pr-0.5 h-7",
+          "flex items-center justify-between pl-2.5 pr-2 h-7",
           hasMoreOutput && !isPending && "cursor-pointer hover:bg-muted/50 transition-colors duration-150",
         )}
       >

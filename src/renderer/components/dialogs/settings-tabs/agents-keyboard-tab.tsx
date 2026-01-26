@@ -1,14 +1,13 @@
 "use client"
 
 import { useCallback, useMemo, useState, useRef, useEffect } from "react"
-import { useAtom, useAtomValue } from "jotai"
+import { useAtom } from "jotai"
 import { X, RotateCcw, Search, Settings2 } from "lucide-react"
 import { cn } from "../../../lib/utils"
 import { CmdIcon, OptionIcon, ShiftIcon, ControlIcon } from "../../ui/icons"
 import {
   customHotkeysAtom,
   ctrlTabTargetAtom,
-  betaKanbanEnabledAtom,
 } from "../../../lib/atoms"
 import {
   ALL_SHORTCUT_ACTIONS,
@@ -330,25 +329,14 @@ function EmptyDetailPanel() {
 export function AgentsKeyboardTab() {
   const [customHotkeys, setCustomHotkeys] = useAtom(customHotkeysAtom)
   const [ctrlTabTarget] = useAtom(ctrlTabTargetAtom)
-  const betaKanbanEnabled = useAtomValue(betaKanbanEnabledAtom)
   // Default to first shortcut
   const [selectedActionId, setSelectedActionId] = useState<ShortcutActionId>("show-shortcuts")
   const [isRecording, setIsRecording] = useState(false)
   const [searchQuery, setSearchQuery] = useState("")
   const [conflictMessage, setConflictMessage] = useState<string | null>(null)
 
-  // Get shortcuts by category, filtering out disabled features
-  const shortcutsByCategory = useMemo(() => {
-    const all = getShortcutsByCategory()
-    // Filter out kanban shortcut if feature is disabled
-    if (!betaKanbanEnabled) {
-      return {
-        ...all,
-        workspaces: all.workspaces.filter(action => action.id !== "open-kanban"),
-      }
-    }
-    return all
-  }, [betaKanbanEnabled])
+  // Get shortcuts by category
+  const shortcutsByCategory = useMemo(() => getShortcutsByCategory(), [])
 
   // Detect conflicts
   const conflicts = useMemo(

@@ -20,19 +20,17 @@ export type OfflineCheckResult = {
  * Check if we should use Ollama as fallback
  * Priority:
  * 1. If customConfig provided → use it
- * 2. If offline mode enabled AND no internet → use Ollama
+ * 2. If OFFLINE → use Ollama (ignore auth token)
  * 3. If online + auth → use Claude API
  *
  * @param customConfig - Custom config from user settings
  * @param claudeCodeToken - Claude Code auth token
  * @param selectedOllamaModel - User-selected Ollama model (optional)
- * @param offlineModeEnabled - Whether offline mode is enabled in settings
  */
 export async function checkOfflineFallback(
   customConfig: CustomClaudeConfig | undefined,
   claudeCodeToken: string | null,
   selectedOllamaModel?: string | null,
-  offlineModeEnabled: boolean = false,
 ): Promise<OfflineCheckResult> {
   // If custom config is provided, use it (highest priority)
   if (customConfig) {
@@ -40,15 +38,6 @@ export async function checkOfflineFallback(
     return {
       config: customConfig,
       isUsingOllama,
-    }
-  }
-
-  // If offline mode is disabled in settings, skip all Ollama checks
-  // and just use Claude API (will fail with auth error if no token)
-  if (!offlineModeEnabled) {
-    return {
-      config: undefined,
-      isUsingOllama: false,
     }
   }
 
@@ -100,6 +89,7 @@ export async function checkOfflineFallback(
       isUsingOllama: false,
     }
   }
+
 
   // Internet available but no auth - let it fail with auth error
   console.log('[Offline] Online but no Claude auth found')

@@ -10,26 +10,55 @@ import { existsSync } from "node:fs"
 import { mkdir } from "node:fs/promises"
 import { getGitRemoteInfo } from "../../git"
 import { trackProjectOpened } from "../../analytics"
-import { getLaunchDirectory } from "../../cli"
 
 const execAsync = promisify(exec)
 
 export const projectsRouter = router({
   /**
-   * Get launch directory from CLI args (consumed once)
-   * Based on PR #16 by @caffeinum
+   * List all projects (with optional pagination for performance)
+   * For backward compatibility, returns array when no pagination params provided
    */
-  getLaunchDirectory: publicProcedure.query(() => {
-    return getLaunchDirectory()
-  }),
+  list: publicProcedure
+    .input(
+      z
+        .object({
+          limit: z.number().min(1).max(500).optional(),
+          offset: z.number().min(0).optional(),
+        })
+        .optional()
+    )
+    .query(({ input }) => {
+      const db = getDatabase()
 
-  /**
-   * List all projects
-   */
-  list: publicProcedure.query(() => {
-    const db = getDatabase()
-    return db.select().from(projects).orderBy(desc(projects.updatedAt)).all()
-  }),
+      // Backward compatibility: return full array if no pagination params
+      if (!input?.limit && !input?.offset) {
+        return db.select().from(projects).orderBy(desc(projects.updatedAt)).all()
+      }
+
+      const { limit = 50, offset = 0 } = input
+
+      // Get total count for pagination
+      const totalResult = db
+        .select({ count: projects.id })
+        .from(projects)
+        .all()
+      const total = totalResult.length
+
+      // Get paginated results
+      const items = db
+        .select()
+        .from(projects)
+        .orderBy(desc(projects.updatedAt))
+        .limit(limit)
+        .offset(offset)
+        .all()
+
+      return {
+        items,
+        total,
+        hasMore: offset + limit < total,
+      }
+    }),
 
   /**
    * Get a single project by ID
@@ -349,137 +378,5 @@ export const projectsRouter = router({
       })
 
       return newProject
-    }),
-
-  /**
-   * Open folder picker to locate an existing clone of a specific repo
-   * Validates that the selected folder matches the expected owner/repo
-   */
-  locateAndAddProject: publicProcedure
-    .input(
-      z.object({
-        expectedOwner: z.string(),
-        expectedRepo: z.string(),
-      })
-    )
-    .mutation(async ({ input, ctx }) => {
-      const window = ctx.getWindow?.() ?? BrowserWindow.getFocusedWindow()
-
-      if (!window) {
-        return { success: false as const, reason: "no-window" as const }
-      }
-
-      // Ensure window is focused
-      if (!window.isFocused()) {
-        window.focus()
-        await new Promise((resolve) => setTimeout(resolve, 100))
-      }
-
-      const result = await dialog.showOpenDialog(window, {
-        properties: ["openDirectory"],
-        title: `Locate ${input.expectedOwner}/${input.expectedRepo}`,
-        buttonLabel: "Select",
-      })
-
-      if (result.canceled || !result.filePaths[0]) {
-        return { success: false as const, reason: "canceled" as const }
-      }
-
-      const folderPath = result.filePaths[0]
-      const gitInfo = await getGitRemoteInfo(folderPath)
-
-      // Validate it's the correct repo
-      if (
-        gitInfo.owner !== input.expectedOwner ||
-        gitInfo.repo !== input.expectedRepo
-      ) {
-        return {
-          success: false as const,
-          reason: "wrong-repo" as const,
-          found:
-            gitInfo.owner && gitInfo.repo
-              ? `${gitInfo.owner}/${gitInfo.repo}`
-              : "not a git repository",
-        }
-      }
-
-      // Create or update project
-      const db = getDatabase()
-      const existing = db
-        .select()
-        .from(projects)
-        .where(eq(projects.path, folderPath))
-        .get()
-
-      if (existing) {
-        // Update git info in case it changed
-        const updated = db
-          .update(projects)
-          .set({
-            updatedAt: new Date(),
-            gitRemoteUrl: gitInfo.remoteUrl,
-            gitProvider: gitInfo.provider,
-            gitOwner: gitInfo.owner,
-            gitRepo: gitInfo.repo,
-          })
-          .where(eq(projects.id, existing.id))
-          .returning()
-          .get()
-
-        return { success: true as const, project: updated }
-      }
-
-      const project = db
-        .insert(projects)
-        .values({
-          name: basename(folderPath),
-          path: folderPath,
-          gitRemoteUrl: gitInfo.remoteUrl,
-          gitProvider: gitInfo.provider,
-          gitOwner: gitInfo.owner,
-          gitRepo: gitInfo.repo,
-        })
-        .returning()
-        .get()
-
-      return { success: true as const, project }
-    }),
-
-  /**
-   * Open folder picker to choose where to clone a repository
-   */
-  pickCloneDestination: publicProcedure
-    .input(z.object({ suggestedName: z.string() }))
-    .mutation(async ({ input, ctx }) => {
-      const window = ctx.getWindow?.() ?? BrowserWindow.getFocusedWindow()
-
-      if (!window) {
-        return { success: false as const, reason: "no-window" as const }
-      }
-
-      // Ensure window is focused
-      if (!window.isFocused()) {
-        window.focus()
-        await new Promise((resolve) => setTimeout(resolve, 100))
-      }
-
-      // Default to ~/.21st/repos/
-      const homePath = app.getPath("home")
-      const defaultPath = join(homePath, ".21st", "repos")
-      await mkdir(defaultPath, { recursive: true })
-
-      const result = await dialog.showOpenDialog(window, {
-        properties: ["openDirectory", "createDirectory"],
-        title: "Choose where to clone",
-        defaultPath,
-        buttonLabel: "Clone Here",
-      })
-
-      if (result.canceled || !result.filePaths[0]) {
-        return { success: false as const, reason: "canceled" as const }
-      }
-
-      const targetPath = join(result.filePaths[0], input.suggestedName)
-      return { success: true as const, targetPath }
     }),
 })

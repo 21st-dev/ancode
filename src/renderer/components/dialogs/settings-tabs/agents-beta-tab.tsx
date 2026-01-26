@@ -5,7 +5,6 @@ import {
   showOfflineModeFeaturesAtom,
   autoOfflineModeAtom,
   selectedOllamaModelAtom,
-  betaKanbanEnabledAtom,
 } from "../../../lib/atoms"
 import { trpc } from "../../../lib/trpc"
 import { Switch } from "../../ui/switch"
@@ -17,8 +16,7 @@ import {
   SelectValue,
 } from "../../ui/select"
 import { ExternalLinkIcon } from "../../ui/icons"
-import { Copy, Check, RefreshCw } from "lucide-react"
-import { Button } from "../../ui/button"
+import { Copy, Check } from "lucide-react"
 import { cn } from "../../../lib/utils"
 
 // Hook to detect narrow screen
@@ -47,42 +45,7 @@ export function AgentsBetaTab() {
   const [showOfflineFeatures, setShowOfflineFeatures] = useAtom(showOfflineModeFeaturesAtom)
   const [autoOffline, setAutoOffline] = useAtom(autoOfflineModeAtom)
   const [selectedOllamaModel, setSelectedOllamaModel] = useAtom(selectedOllamaModelAtom)
-  const [kanbanEnabled, setKanbanEnabled] = useAtom(betaKanbanEnabledAtom)
   const [copied, setCopied] = useState(false)
-  const [updateStatus, setUpdateStatus] = useState<"idle" | "checking" | "available" | "not-available" | "error">("idle")
-  const [updateVersion, setUpdateVersion] = useState<string | null>(null)
-  const [currentVersion, setCurrentVersion] = useState<string | null>(null)
-
-  // Get current version on mount
-  useEffect(() => {
-    window.desktopApi?.getVersion().then(setCurrentVersion)
-  }, [])
-
-  // Check for updates with force flag to bypass cache
-  const handleCheckForUpdates = async () => {
-    // Check if we're in dev mode
-    const isPackaged = await window.desktopApi?.isPackaged?.()
-    if (!isPackaged) {
-      setUpdateStatus("error")
-      console.log("Update check skipped in dev mode")
-      return
-    }
-
-    setUpdateStatus("checking")
-    setUpdateVersion(null)
-    try {
-      const result = await window.desktopApi?.checkForUpdates(true)
-      if (result) {
-        setUpdateStatus("available")
-        setUpdateVersion(result.version)
-      } else {
-        setUpdateStatus("not-available")
-      }
-    } catch (error) {
-      console.error("Failed to check for updates:", error)
-      setUpdateStatus("error")
-    }
-  }
 
   // Get Ollama status
   const { data: ollamaStatus } = trpc.ollama.getStatus.useQuery(undefined, {
@@ -140,22 +103,6 @@ export function AgentsBetaTab() {
             <Switch
               checked={showOfflineFeatures}
               onCheckedChange={setShowOfflineFeatures}
-            />
-          </div>
-
-          {/* Kanban Board Toggle */}
-          <div className="flex items-start justify-between">
-            <div className="flex flex-col space-y-1">
-              <span className="text-sm font-medium text-foreground">
-                Kanban Board
-              </span>
-              <span className="text-xs text-muted-foreground">
-                View workspaces as a Kanban board organized by status.
-              </span>
-            </div>
-            <Switch
-              checked={kanbanEnabled}
-              onCheckedChange={setKanbanEnabled}
             />
           </div>
         </div>
@@ -300,44 +247,6 @@ export function AgentsBetaTab() {
           </div>
         </div>
       )}
-
-      {/* Updates Section */}
-      <div className="space-y-2">
-        <div className="pb-2">
-          <h4 className="text-sm font-medium text-foreground">Updates</h4>
-          <p className="text-xs text-muted-foreground mt-1">
-            Check for new versions manually (bypasses CDN cache)
-          </p>
-        </div>
-
-        <div className="bg-background rounded-lg border border-border overflow-hidden">
-          <div className="p-4">
-            <div className="flex items-center justify-between">
-              <div className="flex flex-col space-y-1">
-                <span className="text-sm font-medium text-foreground">
-                  {currentVersion ? `Current: v${currentVersion}` : "Version"}
-                </span>
-                <span className="text-xs text-muted-foreground">
-                  {updateStatus === "checking" && "Checking for updates..."}
-                  {updateStatus === "available" && `Update available: v${updateVersion}`}
-                  {updateStatus === "not-available" && "You're on the latest version"}
-                  {updateStatus === "error" && "Failed to check (dev mode?)"}
-                  {updateStatus === "idle" && "Click to check for updates"}
-                </span>
-              </div>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={handleCheckForUpdates}
-                disabled={updateStatus === "checking"}
-              >
-                <RefreshCw className={cn("h-4 w-4 mr-2", updateStatus === "checking" && "animate-spin")} />
-                {updateStatus === "checking" ? "Checking..." : "Check Now"}
-              </Button>
-            </div>
-          </div>
-        </div>
-      </div>
     </div>
   )
 }
