@@ -5692,52 +5692,53 @@ export function AIPenIcon(props: IconProps) {
 export function ThinkingIcon(props: IconProps) {
   return (
     <svg
-      xmlns="http://www.w3.org/2000/svg"
       viewBox="0 0 24 24"
       fill="none"
-      width="24"
-      height="24"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
       {...props}
     >
-      <path
-        d="M5.94 4.91257L8.2012 3.49932C8.70708 3.18315 9.3277 3.1093 9.89365 3.29795L11.3675 3.78925C11.7781 3.9261 12.2219 3.9261 12.6325 3.78925L14.1064 3.29795C14.6723 3.1093 15.2929 3.18314 15.7988 3.49932L18.06 4.91257C18.6448 5.27805 19 5.91899 19 6.60857V7.00007C19 7.62958 19.2964 8.22236 19.8 8.60007L20.2 8.90007C20.7036 9.27778 21 9.87056 21 10.5001V12.5001C21 13.1296 20.7036 13.7224 20.2 14.1001L19.8 14.4001C19.2964 14.7778 19 15.3706 19 16.0001V17.3916C19 18.0812 18.6448 18.7221 18.06 19.0876L15.7988 20.5008C15.2929 20.817 14.6723 20.8908 14.1064 20.7022L12.6325 20.2109C12.2219 20.074 11.7781 20.074 11.3675 20.2109L9.89365 20.7022C9.3277 20.8908 8.70708 20.817 8.2012 20.5008L5.94 19.0876C5.35524 18.7221 5 18.0812 5 17.3916V16.0001C5 15.3706 4.70361 14.7778 4.2 14.4001L3.8 14.1001C3.29639 13.7224 3 13.1296 3 12.5001V10.5001C3 9.87056 3.29639 9.27778 3.8 8.90007L4.2 8.60007C4.70361 8.22236 5 7.62958 5 7.00007V6.60857C5 5.91899 5.35524 5.27805 5.94 4.91257Z"
-        stroke="currentColor"
-        strokeWidth="2"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-      <path
-        d="M12 4.5V7.17157C12 7.70201 12.2107 8.21071 12.5858 8.58579L15 11"
-        stroke="currentColor"
-        strokeWidth="2"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-      <path
-        d="M12 19.5V16.8284C12 16.298 11.7893 15.7893 11.4142 15.4142L9 13"
-        stroke="currentColor"
-        strokeWidth="2"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-      <circle
-        cx="9"
-        cy="13"
-        r="1"
-        stroke="currentColor"
-        strokeWidth="2"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-      <circle
-        cx="15"
-        cy="11"
-        r="1"
-        stroke="currentColor"
-        strokeWidth="2"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
+      <circle cx="12" cy="12" r="10" />
+      <path d="M12 6v6l4 2" />
+    </svg>
+  )
+}
+
+// Filled icon variants for details sidebar
+export function GitBranchFilledIcon(props: IconProps) {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      fill="currentColor"
+      {...props}
+    >
+      <path d="M6 3a3 3 0 0 0-3 3c0 1.66 1.34 3 3 3a3 3 0 0 0 3-3 3 3 0 0 0-3-3zm0 2a1 1 0 1 1 0 2 1 1 0 0 1 0-2zm15 1a3 3 0 0 0-3-3 3 3 0 0 0-3 3c0 1.66 1.34 3 3 3a3 3 0 0 0 3-3zm-6 0a1 1 0 1 1 2 0 1 1 0 0 1-2 0zm-6 4a3 3 0 0 0-3 3c0 1.66 1.34 3 3 3a3 3 0 0 0 3-3 3 3 0 0 0-3-3zm0 2a1 1 0 1 1 0 2 1 1 0 0 1 0-2zm7-5v11a1 1 0 0 1-1 1H9a1 1 0 0 1-1-1V9a1 1 0 0 1 1-1h6a1 1 0 0 1 1 1z" />
+    </svg>
+  )
+}
+
+export function FolderFilledIcon(props: IconProps) {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      fill="currentColor"
+      {...props}
+    >
+      <path d="M10 4H4c-1.11 0-2 .89-2 2v12c0 1.11.89 2 2 2h16c1.11 0 2-.89 2-2V8c0-1.11-.89-2-2-2h-8l-2-2z" />
+    </svg>
+  )
+}
+
+export function GitPullRequestFilledIcon(props: IconProps) {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      fill="currentColor"
+      {...props}
+    >
+      <path d="M17 16.5a2.5 2.5 0 1 1-5 0 2.5 2.5 0 0 1 5 0zm-11 0a2.5 2.5 0 1 1-5 0 2.5 2.5 0 0 1 5 0zm11-11a2.5 2.5 0 1 1-5 0 2.5 2.5 0 0 1 5 0zM6 5.5a2.5 2.5 0 1 1-5 0 2.5 2.5 0 0 1 5 0zm11 0v6h-2V5.5h2zm-11 11v-6h2v6H6z" />
     </svg>
   )
 }

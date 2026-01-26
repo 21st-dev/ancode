@@ -21,6 +21,7 @@ import {
 import { appStore } from "./lib/jotai-store"
 import { VSCodeThemeProvider } from "./lib/themes/theme-provider"
 import { trpc } from "./lib/trpc"
+import { normalizeProjects } from "./lib/utils/projects"
 import { LoadingSkeleton } from "./components/ui/loading-skeleton"
 
 /**
@@ -59,8 +60,9 @@ function AppContent() {
   }, [billingMethod, anthropicOnboardingCompleted, setBillingMethod])
 
   // Fetch projects to validate selectedProject exists
-  const { data: projects, isLoading: isLoadingProjects } =
+  const { data: projectsData, isLoading: isLoadingProjects } =
     trpc.projects.list.useQuery()
+  const projects = useMemo(() => normalizeProjects(projectsData), [projectsData])
 
   // Validated project - only valid if exists in DB
   const validatedProject = useMemo(() => {
@@ -68,7 +70,7 @@ function AppContent() {
     // While loading, trust localStorage value to prevent flicker
     if (isLoadingProjects) return selectedProject
     // After loading, validate against DB
-    if (!projects) return null
+    if (!projects.length) return null
     const exists = projects.some((p) => p.id === selectedProject.id)
     return exists ? selectedProject : null
   }, [selectedProject, projects, isLoadingProjects])

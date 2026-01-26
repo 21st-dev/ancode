@@ -562,6 +562,59 @@ export type PendingUserQuestions = PendingUserQuestion
 // Set<subChatId>
 export const pendingPlanApprovalsAtom = atom<Set<string>>(new Set<string>())
 
+// Agent mode type (plan or agent)
+export type AgentMode = "plan" | "agent"
+
+// Plan sidebar open state - per subChat (persisted)
+const planSidebarOpenStorageAtom = atomWithStorage<Record<string, boolean>>(
+  "agents:planSidebarOpen",
+  {},
+  undefined,
+  { getOnInit: true },
+)
+
+export const planSidebarOpenAtomFamily = atomFamily((subChatId: string) =>
+  atom(
+    (get) => get(planSidebarOpenStorageAtom)[subChatId] ?? false,
+    (get, set, isOpen: boolean) => {
+      const current = get(planSidebarOpenStorageAtom)
+      set(planSidebarOpenStorageAtom, { ...current, [subChatId]: isOpen })
+    },
+  ),
+)
+
+// Current plan path - per subChat
+const currentPlanPathStorageAtom = atom<Record<string, string | null>>({})
+
+export const currentPlanPathAtomFamily = atomFamily((subChatId: string) =>
+  atom(
+    (get) => get(currentPlanPathStorageAtom)[subChatId] ?? null,
+    (get, set, path: string | null) => {
+      const current = get(currentPlanPathStorageAtom)
+      set(currentPlanPathStorageAtom, { ...current, [subChatId]: path })
+    },
+  ),
+)
+
+// Sub-chat mode (plan or agent) - per subChat
+const subChatModeStorageAtom = atom<Record<string, AgentMode>>({})
+
+export const subChatModeAtomFamily = atomFamily((subChatId: string) =>
+  atom(
+    (get) => get(subChatModeStorageAtom)[subChatId] ?? "agent",
+    (get, set, mode: AgentMode) => {
+      const current = get(subChatModeStorageAtom)
+      set(subChatModeStorageAtom, { ...current, [subChatId]: mode })
+    },
+  ),
+)
+
+// Pending build plan sub-chat ID (set when user clicks "Build Plan")
+export const pendingBuildPlanSubChatIdAtom = atom<string | null>(null)
+
+// Show new chat form atom (for kanban view)
+export const showNewChatFormAtom = atom<boolean>(false)
+
 // Store AskUserQuestion results by toolUseId for real-time updates
 // Map<toolUseId, result>
 export const askUserQuestionResultsAtom = atom<Map<string, unknown>>(new Map())

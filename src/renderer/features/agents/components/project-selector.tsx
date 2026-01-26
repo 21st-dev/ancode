@@ -25,6 +25,7 @@ import { Input } from "../../../components/ui/input"
 import { Button } from "../../../components/ui/button"
 import { IconChevronDown, CheckIcon, FolderPlusIcon, GitHubIcon } from "../../../components/ui/icons"
 import { trpc } from "../../../lib/trpc"
+import { normalizeProjects } from "../../../lib/utils/projects"
 import { selectedProjectAtom } from "../atoms"
 
 // Helper component to render project icon (avatar or folder)
@@ -71,11 +72,12 @@ export function ProjectSelector() {
   const isOffline = showOfflineFeatures && ollamaStatus ? !ollamaStatus.internet.online : false
 
   // Fetch projects from DB
-  const { data: projects, isLoading: isLoadingProjects } = trpc.projects.list.useQuery()
+  const { data: projectsData, isLoading: isLoadingProjects } = trpc.projects.list.useQuery()
+  const projects = useMemo(() => normalizeProjects(projectsData), [projectsData])
 
   // Filter projects by search query
   const filteredProjects = useMemo(() => {
-    if (!projects) return []
+    if (!projects.length) return []
     if (!searchQuery.trim()) return projects
     const query = searchQuery.toLowerCase()
     return projects.filter(
@@ -94,14 +96,15 @@ export function ProjectSelector() {
       if (project) {
         // Optimistically update the projects list cache to prevent validation failures
         utils.projects.list.setData(undefined, (oldData) => {
-          if (!oldData) return [project]
-          const exists = oldData.some((p) => p.id === project.id)
+          const normalized = normalizeProjects(oldData)
+          if (!normalized.length) return [project]
+          const exists = normalized.some((p) => p.id === project.id)
           if (exists) {
-            return oldData.map((p) =>
+            return normalized.map((p) =>
               p.id === project.id ? { ...p, updatedAt: project.updatedAt } : p,
             )
           }
-          return [project, ...oldData]
+          return [project, ...normalized]
         })
 
         setSelectedProject({
@@ -126,14 +129,15 @@ export function ProjectSelector() {
     onSuccess: (project) => {
       if (project) {
         utils.projects.list.setData(undefined, (oldData) => {
-          if (!oldData) return [project]
-          const exists = oldData.some((p) => p.id === project.id)
+          const normalized = normalizeProjects(oldData)
+          if (!normalized.length) return [project]
+          const exists = normalized.some((p) => p.id === project.id)
           if (exists) {
-            return oldData.map((p) =>
+            return normalized.map((p) =>
               p.id === project.id ? { ...p, updatedAt: project.updatedAt } : p,
             )
           }
-          return [project, ...oldData]
+          return [project, ...normalized]
         })
 
         setSelectedProject({

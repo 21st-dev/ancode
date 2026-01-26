@@ -15,6 +15,7 @@ import {
 } from "../../lib/atoms"
 import { selectedAgentChatIdAtom, selectedProjectAtom } from "../agents/atoms"
 import { trpc } from "../../lib/trpc"
+import { normalizeProjects } from "../../lib/utils/projects"
 import { useAgentsHotkeys } from "../agents/lib/agents-hotkeys-manager"
 import { toggleSearchAtom } from "../agents/search"
 import { AgentsSettingsDialog } from "../../components/dialogs/agents-settings-dialog"
@@ -95,8 +96,9 @@ export function AgentsLayout() {
   )
 
   // Fetch projects to validate selectedProject exists
-  const { data: projects, isLoading: isLoadingProjects } =
+  const { data: projectsData, isLoading: isLoadingProjects } =
     trpc.projects.list.useQuery()
+  const projects = useMemo(() => normalizeProjects(projectsData), [projectsData])
 
   // Validated project - only valid if exists in DB
   // While loading, trust localStorage value to prevent clearing on app restart
@@ -105,7 +107,7 @@ export function AgentsLayout() {
     // While loading, trust localStorage value to prevent flicker and clearing
     if (isLoadingProjects) return selectedProject
     // After loading, validate against DB
-    if (!projects) return null
+    if (!projects.length) return null
     const exists = projects.some((p) => p.id === selectedProject.id)
     return exists ? selectedProject : null
   }, [selectedProject, projects, isLoadingProjects])

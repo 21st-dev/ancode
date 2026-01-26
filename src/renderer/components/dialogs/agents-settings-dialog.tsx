@@ -24,6 +24,7 @@ import { AgentsMcpTab } from "./settings-tabs/agents-mcp-tab"
 import { AgentsBetaTab } from "./settings-tabs/agents-beta-tab"
 import { AgentsProjectWorktreeTab } from "./settings-tabs/agents-project-worktree-tab"
 import { trpc } from "../../lib/trpc"
+import { normalizeProjects } from "../../lib/utils/projects"
 
 // Hook to detect narrow screen
 function useIsNarrowScreen(): boolean {
@@ -193,11 +194,12 @@ export function AgentsSettingsDialog({
   const isNarrowScreen = useIsNarrowScreen()
 
   // Get projects list for dynamic tabs
-  const { data: projects } = trpc.projects.list.useQuery()
+  const { data: projectsData } = trpc.projects.list.useQuery()
+  const projects = useMemo(() => normalizeProjects(projectsData), [projectsData])
 
   // Generate dynamic project tabs
   const projectTabs = useMemo(() => {
-    if (!projects || projects.length === 0) {
+    if (!projects.length) {
       return []
     }
 

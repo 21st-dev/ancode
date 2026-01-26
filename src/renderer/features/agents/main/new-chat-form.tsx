@@ -58,6 +58,7 @@ import {
 // Desktop uses real tRPC
 import { toast } from "sonner"
 import { trpc } from "../../../lib/trpc"
+import { normalizeProjects } from "../../../lib/utils/projects"
 import {
   AgentsSlashCommand,
   COMMAND_PROMPTS,
@@ -175,8 +176,9 @@ export function NewChatForm({
   const [selectedProject, setSelectedProject] = useAtom(selectedProjectAtom)
 
   // Fetch projects to validate selectedProject exists
-  const { data: projectsList, isLoading: isLoadingProjects } =
+  const { data: projectsData, isLoading: isLoadingProjects } =
     trpc.projects.list.useQuery()
+  const projectsList = useMemo(() => normalizeProjects(projectsData), [projectsData])
 
   // Validate selected project exists in DB
   // While loading, trust the stored value to prevent flicker
@@ -185,7 +187,7 @@ export function NewChatForm({
     // While loading, trust localStorage value to prevent flicker
     if (isLoadingProjects) return selectedProject
     // After loading, validate against DB
-    if (!projectsList) return null
+    if (!projectsList.length) return null
     const exists = projectsList.some((p) => p.id === selectedProject.id)
     return exists ? selectedProject : null
   }, [selectedProject, projectsList, isLoadingProjects])
@@ -660,17 +662,18 @@ export function NewChatForm({
         // Optimistically update the projects list cache to prevent "Select repo" flash
         // This ensures validatedProject can find the new project immediately
         utils.projects.list.setData(undefined, (oldData) => {
-          if (!oldData) return [project]
+          const normalized = normalizeProjects(oldData)
+          if (!normalized.length) return [project]
           // Check if project already exists (reopened existing project)
-          const exists = oldData.some((p) => p.id === project.id)
+          const exists = normalized.some((p) => p.id === project.id)
           if (exists) {
             // Update existing project's timestamp
-            return oldData.map((p) =>
+            return normalized.map((p) =>
               p.id === project.id ? { ...p, updatedAt: project.updatedAt } : p,
             )
           }
           // Add new project at the beginning
-          return [project, ...oldData]
+          return [project, ...normalized]
         })
 
         setSelectedProject({

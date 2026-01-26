@@ -1,6 +1,7 @@
-import { useState, useEffect } from "react"
+import { useState, useEffect, useMemo } from "react"
 import { useSetAtom } from "jotai"
 import { trpc } from "../../../lib/trpc"
+import { normalizeProjects } from "../../../lib/utils/projects"
 import { Button } from "../../ui/button"
 import { Input } from "../../ui/input"
 import { Label } from "../../ui/label"
@@ -39,7 +40,8 @@ export function AgentsWorktreesTab() {
   const isNarrowScreen = useIsNarrowScreen()
 
   // Get projects list
-  const { data: projects } = trpc.projects.list.useQuery()
+  const { data: projectsData } = trpc.projects.list.useQuery()
+  const projects = useMemo(() => normalizeProjects(projectsData), [projectsData])
   const [selectedProjectId, setSelectedProjectId] = useState<string | null>(
     null,
   )
@@ -81,7 +83,7 @@ export function AgentsWorktreesTab() {
 
   // Auto-select first project
   useEffect(() => {
-    if (projects && projects.length > 0 && !selectedProjectId) {
+    if (projects.length > 0 && !selectedProjectId) {
       setSelectedProjectId(projects[0].id)
     }
   }, [projects, selectedProjectId])
@@ -178,7 +180,7 @@ export function AgentsWorktreesTab() {
     setter([...list, ""])
   }
 
-  const selectedProject = projects?.find((p) => p.id === selectedProjectId)
+  const selectedProject = projects.find((p) => p.id === selectedProjectId)
   const cursorExists = configData?.available?.cursor?.exists ?? false
 
   return (
@@ -218,7 +220,7 @@ export function AgentsWorktreesTab() {
                   </span>
                 </SelectTrigger>
                 <SelectContent>
-                  {projects?.map((p) => (
+                  {projects.map((p) => (
                     <SelectItem key={p.id} value={p.id}>
                       {p.name}
                     </SelectItem>

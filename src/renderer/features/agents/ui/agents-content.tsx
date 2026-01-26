@@ -30,6 +30,7 @@ import { NewChatForm } from "../main/new-chat-form"
 import { ChatView } from "../main/active-chat"
 import { api } from "../../../lib/mock-api"
 import { trpc } from "../../../lib/trpc"
+import { normalizeProjects } from "../../../lib/utils/projects"
 import { useIsMobile } from "../../../lib/hooks/use-mobile"
 import { AgentsSidebar } from "../../sidebar/agents-sidebar"
 import { AgentsSubChatsSidebar } from "../../sidebar/agents-subchats-sidebar"
@@ -143,11 +144,12 @@ export function AgentsContent() {
   )
 
   // Fetch all projects for git info (like sidebar does)
-  const { data: projects } = trpc.projects.list.useQuery()
+  const { data: projectsData } = trpc.projects.list.useQuery()
+  const projects = useMemo(() => normalizeProjects(projectsData), [projectsData])
 
   // Create map for quick project lookup by id
   const projectsMap = useMemo(() => {
-    if (!projects) return new Map()
+    if (!projects.length) return new Map()
     return new Map(projects.map((p) => [p.id, p]))
   }, [projects])
 
