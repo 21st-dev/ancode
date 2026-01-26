@@ -1,18 +1,15 @@
-<!-- OPENSPEC:START -->
-# OpenSpec Instructions
+# AI Assistant Instructions
 
-These instructions are for AI assistants working in this project.
+This file provides guidance for AI assistants working on the 1Code project.
 
-Always open `@/openspec/AGENTS.md` when the request:
-- Mentions planning or proposals (words like proposal, spec, change, plan)
-- Introduces new capabilities, breaking changes, architecture shifts, or big performance/security work
-- Sounds ambiguous and you need the authoritative spec before coding
+## Project Context
 
-Use `@/openspec/AGENTS.md` to learn:
-- How to create and apply change proposals
-- Spec format and conventions
-- Project structure and guidelines
+1Code is a local-first Electron desktop app for AI-powered code assistance. Users create chat sessions linked to local project folders and interact with Claude in Plan or Agent mode.
 
-Keep this managed block so 'openspec update' can refresh the instructions.
+## Key Guidelines
 
-<!-- OPENSPEC:END -->
+- **Refer to CLAUDE.md** for detailed project architecture, tech stack, and development workflows
+- **Check README.md** for feature overview and installation instructions
+- **Review CONTRIBUTING.md** for build instructions and contribution guidelines
+- For major architectural changes or breaking changes, discuss with the team first
+- Always test changes locally before committing
