@@ -1,5 +1,6 @@
 import { atom } from "jotai"
-import { atomFamily, atomWithStorage } from "jotai/utils"
+import { atomWithStorage } from "jotai/utils"
+import { atomFamily } from "jotai-family"
 import { atomWithWindowStorage } from "../../../lib/window-storage"
 
 // Agent mode type - extensible for future modes like "debug"
@@ -647,6 +648,9 @@ export const pendingBuildPlanSubChatIdAtom = atom<string | null>(null)
 // Map<toolUseId, result>
 export const askUserQuestionResultsAtom = atom<Map<string, unknown>>(new Map())
 
+// Create-agent form visibility - set to true when /create-agent command is triggered
+export const showCreateAgentFormAtom = atom<boolean>(false)
+
 // Unified undo stack for workspace and sub-chat archivation
 // Supports Cmd+Z to restore the last archived item (workspace or sub-chat)
 export type UndoItem =
@@ -684,6 +688,69 @@ export const viewedFilesAtomFamily = atomFamily((chatId: string) =>
   ),
 )
 
+// File tree sidebar state
+export const agentsFileTreeSidebarOpenAtom = atomWithStorage<boolean>(
+  "agents-file-tree-sidebar-open",
+  false,
+  undefined,
+  { getOnInit: true },
+)
+
+export const agentsFileTreeSidebarWidthAtom = atomWithStorage<number>(
+  "agents-file-tree-sidebar-width",
+  250,
+  undefined,
+  { getOnInit: true },
+)
+
+// Expanded folders per project - stores Set of expanded folder paths
+const expandedFoldersStorageAtom = atomWithStorage<Record<string, string[]>>(
+  "agents:expandedFolders",
+  {},
+  undefined,
+  { getOnInit: true },
+)
+
+// atomFamily to get/set expanded folders per projectId
+export const expandedFoldersAtomFamily = atomFamily((projectId: string) =>
+  atom(
+    (get) => new Set(get(expandedFoldersStorageAtom)[projectId] ?? []),
+    (get, set, newSet: Set<string>) => {
+      const current = get(expandedFoldersStorageAtom)
+      set(expandedFoldersStorageAtom, { ...current, [projectId]: Array.from(newSet) })
+    },
+  ),
+)
+
+// Selected file path (focused item for keyboard navigation)
+export const selectedFilePathAtomFamily = atomFamily((projectId: string) =>
+  atom<string | null>(null),
+)
+
+// Multi-selection: set of selected file paths
+export const selectedFilePathsAtomFamily = atomFamily((projectId: string) =>
+  atom<Set<string>>(new Set()),
+)
+
+// File clipboard state for cut/copy operations
+export const fileClipboardAtom = atom<{
+  paths: string[]
+  operation: "copy" | "cut"
+  projectPath: string
+} | null>(null)
+
+// ============================================================================
+// Data Viewer Sidebar
+// ============================================================================
+
+// Data viewer sidebar width (global, shared across all chats)
+export const dataViewerSidebarWidthAtom = atomWithStorage<number>(
+  "agents-data-viewer-sidebar-width",
+  500,
+  undefined,
+  { getOnInit: true },
+)
+
 // Open Locally dialog trigger - set to chatId to open dialog for that chat
 export const openLocallyChatIdAtom = atom<string | null>(null)
 
@@ -697,12 +764,31 @@ export const agentsPlanSidebarWidthAtom = atomWithStorage<number>(
   { getOnInit: true },
 )
 
+// Data viewer sidebar open state per chat
+const dataViewerSidebarOpenStorageAtom = atomWithStorage<Record<string, boolean>>(
+  "agents:dataViewerSidebarOpen",
+  {},
+  undefined,
+  { getOnInit: true },
+)
+
 // Plan sidebar open state storage - stores per chatId (persisted)
 // Uses window-scoped storage so each window can have independent plan sidebar states
 const planSidebarOpenStorageAtom = atomWithWindowStorage<Record<string, boolean>>(
   "agents:planSidebarOpen",
   {},
   { getOnInit: true },
+)
+
+// atomFamily to get/set data viewer sidebar open state per chatId
+export const dataViewerSidebarOpenAtomFamily = atomFamily((chatId: string) =>
+  atom(
+    (get) => get(dataViewerSidebarOpenStorageAtom)[chatId] ?? false,
+    (get, set, isOpen: boolean) => {
+      const current = get(dataViewerSidebarOpenStorageAtom)
+      set(dataViewerSidebarOpenStorageAtom, { ...current, [chatId]: isOpen })
+    },
+  ),
 )
 
 // atomFamily to get/set plan sidebar open state per chatId
@@ -712,6 +798,25 @@ export const planSidebarOpenAtomFamily = atomFamily((chatId: string) =>
     (get, set, isOpen: boolean) => {
       const current = get(planSidebarOpenStorageAtom)
       set(planSidebarOpenStorageAtom, { ...current, [chatId]: isOpen })
+    },
+  ),
+)
+
+// Currently viewed data file path per chat
+const viewedDataFileStorageAtom = atomWithStorage<Record<string, string | null>>(
+  "agents:viewedDataFile",
+  {},
+  undefined,
+  { getOnInit: true },
+)
+
+// atomFamily to get/set viewed data file path per chatId
+export const viewedDataFileAtomFamily = atomFamily((chatId: string) =>
+  atom(
+    (get) => get(viewedDataFileStorageAtom)[chatId] ?? null,
+    (get, set, filePath: string | null) => {
+      const current = get(viewedDataFileStorageAtom)
+      set(viewedDataFileStorageAtom, { ...current, [chatId]: filePath })
     },
   ),
 )
@@ -728,6 +833,83 @@ export const currentPlanPathAtomFamily = atomFamily((chatId: string) =>
       set(currentPlanPathStorageAtom, { ...current, [chatId]: planPath })
     },
   ),
+)
+
+// Selected table for SQLite files (per file path)
+const selectedSqliteTableStorageAtom = atomWithStorage<Record<string, string>>(
+  "agents:selectedSqliteTable",
+  {},
+  undefined,
+  { getOnInit: true },
+)
+
+// atomFamily to get/set selected SQLite table per file path
+export const selectedSqliteTableAtomFamily = atomFamily((filePath: string) =>
+  atom(
+    (get) => get(selectedSqliteTableStorageAtom)[filePath] ?? "",
+    (get, set, tableName: string) => {
+      const current = get(selectedSqliteTableStorageAtom)
+      set(selectedSqliteTableStorageAtom, { ...current, [filePath]: tableName })
+    },
+  ),
+)
+
+// ============================================================================
+// File Viewer Sidebar (Monaco Editor)
+// ============================================================================
+
+// File viewer sidebar width (global, shared across all chats)
+export const fileViewerSidebarWidthAtom = atomWithStorage<number>(
+  "agents-file-viewer-sidebar-width",
+  500,
+  undefined,
+  { getOnInit: true },
+)
+
+// File viewer sidebar open state per chat
+const fileViewerSidebarOpenStorageAtom = atomWithStorage<Record<string, boolean>>(
+  "agents:fileViewerSidebarOpen",
+  {},
+  undefined,
+  { getOnInit: true },
+)
+
+// atomFamily to get/set file viewer sidebar open state per chatId
+export const fileViewerSidebarOpenAtomFamily = atomFamily((chatId: string) =>
+  atom(
+    (get) => get(fileViewerSidebarOpenStorageAtom)[chatId] ?? false,
+    (get, set, isOpen: boolean) => {
+      const current = get(fileViewerSidebarOpenStorageAtom)
+      set(fileViewerSidebarOpenStorageAtom, { ...current, [chatId]: isOpen })
+    },
+  ),
+)
+
+// Currently viewed source file path per chat
+const viewedSourceFileStorageAtom = atomWithStorage<Record<string, string | null>>(
+  "agents:viewedSourceFile",
+  {},
+  undefined,
+  { getOnInit: true },
+)
+
+// atomFamily to get/set viewed source file path per chatId
+export const viewedSourceFileAtomFamily = atomFamily((chatId: string) =>
+  atom(
+    (get) => get(viewedSourceFileStorageAtom)[chatId] ?? null,
+    (get, set, filePath: string | null) => {
+      const current = get(viewedSourceFileStorageAtom)
+      set(viewedSourceFileStorageAtom, { ...current, [chatId]: filePath })
+    },
+  ),
+)
+
+// Word wrap preference for file viewer (persisted globally)
+export const fileViewerWordWrapAtom = atomWithStorage<boolean>(
+  "agents:fileViewerWordWrap",
+  false,
+  undefined,
+  { getOnInit: true },
 )
 
 // Per-chat plan edit refetch trigger - incremented when an Edit on a plan file completes

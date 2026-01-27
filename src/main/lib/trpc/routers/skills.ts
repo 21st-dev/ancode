@@ -49,7 +49,21 @@ async function scanSkillsDirectory(
     const entries = await fs.readdir(dir, { withFileTypes: true })
 
     for (const entry of entries) {
-      if (!entry.isDirectory()) continue
+      // Handle both directories and symlinks to directories
+      let isDir = entry.isDirectory()
+      if (!isDir && entry.isSymbolicLink()) {
+        // Check if symlink points to a directory
+        try {
+          const targetPath = path.join(dir, entry.name)
+          const stat = await fs.stat(targetPath) // fs.stat follows symlinks
+          isDir = stat.isDirectory()
+        } catch {
+          // Broken symlink or access error - skip
+          continue
+        }
+      }
+
+      if (!isDir) continue
 
       // Validate entry name for security (prevent path traversal)
       if (entry.name.includes("..") || entry.name.includes("/") || entry.name.includes("\\")) {

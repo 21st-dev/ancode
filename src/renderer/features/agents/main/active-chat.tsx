@@ -39,7 +39,12 @@ import { atom, useAtom, useAtomValue, useSetAtom } from "jotai"
 import {
   ArrowDown,
   ChevronDown,
+  Columns2,
+  Eye,
+  FolderTree,
+  GitCommitHorizontal,
   GitFork,
+  GitMerge,
   ListTree,
   TerminalSquare
 } from "lucide-react"
@@ -87,14 +92,24 @@ import { DiffSidebarHeader } from "../../changes/components/diff-sidebar-header"
 import { getStatusIndicator } from "../../changes/utils/status"
 import { terminalSidebarOpenAtomFamily } from "../../terminal/atoms"
 import { TerminalSidebar } from "../../terminal/terminal-sidebar"
+import { DataViewerSidebar } from "../../data/components/data-viewer-sidebar"
+import { FileViewerSidebar } from "../../file-viewer"
 import {
   agentsChangesPanelCollapsedAtom,
   agentsChangesPanelWidthAtom,
   agentsDiffSidebarWidthAtom,
+  agentsFileTreeSidebarOpenAtom,
+  agentsFileTreeSidebarWidthAtom,
   agentsPlanSidebarWidthAtom,
   agentsPreviewSidebarOpenAtom,
   agentsPreviewSidebarWidthAtom,
   agentsSubChatsSidebarModeAtom,
+  dataViewerSidebarOpenAtomFamily,
+  dataViewerSidebarWidthAtom,
+  viewedDataFileAtomFamily,
+  fileViewerSidebarOpenAtomFamily,
+  fileViewerSidebarWidthAtom,
+  viewedSourceFileAtomFamily,
   agentsSubChatUnseenChangesAtom,
   agentsUnseenChangesAtom,
   clearLoading,
@@ -118,6 +133,7 @@ import {
   pendingPrMessageAtom,
   pendingReviewMessageAtom,
   pendingUserQuestionsAtom,
+  showCreateAgentFormAtom,
   planSidebarOpenAtomFamily,
   QUESTIONS_SKIPPED_MESSAGE,
   selectedAgentChatIdAtom,
@@ -190,8 +206,11 @@ import { AgentToolRegistry } from "../ui/agent-tool-registry"
 import { isPlanFile } from "../ui/agent-tool-utils"
 import { AgentUserMessageBubble } from "../ui/agent-user-message-bubble"
 import { AgentUserQuestion, type AgentUserQuestionHandle } from "../ui/agent-user-question"
+import { CreateAgentForm, type CreateAgentFormData } from "../ui/create-agent-form"
 import { AgentsHeaderControls } from "../ui/agents-header-controls"
 import { ChatTitleEditor } from "../ui/chat-title-editor"
+import { McpServersIndicator } from "../ui/mcp-servers-indicator"
+import { FileTreeSidebar } from "../ui/file-tree"
 import { MobileChatHeader } from "../ui/mobile-chat-header"
 import { QuickCommentInput } from "../ui/quick-comment-input"
 import { SubChatSelector } from "../ui/sub-chat-selector"
@@ -2483,6 +2502,13 @@ const ChatViewInner = memo(function ChatViewInner({
   // Get pending questions for this specific subChat
   const pendingQuestions = pendingQuestionsMap.get(subChatId) ?? null
 
+  // Create-agent form visibility
+  const [showCreateAgentForm, setShowCreateAgentForm] = useAtom(showCreateAgentFormAtom)
+
+  const handleCreateAgentCancel = useCallback(() => {
+    setShowCreateAgentForm(false)
+  }, [setShowCreateAgentForm])
+
   // Track whether chat input has content (for custom text with questions)
   const [inputHasContent, setInputHasContent] = useState(false)
 
@@ -3498,6 +3524,48 @@ const ChatViewInner = memo(function ChatViewInner({
     addToQueue,
   ])
 
+  // Handle create-agent form submission - constructs prompt and sends
+  const handleCreateAgentSubmit = useCallback(
+    (data: CreateAgentFormData) => {
+      setShowCreateAgentForm(false)
+
+      const toolsList = data.tools.length === 12
+        ? "all tools (inherit from parent)"
+        : data.tools.join(", ")
+
+      const modelStr = data.model === "inherit" ? "inherit (same as parent)" : data.model
+
+      const prompt = `Create a Claude Code custom agent with the following configuration:
+
+- **Name**: ${data.name}
+- **Scope**: ${data.scope === "project" ? "Project-level (save to .claude/agents/)" : "User-level (save to ~/.claude/agents/)"}
+- **Tools**: ${toolsList}
+- **Model**: ${modelStr}
+
+**Description of what the agent should do:**
+${data.description}
+
+Please create the agent markdown file with proper YAML frontmatter (name, description, tools, model) and a detailed system prompt based on the description above. Write the file to the correct location:
+${data.scope === "project" ? "`.claude/agents/" + data.name + ".md`" : "`~/.claude/agents/" + data.name + ".md`"}
+
+The file format should be:
+\`\`\`markdown
+---
+name: <agent-name>
+description: <when Claude should delegate to this agent>
+tools: <comma-separated tool list>
+model: <model>
+---
+
+<system prompt content here>
+\`\`\``
+
+      editorRef.current?.setValue(prompt)
+      setTimeout(() => handleSend(), 0)
+    },
+    [setShowCreateAgentForm, editorRef, handleSend],
+  )
+
   // Queue handlers for sending queued messages
   const handleSendFromQueue = useCallback(async (itemId: string) => {
     const item = popItemFromQueue(subChatId, itemId)
@@ -3717,6 +3785,51 @@ const ChatViewInner = memo(function ChatViewInner({
   // NOTE: Auto-processing of queue is now handled globally by QueueProcessor
   // component in agents-layout.tsx. This ensures queues continue processing
   // even when user navigates to different sub-chats or workspaces.
+
+  const handleDrop = useCallback(
+    (e: React.DragEvent) => {
+      e.preventDefault()
+      setIsDragOver(false)
+
+      // Check for internal file tree drag (file path from our file tree)
+      const internalPath = e.dataTransfer.getData("application/x-file-tree-path")
+      const internalType = e.dataTransfer.getData("application/x-file-tree-type")
+
+      if (internalPath) {
+        // Insert as a file mention
+        const fileName = internalPath.split("/").pop() || internalPath
+        const mention: FileMentionOption = {
+          id: `${internalType || "file"}:local:${internalPath}`,
+          label: fileName,
+          path: internalPath,
+          repository: "local",
+          truncatedPath: internalPath.includes("/")
+            ? internalPath.substring(0, internalPath.lastIndexOf("/"))
+            : "",
+          type: internalType === "folder" ? "folder" : "file",
+        }
+        editorRef.current?.insertMention(mention)
+        // Focus after state update
+        requestAnimationFrame(() => {
+          requestAnimationFrame(() => {
+            editorRef.current?.focus()
+          })
+        })
+        return
+      }
+
+      // External files from system
+      const droppedFiles = Array.from(e.dataTransfer.files)
+      handleAddAttachments(droppedFiles)
+      // Focus after state update - use double rAF to wait for React render
+      requestAnimationFrame(() => {
+        requestAnimationFrame(() => {
+          editorRef.current?.focus()
+        })
+      })
+    },
+    [handleAddAttachments],
+  )
 
   // Helper to get message text content
   const getMessageTextContent = (msg: any): string => {
@@ -4032,8 +4145,21 @@ const ChatViewInner = memo(function ChatViewInner({
         </div>
       )}
 
+      {/* Create-agent form - shows in same position as AgentUserQuestion */}
+      {showCreateAgentForm && !(pendingQuestions?.subChatId === subChatId) && (
+        <div className="px-4 relative z-20">
+          <div className="w-full px-2 max-w-2xl mx-auto">
+            <CreateAgentForm
+              onSubmit={handleCreateAgentSubmit}
+              onCancel={handleCreateAgentCancel}
+              hasProjectPath={!!projectPath}
+            />
+          </div>
+        </div>
+      )}
+
       {/* Stacked cards container - queue + status */}
-      {!pendingQuestions &&
+      {!(pendingQuestions?.subChatId === subChatId) && !showCreateAgentForm &&
         (queue.length > 0 || changedFilesForSubChat.length > 0) && (
           <div className="px-2 -mb-6 relative z-10">
             <div className="w-full max-w-2xl mx-auto px-2">
@@ -4196,6 +4322,31 @@ export function ChatView({
     () => planSidebarOpenAtomFamily(activeSubChatIdForPlan || ""),
     [activeSubChatIdForPlan],
   )
+  const [isFileTreeSidebarOpen, setIsFileTreeSidebarOpen] = useAtom(
+    agentsFileTreeSidebarOpenAtom,
+  )
+  // Per-chat data viewer sidebar state
+  const dataViewerSidebarAtom = useMemo(
+    () => dataViewerSidebarOpenAtomFamily(chatId),
+    [chatId],
+  )
+  const viewedDataFileAtom = useMemo(
+    () => viewedDataFileAtomFamily(chatId),
+    [chatId],
+  )
+  const [isDataViewerSidebarOpen, setIsDataViewerSidebarOpen] = useAtom(dataViewerSidebarAtom)
+  const [viewedDataFile, setViewedDataFile] = useAtom(viewedDataFileAtom)
+  // Per-chat file viewer sidebar state (for source code files)
+  const fileViewerSidebarAtom = useMemo(
+    () => fileViewerSidebarOpenAtomFamily(chatId),
+    [chatId],
+  )
+  const viewedSourceFileAtom = useMemo(
+    () => viewedSourceFileAtomFamily(chatId),
+    [chatId],
+  )
+  const [isFileViewerSidebarOpen, setIsFileViewerSidebarOpen] = useAtom(fileViewerSidebarAtom)
+  const [viewedSourceFile, setViewedSourceFile] = useAtom(viewedSourceFileAtom)
   const [isPlanSidebarOpen, setIsPlanSidebarOpen] = useAtom(planSidebarAtom)
   const currentPlanPathAtom = useMemo(
     () => currentPlanPathAtomFamily(activeSubChatIdForPlan || ""),
@@ -6040,6 +6191,31 @@ Make sure to preserve all functionality from both branches when resolving confli
     return () => window.removeEventListener("keydown", handleKeyDown, true)
   }, [isDiffSidebarOpen])
 
+  // Keyboard shortcut: Cmd + B to toggle file tree sidebar
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      // Check for Cmd (Meta) + B (without Alt/Shift)
+      if (
+        e.metaKey &&
+        !e.altKey &&
+        !e.shiftKey &&
+        !e.ctrlKey &&
+        e.code === "KeyB"
+      ) {
+        e.preventDefault()
+        e.stopPropagation()
+
+        // Toggle: only when worktree exists
+        if (worktreePath) {
+          setIsFileTreeSidebarOpen((prev) => !prev)
+        }
+      }
+    }
+
+    window.addEventListener("keydown", handleKeyDown, true)
+    return () => window.removeEventListener("keydown", handleKeyDown, true)
+  }, [worktreePath, setIsFileTreeSidebarOpen])
+
   // Keyboard shortcut: Create PR (preview)
   // Web: Opt+Cmd+P (browser uses Cmd+P for print)
   // Desktop: Cmd+P
@@ -6221,6 +6397,46 @@ Make sure to preserve all functionality from both branches when resolving confli
     <div className="flex h-full flex-col">
       {/* Main content */}
       <div className="flex-1 overflow-hidden flex">
+        {/* File Tree Sidebar - LEFT side */}
+        {worktreePath && !isMobileFullscreen && (
+          <ResizableSidebar
+            isOpen={isFileTreeSidebarOpen}
+            onClose={() => setIsFileTreeSidebarOpen(false)}
+            widthAtom={agentsFileTreeSidebarWidthAtom}
+            minWidth={180}
+            maxWidth={400}
+            side="left"
+            animationDuration={0}
+            initialWidth={0}
+            exitWidth={0}
+            showResizeTooltip={true}
+            className="bg-background border-r"
+            style={{ borderRightWidth: "0.5px", overflow: "hidden" }}
+          >
+            <FileTreeSidebar
+              projectPath={worktreePath || originalProjectPath}
+              projectId={chatId}
+              onClose={() => setIsFileTreeSidebarOpen(false)}
+              onSelectDataFile={(filePath) => {
+                // Data files: open in Data Viewer, close File Viewer
+                setViewedDataFile(filePath)
+                setIsDataViewerSidebarOpen(true)
+                // Close file viewer (mutual exclusion - one sidebar at a time)
+                setIsFileViewerSidebarOpen(false)
+                setViewedSourceFile(null)
+              }}
+              onSelectSourceFile={(filePath) => {
+                // Source files: open in File Viewer, close Data Viewer
+                setViewedSourceFile(filePath)
+                setIsFileViewerSidebarOpen(true)
+                // Close data viewer (mutual exclusion - one sidebar at a time)
+                setIsDataViewerSidebarOpen(false)
+                setViewedDataFile(null)
+              }}
+            />
+          </ResizableSidebar>
+        )}
+
         {/* Chat Panel */}
         <div
           className="flex-1 flex flex-col overflow-hidden relative"
@@ -6347,6 +6563,28 @@ Make sure to preserve all functionality from both branches when resolving confli
                       </span>
                     </PreviewSetupHoverCard>
                   ))}
+                {/* File Tree Button - shows when file tree is closed and worktree exists (desktop only) */}
+                {!isMobileFullscreen &&
+                  !isFileTreeSidebarOpen &&
+                  worktreePath && (
+                    <Tooltip delayDuration={500}>
+                      <TooltipTrigger asChild>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          onClick={() => setIsFileTreeSidebarOpen(true)}
+                          className="h-6 w-6 p-0 hover:bg-foreground/10 transition-colors text-foreground flex-shrink-0 rounded-md ml-2"
+                          aria-label="Open file tree"
+                        >
+                          <FolderTree className="h-4 w-4" />
+                        </Button>
+                      </TooltipTrigger>
+                      <TooltipContent side="bottom">
+                        Open file tree
+                        <Kbd>⌘B</Kbd>
+                      </TooltipContent>
+                    </Tooltip>
+                  )}
                 {/* Overview/Terminal Button - shows when sidebar is closed and worktree/sandbox exists (desktop only) */}
                 {!isMobileFullscreen &&
                   (worktreePath || sandboxId) && (
@@ -6725,6 +6963,64 @@ Make sure to preserve all functionality from both branches when resolving confli
             cwd={worktreePath}
             workspaceId={chatId}
           />
+        )}
+
+        {/* Data Viewer Sidebar - for viewing CSV, JSON, SQLite files */}
+        {isDataViewerSidebarOpen && viewedDataFile && (worktreePath || originalProjectPath) && (
+          <ResizableSidebar
+            isOpen={isDataViewerSidebarOpen}
+            onClose={() => {
+              setIsDataViewerSidebarOpen(false)
+              setViewedDataFile(null)
+            }}
+            widthAtom={dataViewerSidebarWidthAtom}
+            minWidth={400}
+            side="right"
+            animationDuration={0}
+            initialWidth={0}
+            exitWidth={0}
+            showResizeTooltip={true}
+            className="bg-background border-l"
+            style={{ borderLeftWidth: "0.5px", overflow: "hidden" }}
+          >
+            <DataViewerSidebar
+              filePath={viewedDataFile}
+              projectPath={(worktreePath || originalProjectPath) as string}
+              onClose={() => {
+                setIsDataViewerSidebarOpen(false)
+                setViewedDataFile(null)
+              }}
+            />
+          </ResizableSidebar>
+        )}
+
+        {/* File Viewer Sidebar - for viewing source code files with Monaco Editor */}
+        {isFileViewerSidebarOpen && viewedSourceFile && (worktreePath || originalProjectPath) && (
+          <ResizableSidebar
+            isOpen={isFileViewerSidebarOpen}
+            onClose={() => {
+              setIsFileViewerSidebarOpen(false)
+              setViewedSourceFile(null)
+            }}
+            widthAtom={fileViewerSidebarWidthAtom}
+            minWidth={350}
+            side="right"
+            animationDuration={0}
+            initialWidth={0}
+            exitWidth={0}
+            showResizeTooltip={true}
+            className="bg-background border-l"
+            style={{ borderLeftWidth: "0.5px", overflow: "hidden" }}
+          >
+            <FileViewerSidebar
+              filePath={viewedSourceFile}
+              projectPath={(worktreePath || originalProjectPath) as string}
+              onClose={() => {
+                setIsFileViewerSidebarOpen(false)
+                setViewedSourceFile(null)
+              }}
+            />
+          </ResizableSidebar>
         )}
 
         {/* Open Locally Dialog - for importing sandbox chats to local */}

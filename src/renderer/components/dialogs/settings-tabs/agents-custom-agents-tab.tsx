@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react"
-import { ChevronRight } from "lucide-react"
+import { ChevronRight, Trash2 } from "lucide-react"
 import { motion, AnimatePresence } from "motion/react"
 import { trpc } from "../../../lib/trpc"
 import { cn } from "../../../lib/utils"
@@ -37,12 +37,24 @@ export function AgentsCustomAgentsTab() {
   const isNarrowScreen = useIsNarrowScreen()
   const [expandedAgentName, setExpandedAgentName] = useState<string | null>(null)
 
-  const { data: agents = [], isLoading } = trpc.agents.list.useQuery(undefined)
+  const utils = trpc.useUtils()
+  const { data: agents = [], isLoading } = trpc.agents.listEnabled.useQuery(
+    undefined,
+    { staleTime: 0 } // Always refetch when settings opens
+  )
 
   const openInFinderMutation = trpc.external.openInFinder.useMutation()
 
+  const deleteAgentMutation = trpc.agents.delete.useMutation({
+    onSuccess: () => {
+      utils.agents.listEnabled.invalidate()
+    },
+    onError: (error) => {
+      console.error("Failed to delete agent:", error.message)
+    },
+  })
+
   const userAgents = agents.filter((a) => a.source === "user")
-  const projectAgents = agents.filter((a) => a.source === "project")
 
   const handleExpandAgent = (agentName: string) => {
     setExpandedAgentName(expandedAgentName === agentName ? null : agentName)
@@ -52,25 +64,34 @@ export function AgentsCustomAgentsTab() {
     openInFinderMutation.mutate(path)
   }
 
+  const handleDeleteAgent = (agent: FileAgent) => {
+    deleteAgentMutation.mutate({
+      name: agent.name,
+      source: agent.source,
+    })
+  }
+
   return (
     <div className="p-6 space-y-6 overflow-y-auto max-h-[70vh]">
       {/* Header - hidden on narrow screens */}
       {!isNarrowScreen && (
-        <div className="flex flex-col space-y-1.5 text-center sm:text-left">
-          <div className="flex items-center gap-2">
-            <h3 className="text-sm font-semibold text-foreground">Custom Agents</h3>
-            <span className="px-1.5 py-0.5 text-[10px] font-medium rounded bg-muted text-muted-foreground">
-              Beta
-            </span>
+        <div className="flex items-center justify-between">
+          <div className="flex flex-col space-y-1.5 text-left">
+            <div className="flex items-center gap-2">
+              <h3 className="text-sm font-semibold text-foreground">Custom Agents</h3>
+              <span className="px-1.5 py-0.5 text-[10px] font-medium rounded bg-muted text-muted-foreground">
+                Beta
+              </span>
+            </div>
+            <a
+              href="https://code.claude.com/docs/en/sub-agents"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-xs text-muted-foreground hover:text-foreground underline transition-colors"
+            >
+              Documentation
+            </a>
           </div>
-          <a
-            href="https://code.claude.com/docs/en/sub-agents"
-            target="_blank"
-            rel="noopener noreferrer"
-            className="text-xs text-muted-foreground hover:text-foreground underline transition-colors"
-          >
-            Documentation
-          </a>
         </div>
       )}
 
@@ -84,58 +105,32 @@ export function AgentsCustomAgentsTab() {
           <div className="bg-background rounded-lg border border-border p-6 text-center">
             <AgentIcon className="h-8 w-8 text-muted-foreground/50 mx-auto mb-3" />
             <p className="text-sm text-muted-foreground mb-2">
-              No custom agents found
+              No custom agents yet
             </p>
             <p className="text-xs text-muted-foreground">
-              Add .md files to <code className="px-1 py-0.5 bg-muted rounded">~/.claude/agents/</code>
+              Use <code className="px-1 py-0.5 rounded bg-muted text-foreground">/create-agent</code> in chat to create one, or manually add <code className="px-1 py-0.5 rounded bg-muted text-foreground">.md</code> files to <code className="px-1 py-0.5 rounded bg-muted text-foreground">~/.claude/agents/</code> or <code className="px-1 py-0.5 rounded bg-muted text-foreground">.claude/agents/</code>
             </p>
           </div>
         ) : (
-          <>
-            {/* User Agents */}
-            {userAgents.length > 0 && (
-              <div className="space-y-2">
-                <div className="text-xs text-muted-foreground">
-                  ~/.claude/agents/
-                </div>
-                <div className="bg-background rounded-lg border border-border overflow-hidden">
-                  <div className="divide-y divide-border">
-                    {userAgents.map((agent) => (
-                      <AgentRow
-                        key={agent.name}
-                        agent={agent}
-                        isExpanded={expandedAgentName === agent.name}
-                        onToggle={() => handleExpandAgent(agent.name)}
-                        onOpenInFinder={() => handleOpenInFinder(agent.path)}
-                      />
-                    ))}
-                  </div>
-                </div>
+          <div className="space-y-2">
+            <div className="text-xs text-muted-foreground">
+              ~/.claude/agents/
+            </div>
+            <div className="bg-background rounded-lg border border-border overflow-hidden">
+              <div className="divide-y divide-border">
+                {userAgents.map((agent) => (
+                  <AgentRow
+                    key={agent.name}
+                    agent={agent}
+                    isExpanded={expandedAgentName === agent.name}
+                    onToggle={() => handleExpandAgent(agent.name)}
+                    onOpenInFinder={() => handleOpenInFinder(agent.path)}
+                    onDelete={() => handleDeleteAgent(agent)}
+                  />
+                ))}
               </div>
-            )}
-
-            {/* Project Agents */}
-            {projectAgents.length > 0 && (
-              <div className="space-y-2">
-                <div className="text-xs text-muted-foreground">
-                  .claude/agents/
-                </div>
-                <div className="bg-background rounded-lg border border-border overflow-hidden">
-                  <div className="divide-y divide-border">
-                    {projectAgents.map((agent) => (
-                      <AgentRow
-                        key={agent.name}
-                        agent={agent}
-                        isExpanded={expandedAgentName === agent.name}
-                        onToggle={() => handleExpandAgent(agent.name)}
-                        onOpenInFinder={() => handleOpenInFinder(agent.path)}
-                      />
-                    ))}
-                  </div>
-                </div>
-              </div>
-            )}
-          </>
+            </div>
+          </div>
         )}
       </div>
 
@@ -151,18 +146,18 @@ export function AgentsCustomAgentsTab() {
         </div>
         <div>
           <h4 className="text-xs font-medium text-foreground mb-1.5">
-            Using Agents
+            Creating Agents
           </h4>
           <p className="text-xs text-muted-foreground">
-            Ask Claude to use an agent directly (e.g., "use the code-reviewer agent") or Claude will automatically invoke them when appropriate.
+            Type <code className="px-1 py-0.5 rounded bg-muted text-foreground">/create-agent</code> in chat to create an agent interactively, or manually create <code className="px-1 py-0.5 rounded bg-muted text-foreground">.md</code> files in <code className="px-1 py-0.5 rounded bg-muted text-foreground">~/.claude/agents/</code> (global) or <code className="px-1 py-0.5 rounded bg-muted text-foreground">.claude/agents/</code> (project).
           </p>
         </div>
         <div>
           <h4 className="text-xs font-medium text-foreground mb-1.5">
-            File Format
+            Using Agents
           </h4>
           <p className="text-xs text-muted-foreground">
-            Agents are Markdown files with YAML frontmatter containing <code className="px-1 py-0.5 bg-muted rounded">name</code>, <code className="px-1 py-0.5 bg-muted rounded">description</code>, <code className="px-1 py-0.5 bg-muted rounded">tools</code>, and <code className="px-1 py-0.5 bg-muted rounded">model</code>. The body is the system prompt.
+            Ask Claude to use an agent directly (e.g., "use the code-reviewer agent"), mention them with <code className="px-1 py-0.5 rounded bg-muted text-foreground">@</code> in chat, or Claude will automatically invoke them when appropriate.
           </p>
         </div>
       </div>
@@ -176,11 +171,13 @@ function AgentRow({
   isExpanded,
   onToggle,
   onOpenInFinder,
+  onDelete,
 }: {
   agent: FileAgent
   isExpanded: boolean
   onToggle: () => void
   onOpenInFinder: () => void
+  onDelete: () => void
 }) {
   return (
     <div>
@@ -272,6 +269,20 @@ function AgentRow({
                     </div>
                   </div>
                 )}
+
+                {/* Delete */}
+                <div className="pt-2 border-t border-border">
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      onDelete()
+                    }}
+                    className="flex items-center gap-1.5 text-xs text-destructive hover:text-destructive/80 transition-colors"
+                  >
+                    <Trash2 className="h-3 w-3" />
+                    Delete agent
+                  </button>
+                </div>
               </div>
             </div>
           </motion.div>

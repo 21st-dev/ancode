@@ -12,13 +12,53 @@ import {
   memo,
 } from "react"
 import { createPortal } from "react-dom"
-import { IconSpinner } from "../../../components/ui/icons"
+import {
+  IconSpinner,
+  IconChatBubble,
+  PlanIcon,
+  AgentIcon,
+} from "../../../components/ui/icons"
+import {
+  MessageSquareCode,
+  FileText,
+  ShieldCheck,
+  Eye,
+  FolderGit2,
+  Bot,
+} from "lucide-react"
 import type { SlashCommandOption, SlashTriggerPayload } from "./types"
 import {
   filterBuiltinCommands,
   BUILTIN_SLASH_COMMANDS,
 } from "./builtin-commands"
 import type { AgentMode } from "../atoms"
+
+// Get icon component for a slash command
+function getCommandIcon(commandName: string) {
+  switch (commandName) {
+    case "clear":
+      return IconChatBubble
+    case "plan":
+      return PlanIcon
+    case "agent":
+      return AgentIcon
+    case "review":
+      return Eye
+    case "pr-comments":
+      return MessageSquareCode
+    case "release-notes":
+      return FileText
+    case "security-review":
+      return ShieldCheck
+    case "worktree-setup":
+      return FolderGit2
+    case "create-agent":
+      return Bot
+    default:
+      return IconChatBubble
+  }
+}
+
 
 interface AgentsSlashCommandProps {
   isOpen: boolean

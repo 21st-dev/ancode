@@ -1,9 +1,9 @@
 "use client"
 
-import { useAtom, useAtomValue } from "jotai"
-import { ChevronDown, Zap } from "lucide-react"
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { createPortal } from "react-dom"
+import { useAtom, useAtomValue, useSetAtom } from "jotai"
+import { ChevronDown, WifiOff, Zap } from "lucide-react"
 
 import { Button } from "../../../components/ui/button"
 import {
@@ -38,9 +38,8 @@ import {
 } from "../../../lib/atoms"
 import { trpc } from "../../../lib/trpc"
 import { cn } from "../../../lib/utils"
-import { lastSelectedModelIdAtom, subChatModeAtomFamily, getNextMode, type AgentMode, type SubChatFileChange } from "../atoms"
-import { useAgentSubChatStore } from "../stores/sub-chat-store"
-import { AgentsSlashCommand, type SlashCommandOption } from "../commands"
+import { lastSelectedModelIdAtom, subChatModeAtomFamily, getNextMode, showCreateAgentFormAtom, type AgentMode, type SubChatFileChange } from "../atoms"
+import { AgentsSlashCommand, COMMAND_PROMPTS, type SlashCommandOption } from "../commands"
 import { AgentSendButton } from "../components/agent-send-button"
 import type { UploadedFile, UploadedImage } from "../hooks/use-agents-file-upload"
 import {
@@ -377,6 +376,14 @@ export const ChatInputArea = memo(function ChatInputArea({
   const [slashSearchText, setSlashSearchText] = useState("")
   const [slashPosition, setSlashPosition] = useState({ top: 0, left: 0 })
 
+  // Colon trigger dropdown state (for agent mentions)
+  const [showColonDropdown, setShowColonDropdown] = useState(false)
+  const [colonSearchText, setColonSearchText] = useState("")
+  const [colonPosition, setColonPosition] = useState({ top: 0, left: 0 })
+
+  // Create-agent form trigger
+  const setShowCreateAgentForm = useSetAtom(showCreateAgentFormAtom)
+
   // Mode dropdown state
   const [modeDropdownOpen, setModeDropdownOpen] = useState(false)
   const [modeTooltip, setModeTooltip] = useState<{
@@ -426,11 +433,10 @@ export const ChatInputArea = memo(function ChatInputArea({
   )
   const [subChatMode, setSubChatMode] = useAtom(subChatModeAtom)
 
-  // Helper to update mode (atomFamily + Zustand store sync)
+  // Helper to update mode (atomFamily only - Zustand store removed)
   const updateMode = useCallback((newMode: AgentMode) => {
     setSubChatMode(newMode)
-    useAgentSubChatStore.getState().updateSubChatMode(subChatId, newMode)
-  }, [setSubChatMode, subChatId])
+  }, [setSubChatMode])
 
   // Toggle mode helper
   const toggleMode = useCallback(() => {
@@ -738,6 +744,12 @@ export const ChatInputArea = memo(function ChatInputArea({
     setShowingToolsList(false)
   }, [editorRef])
 
+  // Colon trigger select handler (agents only)
+  const handleColonMentionSelect = useCallback((mention: FileMentionOption) => {
+    editorRef.current?.insertColonMention(mention)
+    setShowColonDropdown(false)
+  }, [editorRef])
+
   // Slash command handlers
   const handleSlashTrigger = useCallback(
     ({ searchText, rect }: { searchText: string; rect: DOMRect }) => {
@@ -780,7 +792,26 @@ export const ChatInputArea = memo(function ChatInputArea({
           case "compact":
             // Trigger context compaction
             onCompact()
-            return
+            break
+          case "create-agent":
+            // Show the create-agent form
+            setShowCreateAgentForm(true)
+            break
+          // Prompt-based commands - auto-send to agent
+          case "review":
+          case "pr-comments":
+          case "release-notes":
+          case "security-review":
+          case "commit": {
+            const prompt =
+              COMMAND_PROMPTS[command.name as keyof typeof COMMAND_PROMPTS]
+            if (prompt) {
+              editorRef.current?.setValue(prompt)
+              // Auto-send the prompt to agent
+              setTimeout(() => onSend(), 0)
+            }
+            break
+          }
         }
       }
 
@@ -788,7 +819,7 @@ export const ChatInputArea = memo(function ChatInputArea({
       // insert the command and let user add arguments or press Enter to send
       editorRef.current?.setValue(`/${command.name} `)
     },
-    [subChatMode, updateMode, onCreateNewSubChat, onCompact, editorRef],
+    [subChatMode, updateMode, onSend, onCreateNewSubChat, onCompact, editorRef, setShowCreateAgentForm],
   )
 
   // Paste handler for images, plain text, and large text (saved as files)
@@ -1047,13 +1078,21 @@ export const ChatInputArea = memo(function ChatInputArea({
                     setShowingAgentsList(false)
                     setShowingToolsList(false)
                   }}
+                  onColonTrigger={({ searchText, rect }) => {
+                    setColonSearchText(searchText)
+                    setColonPosition({ top: rect.top, left: rect.left })
+                    setShowColonDropdown(true)
+                  }}
+                  onCloseColonTrigger={() => {
+                    setShowColonDropdown(false)
+                  }}
                   onSlashTrigger={handleSlashTrigger}
                   onCloseSlashTrigger={handleCloseSlashTrigger}
                   onContentChange={handleContentChange}
                   onSubmit={onSubmitWithQuestionAnswer || handleEditorSubmit}
                   onForceSubmit={onForceSend}
                   onShiftTab={toggleMode}
-                  placeholder={isStreaming ? "Add to the queue" : "Plan, @ for context, / for commands"}
+                  placeholder={isStreaming ? "Add to the queue" : "Plan, @ for context, : for agents, / for commands"}
                   className={cn(
                     "bg-transparent max-h-[200px] overflow-y-auto p-1",
                     isMobile && "min-h-[56px]",
@@ -1468,6 +1507,24 @@ export const ChatInputArea = memo(function ChatInputArea({
         showingSkillsList={showingSkillsList}
         showingAgentsList={showingAgentsList}
         showingToolsList={showingToolsList}
+      />
+
+      {/* Colon trigger dropdown (agents only) */}
+      <AgentsFileMention
+        isOpen={showColonDropdown}
+        onClose={() => setShowColonDropdown(false)}
+        onSelect={handleColonMentionSelect}
+        searchText={colonSearchText}
+        position={colonPosition}
+        teamId={teamId}
+        repository={repository}
+        sandboxId={sandboxId}
+        projectPath={projectPath}
+        changedFiles={[]}
+        showingFilesList={false}
+        showingSkillsList={false}
+        showingAgentsList={true}
+        showingToolsList={false}
       />
 
       {/* Slash command dropdown */}
