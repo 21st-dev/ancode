@@ -78,6 +78,7 @@
     "electron-updater": "^6.7.3",
     "gray-matter": "^4.0.3",
     "jotai": "^2.11.1",
+    "jsonc-parser": "^3.3.1",
     "lucide-react": "^0.468.0",
     "mermaid": "^11.12.2",
     "motion": "^11.15.0",
