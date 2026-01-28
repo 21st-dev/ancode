@@ -1015,7 +1015,7 @@ export const SimpleIsolatedGroup = memo(function SimpleIsolatedGroup({
         </div>
       )}
 
-      {/* Text mentions (quote/diff) - NOT sticky */}
+      {/* Text mentions (quote/diff/pasted) - NOT sticky */}
       {textMentions.length > 0 && (
         <div className="mb-2 pointer-events-auto">
           <TextMentionBlocks mentions={textMentions} />
@@ -1027,12 +1027,37 @@ export const SimpleIsolatedGroup = memo(function SimpleIsolatedGroup({
         data-user-message-id={userMsg.id}
         className={`[&>div]:!mb-4 pointer-events-auto sticky z-10 ${stickyTopClass}`}
       >
-        <UserBubbleComponent
-          messageId={userMsg.id}
-          textContent={textContent}
-          imageParts={[]}
-          skipTextMentionBlocks
-        />
+        {/* Show "Using X" summary when no text but have attachments */}
+        {!textContent.trim() && (imageParts.length > 0 || textMentions.length > 0) ? (
+          <div className="flex justify-start drop-shadow-[0_10px_20px_hsl(var(--background))]" data-user-bubble>
+            <div className="space-y-2 w-full">
+              <div className="bg-input-background border px-3 py-2 rounded-xl text-sm text-muted-foreground italic">
+                {(() => {
+                  const parts: string[] = []
+                  if (imageParts.length > 0) {
+                    parts.push(imageParts.length === 1 ? "image" : `${imageParts.length} images`)
+                  }
+                  const quoteCount = textMentions.filter(m => m.type === "quote" || m.type === "pasted").length
+                  const codeCount = textMentions.filter(m => m.type === "diff").length
+                  if (quoteCount > 0) {
+                    parts.push(quoteCount === 1 ? "selected text" : `${quoteCount} text selections`)
+                  }
+                  if (codeCount > 0) {
+                    parts.push(codeCount === 1 ? "code selection" : `${codeCount} code selections`)
+                  }
+                  return `Using ${parts.join(", ")}`
+                })()}
+              </div>
+            </div>
+          </div>
+        ) : (
+          <UserBubbleComponent
+            messageId={userMsg.id}
+            textContent={textContent}
+            imageParts={[]}
+            skipTextMentionBlocks
+          />
+        )}
 
         {/* Cloning indicator */}
         {shouldShowCloning && (

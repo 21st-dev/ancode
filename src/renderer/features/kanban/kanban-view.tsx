@@ -2,6 +2,7 @@ import { useCallback, useMemo, useEffect, useRef, useState } from "react"
 import { useAtom, useAtomValue, useSetAtom } from "jotai"
 import { toast } from "sonner"
 import { trpc } from "../../lib/trpc"
+import { getWindowId } from "../../contexts/WindowContext"
 import {
   selectedAgentChatIdAtom,
   selectedDraftIdAtom,
@@ -11,6 +12,7 @@ import {
   pendingPlanApprovalsAtom,
   agentsUnseenChangesAtom,
   selectedProjectAtom,
+  agentsSidebarOpenAtom,
 } from "../agents/atoms"
 import {
   selectedAgentChatIdsAtom,
@@ -24,6 +26,7 @@ import { useNewChatDrafts } from "../agents/lib/drafts"
 import { exportChat, copyChat } from "../agents/lib/export-chat"
 import { AgentsRenameSubChatDialog } from "../agents/components/agents-rename-subchat-dialog"
 import { ConfirmArchiveDialog } from "../../components/confirm-archive-dialog"
+import { AgentsHeaderControls } from "../agents/ui/agents-header-controls"
 
 // Event for open sub-chats changes
 const OPEN_SUB_CHATS_CHANGE_EVENT = "open-sub-chats-change"
@@ -32,6 +35,9 @@ export function KanbanView() {
   const setSelectedChatId = useSetAtom(selectedAgentChatIdAtom)
   const setSelectedDraftId = useSetAtom(selectedDraftIdAtom)
   const setShowNewChatForm = useSetAtom(showNewChatFormAtom)
+
+  // Sidebar state for header controls
+  const [sidebarOpen, setSidebarOpen] = useAtom(agentsSidebarOpenAtom)
 
   // Multi-select state
   const [selectedChatIds] = useAtom(selectedAgentChatIdsAtom)
@@ -71,7 +77,8 @@ export function KanbanView() {
       return
     }
     try {
-      const stored = localStorage.getItem(`agent-pinned-chats-${selectedProject.id}`)
+      const windowId = getWindowId()
+      const stored = localStorage.getItem(`${windowId}:agent-pinned-chats-${selectedProject.id}`)
       setPinnedChatIds(stored ? new Set(JSON.parse(stored)) : new Set())
     } catch {
       setPinnedChatIds(new Set())
@@ -86,8 +93,9 @@ export function KanbanView() {
       (pinnedChatIds !== prevPinnedRef.current && pinnedChatIds.size > 0) ||
       prevPinnedRef.current.size > 0
     ) {
+      const windowId = getWindowId()
       localStorage.setItem(
-        `agent-pinned-chats-${selectedProject.id}`,
+        `${windowId}:agent-pinned-chats-${selectedProject.id}`,
         JSON.stringify([...pinnedChatIds]),
       )
     }
@@ -139,10 +147,11 @@ export function KanbanView() {
     void openSubChatsVersion
     if (!chats) return prevOpenSubChatIdsRef.current
 
+    const windowId = getWindowId()
     const allIds: string[] = []
     for (const chat of chats) {
       try {
-        const stored = localStorage.getItem(`agent-open-sub-chats-${chat.id}`)
+        const stored = localStorage.getItem(`${windowId}:agent-open-sub-chats-${chat.id}`)
         if (stored) {
           const ids = JSON.parse(stored) as string[]
           allIds.push(...ids)
@@ -405,6 +414,14 @@ export function KanbanView() {
 
   return (
     <div className="flex flex-col h-full w-full bg-background">
+      {/* Header with sidebar toggle */}
+      <div className="flex-shrink-0 flex items-center p-1.5">
+        <AgentsHeaderControls
+          isSidebarOpen={sidebarOpen}
+          onToggleSidebar={() => setSidebarOpen((prev) => !prev)}
+        />
+      </div>
+
       {/* Board */}
       <div className="flex-1 overflow-hidden">
         <KanbanBoard

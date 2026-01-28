@@ -314,6 +314,139 @@ function registerIpcHandlers(): void {
     }
   })
 
+  ipcMain.handle("auth:get-token", async (event) => {
+    if (!validateSender(event)) return null
+    return getAuthManager().getValidToken()
+  })
+
+  // Signed fetch - proxies requests through main process (no CORS)
+  ipcMain.handle(
+    "api:signed-fetch",
+    async (
+      event,
+      url: string,
+      options?: { method?: string; body?: string; headers?: Record<string, string> },
+    ) => {
+      console.log("[SignedFetch] IPC handler called with URL:", url)
+      if (!validateSender(event)) {
+        console.log("[SignedFetch] Unauthorized sender")
+        return { ok: false, status: 403, data: null, error: "Unauthorized sender" }
+      }
+      console.log("[SignedFetch] Sender validated OK")
+
+      const token = await getAuthManager().getValidToken()
+      console.log("[SignedFetch] Token:", token ? "present" : "missing", "URL:", url)
+      if (!token) {
+        return { ok: false, status: 401, data: null, error: "Not authenticated" }
+      }
+
+      try {
+        const response = await fetch(url, {
+          method: options?.method || "GET",
+          body: options?.body,
+          headers: {
+            ...options?.headers,
+            "X-Desktop-Token": token,
+            "Content-Type": "application/json",
+          },
+        })
+
+        const data = await response.json().catch(() => null)
+        console.log("[SignedFetch] Response:", response.status, response.ok ? "OK" : "FAILED")
+
+        return {
+          ok: response.ok,
+          status: response.status,
+          data,
+          error: response.ok ? null : `Request failed: ${response.status}`,
+        }
+      } catch (error) {
+        console.log("[SignedFetch] Error:", error)
+        return {
+          ok: false,
+          status: 0,
+          data: null,
+          error: error instanceof Error ? error.message : "Network error",
+        }
+      }
+    },
+  )
+
+  // Streaming fetch - for SSE responses (chat streaming)
+  // Uses a unique stream ID to match chunks with the right request
+  ipcMain.handle(
+    "api:stream-fetch",
+    async (
+      event,
+      streamId: string,
+      url: string,
+      options?: { method?: string; body?: string; headers?: Record<string, string> },
+    ) => {
+      console.log("[StreamFetch] Starting stream:", streamId, url)
+      if (!validateSender(event)) {
+        console.log("[StreamFetch] Unauthorized sender")
+        return { ok: false, status: 403, error: "Unauthorized sender" }
+      }
+
+      const token = await getAuthManager().getValidToken()
+      if (!token) {
+        return { ok: false, status: 401, error: "Not authenticated" }
+      }
+
+      try {
+        const response = await fetch(url, {
+          method: options?.method || "POST",
+          body: options?.body,
+          headers: {
+            ...options?.headers,
+            "X-Desktop-Token": token,
+            "Content-Type": "application/json",
+          },
+        })
+
+        console.log("[StreamFetch] Response:", response.status, response.ok)
+
+        if (!response.ok) {
+          const errorText = await response.text().catch(() => "Unknown error")
+          return { ok: false, status: response.status, error: errorText }
+        }
+
+        // Stream the response body back to renderer
+        const reader = response.body?.getReader()
+        if (!reader) {
+          return { ok: false, status: 500, error: "No response body" }
+        }
+
+        // Send chunks asynchronously
+        ;(async () => {
+          try {
+            while (true) {
+              const { done, value } = await reader.read()
+              if (done) {
+                event.sender.send(`stream:${streamId}:done`)
+                break
+              }
+              // Send chunk to renderer
+              event.sender.send(`stream:${streamId}:chunk`, value)
+            }
+          } catch (err) {
+            console.error("[StreamFetch] Stream error:", err)
+            event.sender.send(`stream:${streamId}:error`, err instanceof Error ? err.message : "Stream error")
+          }
+        })()
+
+        return { ok: true, status: response.status }
+      } catch (error) {
+        console.error("[StreamFetch] Fetch error:", error)
+        return {
+          ok: false,
+          status: 0,
+          error: error instanceof Error ? error.message : "Network error",
+        }
+      }
+    },
+  )
+
   // Register git watcher IPC handlers
   registerGitWatcherIPC()
 

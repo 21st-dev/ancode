@@ -4,12 +4,14 @@ import react from "@vitejs/plugin-react"
 import tailwindcss from "tailwindcss"
 import autoprefixer from "autoprefixer"
 
+const isDev = process.env.NODE_ENV !== "production"
+
 export default defineConfig({
   main: {
     plugins: [
       externalizeDepsPlugin({
         // Don't externalize these - bundle them instead
-        exclude: ["superjson", "trpc-electron", "gray-matter"],
+        exclude: ["superjson", "trpc-electron", "gray-matter", "async-mutex"],
       }),
     ],
     build: {
@@ -48,7 +50,14 @@ export default defineConfig({
     },
   },
   renderer: {
-    plugins: [react()],
+    plugins: [
+      react({
+        // In dev mode, use WDYR as JSX import source to track ALL component re-renders
+        jsxImportSource: isDev
+          ? "@welldone-software/why-did-you-render"
+          : undefined,
+      }),
+    ],
     server: {
       port: 5199, // Use non-default port to avoid conflict with worktree dev servers
     },

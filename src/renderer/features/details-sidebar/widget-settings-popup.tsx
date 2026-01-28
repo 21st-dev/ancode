@@ -21,6 +21,8 @@ import {
 
 interface WidgetSettingsPopupProps {
   workspaceId: string
+  /** Whether this is a remote sandbox chat (hides terminal widget) */
+  isRemoteChat?: boolean
 }
 
 // Get the correct icon for each widget (matching details-sidebar.tsx)
@@ -41,7 +43,7 @@ function getWidgetIcon(widgetId: WidgetId) {
   }
 }
 
-export function WidgetSettingsPopup({ workspaceId }: WidgetSettingsPopupProps) {
+export function WidgetSettingsPopup({ workspaceId, isRemoteChat = false }: WidgetSettingsPopupProps) {
   const visibilityAtom = useMemo(
     () => widgetVisibilityAtomFamily(workspaceId),
     [workspaceId],
@@ -138,12 +140,15 @@ export function WidgetSettingsPopup({ workspaceId }: WidgetSettingsPopupProps) {
     setDragOverWidget(null)
   }, [])
 
-  // Get widgets in current order
+  // Get widgets in current order, filtering out terminal for remote chats
   const orderedWidgets = useMemo(() => {
-    return [...WIDGET_REGISTRY].sort(
+    const widgets = isRemoteChat
+      ? WIDGET_REGISTRY.filter((w) => w.id !== "terminal")
+      : WIDGET_REGISTRY
+    return [...widgets].sort(
       (a, b) => widgetOrder.indexOf(a.id) - widgetOrder.indexOf(b.id),
     )
-  }, [widgetOrder])
+  }, [widgetOrder, isRemoteChat])
 
   return (
     <Popover>

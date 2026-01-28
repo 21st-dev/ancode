@@ -2,6 +2,7 @@ import { z } from "zod";
 import { publicProcedure, router } from "../trpc";
 import {
 	gitCheckoutFile,
+	gitCheckoutFiles,
 	gitStageAll,
 	gitStageFile,
 	gitStageFiles,
@@ -96,6 +97,32 @@ export const createStagingRouter = () => {
 			)
 			.mutation(async ({ input }): Promise<{ success: boolean }> => {
 				await secureFs.delete(input.worktreePath, input.filePath);
+				return { success: true };
+			}),
+
+		discardMultipleChanges: publicProcedure
+			.input(
+				z.object({
+					worktreePath: z.string(),
+					filePaths: z.array(z.string()),
+				}),
+			)
+			.mutation(async ({ input }): Promise<{ success: boolean }> => {
+				await gitCheckoutFiles(input.worktreePath, input.filePaths);
+				return { success: true };
+			}),
+
+		deleteMultipleUntracked: publicProcedure
+			.input(
+				z.object({
+					worktreePath: z.string(),
+					filePaths: z.array(z.string()),
+				}),
+			)
+			.mutation(async ({ input }): Promise<{ success: boolean }> => {
+				for (const filePath of input.filePaths) {
+					await secureFs.delete(input.worktreePath, filePath);
+				}
 				return { success: true };
 			}),
 	});

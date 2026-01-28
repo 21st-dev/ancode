@@ -1,11 +1,17 @@
-import { eq } from "drizzle-orm"
+import { eq, sql } from "drizzle-orm"
 import { safeStorage, shell } from "electron"
 import { z } from "zod"
 import { getAuthManager } from "../../../index"
 import { getClaudeShellEnvironment } from "../../claude"
 import { getExistingClaudeToken } from "../../claude-token"
 import { getApiUrl } from "../../config"
-import { claudeCodeCredentials, getDatabase } from "../../db"
+import {
+  anthropicAccounts,
+  anthropicSettings,
+  claudeCodeCredentials,
+  getDatabase,
+} from "../../db"
+import { createId } from "../../db/utils"
 import { publicProcedure, router } from "../index"
 
 /**
@@ -38,13 +44,48 @@ function decryptToken(encrypted: string): string {
   return safeStorage.decryptString(buffer)
 }
 
-function storeOAuthToken(oauthToken: string) {
+/**
+ * Store OAuth token - now uses multi-account system
+ * If setAsActive is true, also sets this account as active
+ */
+function storeOAuthToken(oauthToken: string, setAsActive = true): string {
   const authManager = getAuthManager()
   const user = authManager.getUser()
 
   const encryptedToken = encryptToken(oauthToken)
   const db = getDatabase()
+  const newId = createId()
 
+  // Store in new multi-account table
+  db.insert(anthropicAccounts)
+    .values({
+      id: newId,
+      oauthToken: encryptedToken,
+      displayName: "Anthropic Account",
+      connectedAt: new Date(),
+      desktopUserId: user?.id ?? null,
+    })
+    .run()
+
+  if (setAsActive) {
+    // Set as active account
+    db.insert(anthropicSettings)
+      .values({
+        id: "singleton",
+        activeAccountId: newId,
+        updatedAt: new Date(),
+      })
+      .onConflictDoUpdate({
+        target: anthropicSettings.id,
+        set: {
+          activeAccountId: newId,
+          updatedAt: new Date(),
+        },
+      })
+      .run()
+  }
+
+  // Also update legacy table for backward compatibility
   db.delete(claudeCodeCredentials)
     .where(eq(claudeCodeCredentials.id, "default"))
     .run()
@@ -57,6 +98,8 @@ function storeOAuthToken(oauthToken: string) {
       userId: user?.id ?? null,
     })
     .run()
+
+  return newId
 }
 
 /**
@@ -81,9 +124,36 @@ export const claudeCodeRouter = router({
 
   /**
    * Check if user has Claude Code connected (local check)
+   * Now uses multi-account system - checks for active account
    */
   getIntegration: publicProcedure.query(() => {
     const db = getDatabase()
+
+    // First try multi-account system
+    const settings = db
+      .select()
+      .from(anthropicSettings)
+      .where(eq(anthropicSettings.id, "singleton"))
+      .get()
+
+    if (settings?.activeAccountId) {
+      const account = db
+        .select()
+        .from(anthropicAccounts)
+        .where(eq(anthropicAccounts.id, settings.activeAccountId))
+        .get()
+
+      if (account) {
+        return {
+          isConnected: true,
+          connectedAt: account.connectedAt?.toISOString() ?? null,
+          accountId: account.id,
+          displayName: account.displayName,
+        }
+      }
+    }
+
+    // Fallback to legacy table
     const cred = db
       .select()
       .from(claudeCodeCredentials)
@@ -93,6 +163,8 @@ export const claudeCodeRouter = router({
     return {
       isConnected: !!cred?.oauthToken,
       connectedAt: cred?.connectedAt?.toISOString() ?? null,
+      accountId: null,
+      displayName: null,
     }
   }),
 
@@ -257,9 +329,37 @@ export const claudeCodeRouter = router({
 
   /**
    * Get decrypted OAuth token (local)
+   * Now uses multi-account system - gets token from active account
    */
   getToken: publicProcedure.query(() => {
     const db = getDatabase()
+
+    // First try multi-account system
+    const settings = db
+      .select()
+      .from(anthropicSettings)
+      .where(eq(anthropicSettings.id, "singleton"))
+      .get()
+
+    if (settings?.activeAccountId) {
+      const account = db
+        .select()
+        .from(anthropicAccounts)
+        .where(eq(anthropicAccounts.id, settings.activeAccountId))
+        .get()
+
+      if (account) {
+        try {
+          const token = decryptToken(account.oauthToken)
+          return { token, error: null }
+        } catch (error) {
+          console.error("[ClaudeCode] Decrypt error:", error)
+          return { token: null, error: "Failed to decrypt token" }
+        }
+      }
+    }
+
+    // Fallback to legacy table
     const cred = db
       .select()
       .from(claudeCodeCredentials)
@@ -280,10 +380,47 @@ export const claudeCodeRouter = router({
   }),
 
   /**
-   * Disconnect - delete local credentials
+   * Disconnect - delete active account from multi-account system
    */
   disconnect: publicProcedure.mutation(() => {
     const db = getDatabase()
+
+    // Get active account
+    const settings = db
+      .select()
+      .from(anthropicSettings)
+      .where(eq(anthropicSettings.id, "singleton"))
+      .get()
+
+    if (settings?.activeAccountId) {
+      // Remove active account
+      db.delete(anthropicAccounts)
+        .where(eq(anthropicAccounts.id, settings.activeAccountId))
+        .run()
+
+      // Try to set another account as active
+      const firstRemaining = db.select().from(anthropicAccounts).limit(1).get()
+
+      if (firstRemaining) {
+        db.update(anthropicSettings)
+          .set({
+            activeAccountId: firstRemaining.id,
+            updatedAt: new Date(),
+          })
+          .where(eq(anthropicSettings.id, "singleton"))
+          .run()
+      } else {
+        db.update(anthropicSettings)
+          .set({
+            activeAccountId: null,
+            updatedAt: new Date(),
+          })
+          .where(eq(anthropicSettings.id, "singleton"))
+          .run()
+      }
+    }
+
+    // Also clear legacy table
     db.delete(claudeCodeCredentials)
       .where(eq(claudeCodeCredentials.id, "default"))
       .run()

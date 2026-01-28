@@ -2,11 +2,31 @@ import { atom } from "jotai"
 import { atomFamily, atomWithStorage } from "jotai/utils"
 import { atomWithWindowStorage } from "../../../lib/window-storage"
 
+// Agent mode type - extensible for future modes like "debug"
+export type AgentMode = "agent" | "plan"
+
+// Ordered list of modes - Shift+Tab cycles through these
+export const AGENT_MODES: AgentMode[] = ["agent", "plan"]
+
+// Get next mode in cycle (for Shift+Tab toggle)
+export function getNextMode(current: AgentMode): AgentMode {
+  const idx = AGENT_MODES.indexOf(current)
+  return AGENT_MODES[(idx + 1) % AGENT_MODES.length]
+}
+
 // Selected agent chat ID - null means "new chat" view (persisted to restore on reload)
 // Uses window-scoped storage so each Electron window can have its own selected chat
 export const selectedAgentChatIdAtom = atomWithWindowStorage<string | null>(
   "agents:selectedChatId",
   null,
+  { getOnInit: true },
+)
+
+// Whether the selected chat is a remote (sandbox) chat
+// This is needed because remote and local chats may have the same ID
+export const selectedChatIsRemoteAtom = atomWithWindowStorage<boolean>(
+  "agents:selectedChatIsRemote",
+  false,
   { getOnInit: true },
 )
 
@@ -19,9 +39,10 @@ export const previousAgentChatIdAtom = atom<string | null>(null)
 // Reset to null when "New Workspace" is clicked or chat is created
 export const selectedDraftIdAtom = atom<string | null>(null)
 
-// Show new chat form explicitly - set to true when "New Workspace" is clicked
-// Cleared when a workspace is selected or a draft is selected
-export const showNewChatFormAtom = atom<boolean>(false)
+// Show new chat form explicitly - true by default so new users see the form, not kanban
+// Set to false when kanban is explicitly opened (via hotkey or button)
+// Set to true when "New Workspace" is clicked
+export const showNewChatFormAtom = atom<boolean>(true)
 
 // Preview paths storage - stores all preview paths keyed by chatId
 const previewPathsStorageAtom = atomWithStorage<Record<string, string>>(
@@ -189,11 +210,23 @@ export const lastSelectedModelIdAtom = atomWithStorage<string>(
   { getOnInit: true },
 )
 
-export const isPlanModeAtom = atomWithStorage<boolean>(
-  "agents:isPlanMode",
-  false,
+// Storage for all sub-chat modes (persisted per subChatId)
+const subChatModesStorageAtom = atomWithStorage<Record<string, AgentMode>>(
+  "agents:subChatModes",
+  {},
   undefined,
   { getOnInit: true },
+)
+
+// atomFamily to get/set mode per subChatId
+export const subChatModeAtomFamily = atomFamily((subChatId: string) =>
+  atom(
+    (get) => get(subChatModesStorageAtom)[subChatId] ?? "agent",
+    (get, set, newMode: AgentMode) => {
+      const current = get(subChatModesStorageAtom)
+      set(subChatModesStorageAtom, { ...current, [subChatId]: newMode })
+    },
+  ),
 )
 
 // Model ID to full Claude model string mapping
@@ -632,7 +665,7 @@ export const askUserQuestionResultsAtom = atom<Map<string, unknown>>(new Map())
 // Unified undo stack for workspace and sub-chat archivation
 // Supports Cmd+Z to restore the last archived item (workspace or sub-chat)
 export type UndoItem =
-  | { type: "workspace"; chatId: string; timeoutId: ReturnType<typeof setTimeout> }
+  | { type: "workspace"; chatId: string; timeoutId: ReturnType<typeof setTimeout>; isRemote?: boolean }
   | { type: "subchat"; subChatId: string; chatId: string; timeoutId: ReturnType<typeof setTimeout> }
 
 export const undoStackAtom = atom<UndoItem[]>([])
@@ -665,6 +698,9 @@ export const viewedFilesAtomFamily = atomFamily((chatId: string) =>
     },
   ),
 )
+
+// Open Locally dialog trigger - set to chatId to open dialog for that chat
+export const openLocallyChatIdAtom = atom<string | null>(null)
 
 // Plan sidebar state atoms
 

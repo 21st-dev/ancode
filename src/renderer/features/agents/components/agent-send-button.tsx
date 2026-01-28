@@ -16,6 +16,7 @@ import {
 } from "../../../components/ui/tooltip"
 import { useResolvedHotkeyDisplayWithAlt, useResolvedHotkeyDisplay } from "../../../lib/hotkeys"
 import { cn } from "../../../lib/utils"
+import type { AgentMode } from "../atoms"
 
 interface AgentSendButtonProps {
   /** Whether the system is currently streaming */
@@ -34,8 +35,8 @@ interface AgentSendButtonProps {
   size?: "sm" | "default" | "lg"
   /** Custom aria-label */
   ariaLabel?: string
-  /** Whether this is plan mode (orange styling) */
-  isPlanMode?: boolean
+  /** Current mode (plan=orange styling, agent=default) */
+  mode?: AgentMode
   /** Whether input has content (used during streaming to show send-to-queue arrow) */
   hasContent?: boolean
   /** Whether to show voice input mode (mic icon when no content) */
@@ -61,7 +62,7 @@ export function AgentSendButton({
   className = "",
   size = "sm",
   ariaLabel,
-  isPlanMode = false,
+  mode = "agent",
   hasContent = false,
   showVoiceInput = false,
   isRecording = false,
@@ -219,7 +220,7 @@ export function AgentSendButton({
 
   // Mode-specific styling (agent=foreground, plan=orange)
   // Recording state uses same styling as normal mode (wave indicator shows recording state)
-  const modeClass = isPlanMode
+  const modeClass = mode === "plan"
     ? "!bg-plan-mode hover:!bg-plan-mode/90 !text-background !shadow-none"
     : "!bg-foreground hover:!bg-foreground/90 !text-background !shadow-none"
 

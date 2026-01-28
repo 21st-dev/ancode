@@ -433,7 +433,7 @@ export function AgentsAppearanceTab() {
                 )}
               </div>
             </SelectTrigger>
-            <SelectContent>
+            <SelectContent className="max-h-[300px]">
               {/* System preference option */}
               <SelectItem value="system">
                 <div className="flex items-center gap-2">

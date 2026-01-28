@@ -205,6 +205,7 @@ export interface KeyboardHandlerOptions {
  * Setup keyboard handling for xterm including:
  * - Shift+Enter: Sends ESC+CR sequence
  * - Cmd+K: Clear terminal
+ * - Ctrl+V / Cmd+V: Intercept to allow browser paste event
  *
  * Returns a cleanup function to remove the handler.
  */
@@ -237,6 +238,19 @@ export function setupKeyboardHandler(
         options.onClear()
       }
       return false // Prevent xterm from processing
+    }
+
+    // Ctrl+V (Windows/Linux) or Cmd+V (macOS) - let Electron menu handle paste
+    // Return false to prevent xterm from showing ^v character
+    // The Electron menu's "paste" role will trigger a paste event on the textarea
+    const isPasteShortcut =
+      event.key === "v" &&
+      !event.shiftKey &&
+      !event.altKey &&
+      (isMac() ? event.metaKey && !event.ctrlKey : event.ctrlKey && !event.metaKey)
+
+    if (isPasteShortcut) {
+      return false // Prevent xterm from showing ^v, let Electron menu handle it
     }
 
     return true // Let xterm process the key
@@ -418,5 +432,70 @@ export function setupClickToMoveCursor(
 
   return () => {
     xterm.element?.removeEventListener("click", handleClick)
+  }
+}
+
+export interface ContextMenuHandlerOptions {
+  /** Callback when text is copied via context menu */
+  onCopy?: (text: string) => void
+  /** Callback when text is pasted via context menu */
+  onPaste?: (text: string) => void
+  /** Callback when copy fails */
+  onCopyError?: (error: unknown) => void
+  /** Callback when paste fails */
+  onPasteError?: (error: unknown) => void
+}
+
+/**
+ * Setup right-click context menu for terminal with copy/paste support.
+ * - If text is selected: copies to clipboard
+ * - If no selection: pastes from clipboard
+ *
+ * Returns a cleanup function to remove the handler.
+ */
+export function setupContextMenuHandler(
+  xterm: XTerm,
+  options: ContextMenuHandlerOptions = {}
+): () => void {
+  const element = xterm.element
+  if (!element) {
+    return () => {} // noop cleanup if element not available
+  }
+
+  const handleContextMenu = async (event: MouseEvent) => {
+    event.preventDefault()
+
+    const selection = xterm.getSelection()
+
+    if (selection) {
+      // Has selection - copy to clipboard
+      try {
+        await navigator.clipboard.writeText(selection)
+        options.onCopy?.(selection)
+        // Clear selection after copy (optional, mimics typical terminal behavior)
+        xterm.clearSelection()
+      } catch (err) {
+        console.warn("[Terminal] Failed to copy to clipboard:", err)
+        options.onCopyError?.(err)
+      }
+    } else {
+      // No selection - paste from clipboard
+      try {
+        const text = await navigator.clipboard.readText()
+        if (text) {
+          options.onPaste?.(text)
+          xterm.paste(text)
+        }
+      } catch (err) {
+        console.warn("[Terminal] Failed to paste from clipboard:", err)
+        options.onPasteError?.(err)
+      }
+    }
+  }
+
+  element.addEventListener("contextmenu", handleContextMenu)
+
+  return () => {
+    element.removeEventListener("contextmenu", handleContextMenu)
   }
 }

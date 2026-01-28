@@ -136,6 +136,48 @@ contextBridge.exposeInMainWorld("desktopApi", {
   startAuthFlow: () => ipcRenderer.invoke("auth:start-flow"),
   submitAuthCode: (code: string) => ipcRenderer.invoke("auth:submit-code", code),
   updateUser: (updates: { name?: string }) => ipcRenderer.invoke("auth:update-user", updates),
+  getAuthToken: () => ipcRenderer.invoke("auth:get-token"),
+
+  // Signed fetch - proxies through main process (no CORS issues)
+  signedFetch: (
+    url: string,
+    options?: { method?: string; body?: string; headers?: Record<string, string> },
+  ) =>
+    ipcRenderer.invoke("api:signed-fetch", url, options) as Promise<{
+      ok: boolean
+      status: number
+      data: unknown
+      error: string | null
+    }>,
+
+  // Streaming fetch - for SSE responses (chat streaming)
+  streamFetch: (
+    streamId: string,
+    url: string,
+    options?: { method?: string; body?: string; headers?: Record<string, string> },
+  ) =>
+    ipcRenderer.invoke("api:stream-fetch", streamId, url, options) as Promise<{
+      ok: boolean
+      status: number
+      error?: string
+    }>,
+
+  // Stream event listeners
+  onStreamChunk: (streamId: string, callback: (chunk: Uint8Array) => void) => {
+    const handler = (_event: unknown, chunk: Uint8Array) => callback(chunk)
+    ipcRenderer.on(`stream:${streamId}:chunk`, handler)
+    return () => ipcRenderer.removeListener(`stream:${streamId}:chunk`, handler)
+  },
+  onStreamDone: (streamId: string, callback: () => void) => {
+    const handler = () => callback()
+    ipcRenderer.on(`stream:${streamId}:done`, handler)
+    return () => ipcRenderer.removeListener(`stream:${streamId}:done`, handler)
+  },
+  onStreamError: (streamId: string, callback: (error: string) => void) => {
+    const handler = (_event: unknown, error: string) => callback(error)
+    ipcRenderer.on(`stream:${streamId}:error`, handler)
+    return () => ipcRenderer.removeListener(`stream:${streamId}:error`, handler)
+  },
 
   // Auth events
   onAuthSuccess: (callback: (user: any) => void) => {
@@ -281,6 +323,20 @@ export interface DesktopApi {
     imageUrl: string | null
     username: string | null
   } | null>
+  getAuthToken: () => Promise<string | null>
+  signedFetch: (
+    url: string,
+    options?: { method?: string; body?: string; headers?: Record<string, string> },
+  ) => Promise<{ ok: boolean; status: number; data: unknown; error: string | null }>
+  // Streaming fetch
+  streamFetch: (
+    streamId: string,
+    url: string,
+    options?: { method?: string; body?: string; headers?: Record<string, string> },
+  ) => Promise<{ ok: boolean; status: number; error?: string }>
+  onStreamChunk: (streamId: string, callback: (chunk: Uint8Array) => void) => () => void
+  onStreamDone: (streamId: string, callback: () => void) => () => void
+  onStreamError: (streamId: string, callback: (error: string) => void) => () => void
   onAuthSuccess: (callback: (user: any) => void) => () => void
   onAuthError: (callback: (error: string) => void) => () => void
   // Shortcuts

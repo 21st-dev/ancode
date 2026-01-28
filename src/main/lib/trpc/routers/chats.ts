@@ -1084,8 +1084,9 @@ export const chatsRouter = router({
 
       // Fallback: Generate commit message with conventional commits style
       const fileNames = files.map((f) => {
-        const path = f.newPath !== "/dev/null" ? f.newPath : f.oldPath
-        return path.split("/").pop() || path
+        const filePath = f.newPath !== "/dev/null" ? f.newPath : f.oldPath
+        // Note: Git diff paths always use forward slashes
+        return path.posix.basename(filePath) || filePath
       })
 
       // Detect commit type from file changes

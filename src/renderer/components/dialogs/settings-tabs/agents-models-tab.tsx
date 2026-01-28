@@ -1,4 +1,5 @@
 import { useAtom, useSetAtom } from "jotai"
+import { MoreHorizontal, Plus } from "lucide-react"
 import { useEffect, useState } from "react"
 import { toast } from "sonner"
 import {
@@ -9,7 +10,14 @@ import {
   type CustomClaudeConfig,
 } from "../../../lib/atoms"
 import { trpc } from "../../../lib/trpc"
+import { Badge } from "../../ui/badge"
 import { Button } from "../../ui/button"
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "../../ui/dropdown-menu"
 import { Input } from "../../ui/input"
 import { Label } from "../../ui/label"
 
@@ -34,6 +42,208 @@ const EMPTY_CONFIG: CustomClaudeConfig = {
   model: "",
   token: "",
   baseUrl: "",
+}
+
+// Account row component
+function AccountRow({
+  account,
+  isActive,
+  onSetActive,
+  onRename,
+  onRemove,
+  isLoading,
+}: {
+  account: {
+    id: string
+    displayName: string | null
+    email: string | null
+    connectedAt: string | null
+  }
+  isActive: boolean
+  onSetActive: () => void
+  onRename: () => void
+  onRemove: () => void
+  isLoading: boolean
+}) {
+  return (
+    <div className="flex items-center justify-between p-3 hover:bg-muted/50">
+      <div className="flex items-center gap-3">
+        <div>
+          <div className="text-sm font-medium">
+            {account.displayName || "Anthropic Account"}
+          </div>
+          {account.email && (
+            <div className="text-xs text-muted-foreground">{account.email}</div>
+          )}
+          {!account.email && account.connectedAt && (
+            <div className="text-xs text-muted-foreground">
+              Connected{" "}
+              {new Date(account.connectedAt).toLocaleDateString(undefined, {
+                dateStyle: "short",
+              })}
+            </div>
+          )}
+        </div>
+      </div>
+
+      <div className="flex items-center gap-2">
+        {!isActive && (
+          <Button
+            size="sm"
+            variant="ghost"
+            onClick={onSetActive}
+            disabled={isLoading}
+          >
+            Switch
+          </Button>
+        )}
+        {isActive && (
+          <Badge variant="secondary" className="text-xs">
+            Active
+          </Badge>
+        )}
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button size="icon" variant="ghost" className="h-7 w-7">
+              <MoreHorizontal className="h-4 w-4" />
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end">
+            <DropdownMenuItem onClick={onRename}>Rename</DropdownMenuItem>
+            <DropdownMenuItem
+              className="data-[highlighted]:bg-red-500/15 data-[highlighted]:text-red-400"
+              onClick={onRemove}
+            >
+              Remove
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
+      </div>
+    </div>
+  )
+}
+
+// Anthropic accounts section component
+function AnthropicAccountsSection() {
+  const { data: accounts, isLoading: isAccountsLoading, refetch: refetchList } =
+    trpc.anthropicAccounts.list.useQuery(undefined, {
+      refetchOnMount: true,
+      staleTime: 0,
+    })
+  const { data: activeAccount, refetch: refetchActive } =
+    trpc.anthropicAccounts.getActive.useQuery(undefined, {
+      refetchOnMount: true,
+      staleTime: 0,
+    })
+  const { data: claudeCodeIntegration } = trpc.claudeCode.getIntegration.useQuery()
+  const trpcUtils = trpc.useUtils()
+
+  // Auto-migrate legacy account if needed
+  const migrateLegacy = trpc.anthropicAccounts.migrateLegacy.useMutation({
+    onSuccess: async () => {
+      await refetchList()
+      await refetchActive()
+    },
+  })
+
+  // Trigger migration if: no accounts, not loading, has legacy connection, not already migrating
+  useEffect(() => {
+    if (
+      !isAccountsLoading &&
+      accounts?.length === 0 &&
+      claudeCodeIntegration?.isConnected &&
+      !migrateLegacy.isPending &&
+      !migrateLegacy.isSuccess
+    ) {
+      migrateLegacy.mutate()
+    }
+  }, [isAccountsLoading, accounts, claudeCodeIntegration, migrateLegacy])
+
+  const setActiveMutation = trpc.anthropicAccounts.setActive.useMutation({
+    onSuccess: () => {
+      trpcUtils.anthropicAccounts.list.invalidate()
+      trpcUtils.anthropicAccounts.getActive.invalidate()
+      trpcUtils.claudeCode.getIntegration.invalidate()
+      toast.success("Account switched")
+    },
+    onError: (err) => {
+      toast.error(`Failed to switch account: ${err.message}`)
+    },
+  })
+
+  const renameMutation = trpc.anthropicAccounts.rename.useMutation({
+    onSuccess: () => {
+      trpcUtils.anthropicAccounts.list.invalidate()
+      trpcUtils.anthropicAccounts.getActive.invalidate()
+      toast.success("Account renamed")
+    },
+    onError: (err) => {
+      toast.error(`Failed to rename account: ${err.message}`)
+    },
+  })
+
+  const removeMutation = trpc.anthropicAccounts.remove.useMutation({
+    onSuccess: () => {
+      trpcUtils.anthropicAccounts.list.invalidate()
+      trpcUtils.anthropicAccounts.getActive.invalidate()
+      trpcUtils.claudeCode.getIntegration.invalidate()
+      toast.success("Account removed")
+    },
+    onError: (err) => {
+      toast.error(`Failed to remove account: ${err.message}`)
+    },
+  })
+
+  const handleRename = (accountId: string, currentName: string | null) => {
+    const newName = window.prompt(
+      "Enter new name for this account:",
+      currentName || "Anthropic Account"
+    )
+    if (newName && newName.trim()) {
+      renameMutation.mutate({ accountId, displayName: newName.trim() })
+    }
+  }
+
+  const handleRemove = (accountId: string, displayName: string | null) => {
+    const confirmed = window.confirm(
+      `Are you sure you want to remove "${displayName || "this account"}"? You will need to re-authenticate to use it again.`
+    )
+    if (confirmed) {
+      removeMutation.mutate({ accountId })
+    }
+  }
+
+  const isLoading =
+    setActiveMutation.isPending ||
+    renameMutation.isPending ||
+    removeMutation.isPending
+
+  // Don't show section if no accounts
+  if (!isAccountsLoading && (!accounts || accounts.length === 0)) {
+    return null
+  }
+
+  return (
+    <div className="bg-background rounded-lg border border-border overflow-hidden divide-y divide-border">
+        {isAccountsLoading ? (
+          <div className="p-4 text-center text-sm text-muted-foreground">
+            Loading accounts...
+          </div>
+        ) : (
+          accounts?.map((account) => (
+            <AccountRow
+              key={account.id}
+              account={account}
+              isActive={activeAccount?.id === account.id}
+              onSetActive={() => setActiveMutation.mutate({ accountId: account.id })}
+              onRename={() => handleRename(account.id, account.displayName)}
+              onRemove={() => handleRemove(account.id, account.displayName)}
+              isLoading={isLoading}
+            />
+          ))
+        )}
+    </div>
+  )
 }
 
 export function AgentsModelsTab() {
@@ -148,52 +358,29 @@ export function AgentsModelsTab() {
         </div>
       )}
 
+      {/* Anthropic Accounts Section */}
       <div className="space-y-2">
-        <div className="pb-2">
-          <h4 className="text-sm font-medium text-foreground">Claude Code</h4>
+        <div className="pb-2 flex items-center justify-between">
+          <div>
+            <h4 className="text-sm font-medium text-foreground">
+              Anthropic Accounts
+            </h4>
+            <p className="text-xs text-muted-foreground">
+              Manage your Claude API accounts
+            </p>
+          </div>
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={handleClaudeCodeSetup}
+            disabled={disconnectClaudeCode.isPending || isClaudeCodeLoading}
+          >
+            <Plus className="h-3 w-3 mr-1" />
+            {isClaudeCodeConnected ? "Add" : "Connect"}
+          </Button>
         </div>
 
-        <div className="bg-background rounded-lg border border-border overflow-hidden">
-          <div className="p-4 flex items-center justify-between gap-4">
-            <div className="flex flex-col space-y-1">
-              <span className="text-sm font-medium text-foreground">
-                Claude Code Connection
-              </span>
-              {isClaudeCodeLoading ? (
-                <span className="text-xs text-muted-foreground">
-                  Checking...
-                </span>
-              ) : isClaudeCodeConnected ? (
-                claudeCodeIntegration?.connectedAt ? (
-                  <span className="text-xs text-muted-foreground">
-                    Connected on{" "}
-                    {new Date(
-                      claudeCodeIntegration.connectedAt,
-                    ).toLocaleString(undefined, {
-                      dateStyle: "short",
-                      timeStyle: "short",
-                    })}
-                  </span>
-                ) : (
-                  <span className="text-xs text-muted-foreground">
-                    Connected
-                  </span>
-                )
-              ) : (
-                <span className="text-xs text-muted-foreground">
-                  Not connected yet
-                </span>
-              )}
-            </div>
-            <Button
-              size="sm"
-              onClick={handleClaudeCodeSetup}
-              disabled={disconnectClaudeCode.isPending || isClaudeCodeLoading}
-            >
-              {isClaudeCodeConnected ? "Reconnect" : "Connect"}
-            </Button>
-          </div>
-        </div>
+        <AnthropicAccountsSection />
       </div>
 
       <div className="space-y-2">

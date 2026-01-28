@@ -1043,9 +1043,14 @@ export async function getWorktreeDiff(
 		// All committed - diff against base branch
 		const targetBranch = baseBranch || await getDefaultBranch(worktreePath);
 
+		// Use origin if available, fallback to local branch
+		const baseRef = await refExistsLocally(worktreePath, `origin/${targetBranch}`)
+			? `origin/${targetBranch}`
+			: targetBranch;
+
 		try {
 			const diff = await git.diff([
-				`origin/${targetBranch}...HEAD`,
+				`${baseRef}...HEAD`,
 				"--no-color",
 				"--",
 				":!*.lock",

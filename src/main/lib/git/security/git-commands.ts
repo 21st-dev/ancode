@@ -80,6 +80,32 @@ export async function gitCheckoutFile(
 }
 
 /**
+ * Checkout (restore) multiple file paths, discarding local changes.
+ *
+ * Uses `git checkout -- <paths...>` to restore multiple files at once,
+ * avoiding multiple sequential git calls and lock conflicts.
+ */
+export async function gitCheckoutFiles(
+	worktreePath: string,
+	filePaths: string[],
+): Promise<void> {
+	assertRegisteredWorktree(worktreePath);
+	for (const filePath of filePaths) {
+		assertValidGitPath(filePath);
+	}
+
+	if (filePaths.length === 0) return;
+
+	const git = createGit(worktreePath);
+
+	// Process in batches to avoid command line length limits
+	for (let i = 0; i < filePaths.length; i += BATCH_SIZE) {
+		const batch = filePaths.slice(i, i + BATCH_SIZE);
+		await withLockRetry(worktreePath, () => git.checkout(["--", ...batch]));
+	}
+}
+
+/**
  * Stage a file for commit.
  *
  * Uses `git add -- <path>` - the `--` prevents paths starting

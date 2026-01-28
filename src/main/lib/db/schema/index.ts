@@ -91,6 +91,7 @@ export const subChatsRelations = relations(subChats, ({ one }) => ({
 
 // ============ CLAUDE CODE CREDENTIALS ============
 // Stores encrypted OAuth token for Claude Code integration
+// DEPRECATED: Use anthropicAccounts for multi-account support
 export const claudeCodeCredentials = sqliteTable("claude_code_credentials", {
   id: text("id").primaryKey().default("default"), // Single row, always "default"
   oauthToken: text("oauth_token").notNull(), // Encrypted with safeStorage
@@ -118,6 +119,31 @@ export const devCredentials = sqliteTable("dev_credentials", {
   ),
 })
 
+// ============ ANTHROPIC ACCOUNTS (Multi-account support) ============
+// Stores multiple Anthropic OAuth accounts for quick switching
+export const anthropicAccounts = sqliteTable("anthropic_accounts", {
+  id: text("id")
+    .primaryKey()
+    .$defaultFn(() => createId()),
+  email: text("email"), // User's email from OAuth (if available)
+  displayName: text("display_name"), // User-editable label
+  oauthToken: text("oauth_token").notNull(), // Encrypted with safeStorage
+  connectedAt: integer("connected_at", { mode: "timestamp" }).$defaultFn(
+    () => new Date(),
+  ),
+  lastUsedAt: integer("last_used_at", { mode: "timestamp" }),
+  desktopUserId: text("desktop_user_id"), // Reference to 21st.dev user
+})
+
+// Tracks which Anthropic account is currently active
+export const anthropicSettings = sqliteTable("anthropic_settings", {
+  id: text("id").primaryKey().default("singleton"), // Single row
+  activeAccountId: text("active_account_id"), // References anthropicAccounts.id
+  updatedAt: integer("updated_at", { mode: "timestamp" }).$defaultFn(
+    () => new Date(),
+  ),
+})
+
 // ============ TYPE EXPORTS ============
 export type Project = typeof projects.$inferSelect
 export type NewProject = typeof projects.$inferInsert
@@ -129,3 +155,6 @@ export type ClaudeCodeCredential = typeof claudeCodeCredentials.$inferSelect
 export type NewClaudeCodeCredential = typeof claudeCodeCredentials.$inferInsert
 export type DevCredential = typeof devCredentials.$inferSelect
 export type NewDevCredential = typeof devCredentials.$inferInsert
+export type AnthropicAccount = typeof anthropicAccounts.$inferSelect
+export type NewAnthropicAccount = typeof anthropicAccounts.$inferInsert
+export type AnthropicSettings = typeof anthropicSettings.$inferSelect
