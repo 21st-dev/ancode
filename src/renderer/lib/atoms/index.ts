@@ -34,6 +34,8 @@ export {
   mobileDeviceAtomFamily,
   agentsPreviewSidebarWidthAtom,
   agentsPreviewSidebarOpenAtom,
+  newPreviewSidebarOpenAtom,
+  newPreviewSidebarWidthAtom,
 
   // Diff atoms
   agentsDiffSidebarWidthAtom,
@@ -181,6 +183,7 @@ export type SettingsTab =
   | "debug"
   | "beta"
   | "keyboard"
+  | "dev-accounts"
   | `project-${string}` // Dynamic project tabs
 export const agentsSettingsDialogActiveTabAtom = atom<SettingsTab>("profile")
 export const agentsSettingsDialogOpenAtom = atom<boolean>(false)
@@ -416,6 +419,15 @@ export const betaKanbanEnabledAtom = atomWithStorage<boolean>(
   { getOnInit: true },
 )
 
+// Beta: Enable Preview sidebar
+// When enabled, shows Preview button in chat header to open a new preview sidebar
+export const betaPreviewSidebarEnabledAtom = atomWithStorage<boolean>(
+  "preferences:beta-preview-sidebar-enabled",
+  false, // Default OFF
+  undefined,
+  { getOnInit: true },
+)
+
 // Preferences - Ctrl+Tab Quick Switch Target
 // When "workspaces" (default), Ctrl+Tab switches between workspaces, and Opt+Ctrl+Tab switches between agents
 // When "agents", Ctrl+Tab switches between agents, and Opt+Ctrl+Tab switches between workspaces
@@ -610,6 +622,12 @@ export const agentsLoginModalOpenAtom = atom<boolean>(false)
 
 // Help popover
 export const agentsHelpPopoverOpenAtom = atom<boolean>(false)
+
+// Running servers popover (desktop only)
+export const runningServersPopoverOpenAtom = atom<boolean>(false)
+
+// MCP servers popover (desktop only)
+export const mcpServersPopoverOpenAtom = atom<boolean>(false)
 
 // Quick switch dialog - Agents
 export const agentsQuickSwitchOpenAtom = atom<boolean>(false)

@@ -6,6 +6,7 @@ import {
   autoOfflineModeAtom,
   selectedOllamaModelAtom,
   betaKanbanEnabledAtom,
+  betaPreviewSidebarEnabledAtom,
 } from "../../../lib/atoms"
 import { trpc } from "../../../lib/trpc"
 import { Switch } from "../../ui/switch"
@@ -21,18 +22,26 @@ import { Copy, Check, RefreshCw } from "lucide-react"
 import { Button } from "../../ui/button"
 import { cn } from "../../../lib/utils"
 
-// Hook to detect narrow screen
+// Hook to detect narrow screen (debounced to prevent excessive re-renders)
 function useIsNarrowScreen(): boolean {
-  const [isNarrow, setIsNarrow] = useState(false)
+  const [isNarrow, setIsNarrow] = useState(() => window.innerWidth <= 768)
 
   useEffect(() => {
+    let timeoutId: ReturnType<typeof setTimeout>
+
     const checkWidth = () => {
-      setIsNarrow(window.innerWidth <= 768)
+      clearTimeout(timeoutId)
+      timeoutId = setTimeout(() => {
+        const newIsNarrow = window.innerWidth <= 768
+        setIsNarrow(prev => (prev !== newIsNarrow ? newIsNarrow : prev))
+      }, 150)
     }
 
-    checkWidth()
     window.addEventListener("resize", checkWidth)
-    return () => window.removeEventListener("resize", checkWidth)
+    return () => {
+      clearTimeout(timeoutId)
+      window.removeEventListener("resize", checkWidth)
+    }
   }, [])
 
   return isNarrow
@@ -48,6 +57,7 @@ export function AgentsBetaTab() {
   const [autoOffline, setAutoOffline] = useAtom(autoOfflineModeAtom)
   const [selectedOllamaModel, setSelectedOllamaModel] = useAtom(selectedOllamaModelAtom)
   const [kanbanEnabled, setKanbanEnabled] = useAtom(betaKanbanEnabledAtom)
+  const [previewSidebarEnabled, setPreviewSidebarEnabled] = useAtom(betaPreviewSidebarEnabledAtom)
   const [copied, setCopied] = useState(false)
   const [updateStatus, setUpdateStatus] = useState<"idle" | "checking" | "available" | "not-available" | "error">("idle")
   const [updateVersion, setUpdateVersion] = useState<string | null>(null)
@@ -156,6 +166,22 @@ export function AgentsBetaTab() {
             <Switch
               checked={kanbanEnabled}
               onCheckedChange={setKanbanEnabled}
+            />
+          </div>
+
+          {/* Preview Sidebar Toggle */}
+          <div className="flex items-start justify-between">
+            <div className="flex flex-col space-y-1">
+              <span className="text-sm font-medium text-foreground">
+                Preview Sidebar
+              </span>
+              <span className="text-xs text-muted-foreground">
+                New preview panel with element selection and screenshot capture.
+              </span>
+            </div>
+            <Switch
+              checked={previewSidebarEnabled}
+              onCheckedChange={setPreviewSidebarEnabled}
             />
           </div>
         </div>

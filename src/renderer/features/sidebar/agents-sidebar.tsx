@@ -38,6 +38,7 @@ import {
   useRenameRemoteChat,
 } from "../../lib/hooks/use-remote-chats"
 import { ArchivePopover } from "../agents/ui/archive-popover"
+import { McpServersSection } from "./mcp-servers-popover"
 import { ChevronDown, MoreHorizontal, Columns3 } from "lucide-react"
 // import { useRouter } from "next/navigation" // Desktop doesn't use next/navigation
 // import { useCombinedAuth } from "@/lib/hooks/use-combined-auth"
@@ -132,6 +133,7 @@ import { Checkbox } from "../../components/ui/checkbox"
 import { useHaptic } from "./hooks/use-haptic"
 import { TypewriterText } from "../../components/ui/typewriter-text"
 import { exportChat, copyChat, type ExportFormat } from "../agents/lib/export-chat"
+import { runningDevServersAtom } from "../preview-sidebar"
 
 // Feedback URL: uses env variable for hosted version, falls back to public Discord for open source
 const FEEDBACK_URL =
@@ -424,6 +426,7 @@ const AgentChatItem = React.memo(function AgentChatItem({
   hasUnseenChanges,
   hasPendingPlan,
   hasPendingQuestion,
+  hasRunningDevServer,
   isMultiSelectMode,
   isChecked,
   isFocused,
@@ -472,6 +475,7 @@ const AgentChatItem = React.memo(function AgentChatItem({
   hasUnseenChanges: boolean
   hasPendingPlan: boolean
   hasPendingQuestion: boolean
+  hasRunningDevServer: boolean
   isMultiSelectMode: boolean
   isChecked: boolean
   isFocused: boolean
@@ -668,6 +672,12 @@ const AgentChatItem = React.memo(function AgentChatItem({
                 )}
                 <span className="truncate flex-1 min-w-0">{displayText}</span>
                 <div className="flex items-center gap-1.5 flex-shrink-0">
+                  {hasRunningDevServer && (
+                    <span className="relative flex h-2 w-2" title="Dev server running">
+                      <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-blue-400 opacity-75" />
+                      <span className="relative inline-flex rounded-full h-2 w-2 bg-blue-500" />
+                    </span>
+                  )}
                   {stats && (stats.additions > 0 || stats.deletions > 0) && (
                     <>
                       <span className="text-green-600 dark:text-green-400">
@@ -846,6 +856,7 @@ interface ChatListSectionProps {
   unseenChanges: Set<string>
   workspacePendingPlans: Set<string>
   workspacePendingQuestions: Set<string>
+  runningDevServers: Set<string>
   isMultiSelectMode: boolean
   selectedChatIds: Set<string>
   isMobileFullscreen: boolean
@@ -889,6 +900,7 @@ const ChatListSection = React.memo(function ChatListSection({
   unseenChanges,
   workspacePendingPlans,
   workspacePendingQuestions,
+  runningDevServers,
   isMultiSelectMode,
   selectedChatIds,
   isMobileFullscreen,
@@ -968,6 +980,7 @@ const ChatListSection = React.memo(function ChatListSection({
           const stats = chat.isRemote ? chat.remoteStats : workspaceFileStats.get(chat.id)
           const hasPendingPlan = workspacePendingPlans.has(chat.id)
           const hasPendingQuestion = workspacePendingQuestions.has(chat.id)
+          const hasRunningDevServer = runningDevServers.has(chat.id)
           const isLastInFilteredChats = globalIndex === filteredChats.length - 1
           const isJustCreated = justCreatedIds.has(chat.id)
 
@@ -991,6 +1004,7 @@ const ChatListSection = React.memo(function ChatListSection({
               hasUnseenChanges={unseenChanges.has(chat.id)}
               hasPendingPlan={hasPendingPlan}
               hasPendingQuestion={hasPendingQuestion}
+              hasRunningDevServer={hasRunningDevServer}
               isMultiSelectMode={isMultiSelectMode}
               isChecked={isChecked}
               isFocused={isFocused}
@@ -1222,16 +1236,18 @@ const SidebarHeader = memo(function SidebarHeader({
         >
           <Tooltip delayDuration={500}>
             <TooltipTrigger asChild>
-              <ButtonCustom
-                variant="ghost"
-                size="icon"
-                onClick={onToggleSidebar}
-                tabIndex={-1}
-                className="h-6 w-6 p-0 hover:bg-foreground/10 transition-[background-color,transform] duration-150 ease-out active:scale-[0.97] text-foreground flex-shrink-0 rounded-md"
-                aria-label="Close sidebar"
-              >
-                <IconDoubleChevronLeft className="h-4 w-4" />
-              </ButtonCustom>
+              <span className="inline-flex">
+                <ButtonCustom
+                  variant="ghost"
+                  size="icon"
+                  onClick={onToggleSidebar}
+                  tabIndex={-1}
+                  className="h-6 w-6 p-0 hover:bg-foreground/10 transition-[background-color,transform] duration-150 ease-out active:scale-[0.97] text-foreground flex-shrink-0 rounded-md"
+                  aria-label="Close sidebar"
+                >
+                  <IconDoubleChevronLeft className="h-4 w-4" />
+                </ButtonCustom>
+              </span>
             </TooltipTrigger>
             <TooltipContent>
               Close sidebar
@@ -1579,6 +1595,7 @@ export function AgentsSidebar({
   // Read unseen changes from global atoms
   const unseenChanges = useAtomValue(agentsUnseenChangesAtom)
   const justCreatedIds = useAtomValue(justCreatedIdsAtom)
+  const runningDevServers = useAtomValue(runningDevServersAtom)
 
   // Haptic feedback
   const { trigger: triggerHaptic } = useHaptic()
@@ -3031,17 +3048,19 @@ export function AgentsSidebar({
           {/* New Workspace Button */}
           <Tooltip delayDuration={500}>
             <TooltipTrigger asChild>
-              <ButtonCustom
-                onClick={handleNewAgent}
-                variant="outline"
-                size="sm"
-                className={cn(
-                  "px-2 w-full hover:bg-foreground/10 transition-[background-color,transform] duration-150 ease-out active:scale-[0.97] text-foreground rounded-lg gap-1.5",
-                  isMobileFullscreen ? "h-10" : "h-7",
-                )}
-              >
-                <span className="text-sm font-medium">New Workspace</span>
-              </ButtonCustom>
+              <span className="inline-flex w-full">
+                <ButtonCustom
+                  onClick={handleNewAgent}
+                  variant="outline"
+                  size="sm"
+                  className={cn(
+                    "px-2 w-full hover:bg-foreground/10 transition-[background-color,transform] duration-150 ease-out active:scale-[0.97] text-foreground rounded-lg gap-1.5",
+                    isMobileFullscreen ? "h-10" : "h-7",
+                  )}
+                >
+                  <span className="text-sm font-medium">New Workspace</span>
+                </ButtonCustom>
+              </span>
             </TooltipTrigger>
             <TooltipContent side="right">
               Start a new workspace
@@ -3112,6 +3131,7 @@ export function AgentsSidebar({
                 unseenChanges={unseenChanges}
                 workspacePendingPlans={workspacePendingPlans}
                 workspacePendingQuestions={workspacePendingQuestions}
+                runningDevServers={runningDevServers}
                 isMultiSelectMode={isMultiSelectMode}
                 selectedChatIds={selectedChatIds}
                 isMobileFullscreen={isMobileFullscreen}
@@ -3155,6 +3175,7 @@ export function AgentsSidebar({
                 unseenChanges={unseenChanges}
                 workspacePendingPlans={workspacePendingPlans}
                 workspacePendingQuestions={workspacePendingQuestions}
+                runningDevServers={runningDevServers}
                 isMultiSelectMode={isMultiSelectMode}
                 selectedChatIds={selectedChatIds}
                 isMobileFullscreen={isMobileFullscreen}
@@ -3280,6 +3301,9 @@ export function AgentsSidebar({
 
                 {/* Help Button - isolated component to prevent sidebar re-renders */}
                 <HelpSection isMobile={isMobileFullscreen} />
+
+                {/* MCP Servers Button - desktop only */}
+                {isDesktop && <McpServersSection isMobile={isMobileFullscreen} />}
 
                 {/* Kanban View Button - isolated component */}
                 <KanbanButton />

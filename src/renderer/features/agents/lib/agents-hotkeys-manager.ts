@@ -45,6 +45,7 @@ const SHORTCUT_TO_ACTION_MAP: Record<ShortcutActionId, string> = {
   "stop-generation": "stop-generation",
   "switch-model": "switch-model",
   "toggle-terminal": "toggle-terminal",
+  "toggle-preview": "toggle-preview",
   "open-diff": "open-diff",
   "create-pr": "create-pr",
   "voice-input": "voice-input", // Handled directly in chat-input-area.tsx
@@ -105,6 +106,7 @@ export interface AgentsHotkeysManagerConfig {
   setSelectedDraftId?: (id: string | null) => void
   setShowNewChatForm?: (show: boolean) => void
   setSidebarOpen?: (open: boolean | ((prev: boolean) => boolean)) => void
+  setPreviewOpen?: (open: boolean | ((prev: boolean) => boolean)) => void
   setSettingsDialogOpen?: (open: boolean) => void
   setSettingsActiveTab?: (tab: SettingsTab) => void
   toggleChatSearch?: () => void
@@ -138,6 +140,7 @@ export function useAgentsHotkeys(
       setSelectedDraftId: config.setSelectedDraftId,
       setShowNewChatForm: config.setShowNewChatForm,
       setSidebarOpen: config.setSidebarOpen,
+      setPreviewOpen: config.setPreviewOpen,
       setSettingsDialogOpen: config.setSettingsDialogOpen,
       setSettingsActiveTab: config.setSettingsActiveTab,
       toggleChatSearch: config.toggleChatSearch,
@@ -148,6 +151,7 @@ export function useAgentsHotkeys(
       config.setSelectedDraftId,
       config.setShowNewChatForm,
       config.setSidebarOpen,
+      config.setPreviewOpen,
       config.setSettingsDialogOpen,
       config.setSettingsActiveTab,
       config.toggleChatSearch,
@@ -250,6 +254,15 @@ export function useAgentsHotkeys(
           return
         }
       }
+
+      // Check toggle-preview hotkey
+      const togglePreviewHotkey = getHotkeyForAction("toggle-preview")
+      if (togglePreviewHotkey && matchesHotkey(e, togglePreviewHotkey)) {
+        e.preventDefault()
+        e.stopPropagation()
+        handleHotkeyAction("toggle-preview")
+        return
+      }
     }
 
     window.addEventListener("keydown", handleKeyDown, true)
@@ -266,7 +279,9 @@ export function useAgentsHotkeys(
           action.id !== "toggle-sidebar" &&
           action.id !== "open-shortcuts" &&
           action.id !== "open-settings" &&
-          action.id !== "toggle-chat-search",
+          action.id !== "toggle-chat-search" &&
+          action.id !== "open-kanban" &&
+          action.id !== "toggle-preview",
       ),
     [],
   )

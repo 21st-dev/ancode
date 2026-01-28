@@ -613,18 +613,20 @@ export function SubChatSelector({
       {!isMobile && subChatsSidebarMode === "tabs" && (
         <Tooltip>
           <TooltipTrigger asChild>
-            <Button
-              variant="ghost"
-              size="icon"
-              onClick={() => setSubChatsSidebarMode("sidebar")}
-              className="h-6 w-6 p-0 hover:bg-foreground/10 transition-[background-color,transform] duration-150 ease-out active:scale-[0.97] flex-shrink-0 rounded-md flex items-center justify-center"
-              style={{
-                // @ts-expect-error - WebKit-specific property
-                WebkitAppRegion: "no-drag",
-              }}
-            >
-              <IconOpenSidebarRight className="h-4 w-4 scale-x-[-1]" />
-            </Button>
+            <span className="inline-flex">
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={() => setSubChatsSidebarMode("sidebar")}
+                className="h-6 w-6 p-0 hover:bg-foreground/10 transition-[background-color,transform] duration-150 ease-out active:scale-[0.97] flex-shrink-0 rounded-md flex items-center justify-center"
+                style={{
+                  // @ts-expect-error - WebKit-specific property
+                  WebkitAppRegion: "no-drag",
+                }}
+              >
+                <IconOpenSidebarRight className="h-4 w-4 scale-x-[-1]" />
+              </Button>
+            </span>
           </TooltipTrigger>
           <TooltipContent side="bottom">Open chats pane</TooltipContent>
         </Tooltip>
@@ -860,14 +862,16 @@ export function SubChatSelector({
             <div className="h-full flex items-center bg-background pr-1">
               <Tooltip>
                 <TooltipTrigger asChild>
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    onClick={onCreateNew}
-                    className="h-6 w-6 p-0 hover:bg-foreground/10 transition-[background-color,transform] duration-150 ease-out active:scale-[0.97] rounded-md"
-                  >
-                    <Plus className="h-4 w-4" />
-                  </Button>
+                  <span className="inline-flex">
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      onClick={onCreateNew}
+                      className="h-6 w-6 p-0 hover:bg-foreground/10 transition-[background-color,transform] duration-150 ease-out active:scale-[0.97] rounded-md"
+                    >
+                      <Plus className="h-4 w-4" />
+                    </Button>
+                  </span>
                 </TooltipTrigger>
                 <TooltipContent side="bottom">
                   New chat
@@ -913,15 +917,21 @@ export function SubChatSelector({
         >
           <Tooltip>
             <TooltipTrigger asChild>
-              <Button
-                variant="ghost"
-                size="icon"
-                onClick={() => onOpenDiff?.()}
-                className="h-6 w-6 p-0 transition-[background-color,transform] duration-150 ease-out active:scale-[0.97] flex-shrink-0 rounded-md flex items-center justify-center hover:bg-foreground/10"
-              >
-                <DiffIcon className="h-4 w-4" />
-                <span className="sr-only">Open diff</span>
-              </Button>
+              <span className="inline-flex">
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  onClick={() => onOpenDiff?.()}
+                  className="h-6 w-6 p-0 transition-[background-color,transform] duration-150 ease-out active:scale-[0.97] flex-shrink-0 rounded-md flex items-center justify-center hover:bg-foreground/10"
+                >
+                  {diffStats?.isLoading ? (
+                    <IconSpinner className="h-4 w-4" />
+                  ) : (
+                    <DiffIcon className="h-4 w-4" />
+                  )}
+                  <span className="sr-only">Open diff</span>
+                </Button>
+              </span>
             </TooltipTrigger>
             <TooltipContent side="bottom">
               <span>View changes</span>
@@ -942,15 +952,17 @@ export function SubChatSelector({
         >
           <Tooltip>
             <TooltipTrigger asChild>
-              <Button
-                variant="ghost"
-                size="icon"
-                onClick={() => onOpenTerminal?.()}
-                className="h-6 w-6 p-0 transition-[background-color,transform] duration-150 ease-out active:scale-[0.97] flex-shrink-0 rounded-md flex items-center justify-center hover:bg-foreground/10"
-              >
-                <TerminalSquare className="h-4 w-4" />
-                <span className="sr-only">Open terminal</span>
-              </Button>
+              <span className="inline-flex">
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  onClick={() => onOpenTerminal?.()}
+                  className="h-6 w-6 p-0 transition-[background-color,transform] duration-150 ease-out active:scale-[0.97] flex-shrink-0 rounded-md flex items-center justify-center hover:bg-foreground/10"
+                >
+                  <TerminalSquare className="h-4 w-4" />
+                  <span className="sr-only">Open terminal</span>
+                </Button>
+              </span>
             </TooltipTrigger>
             <TooltipContent side="bottom">
               <span>Open terminal</span>

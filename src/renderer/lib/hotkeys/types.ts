@@ -27,6 +27,7 @@ export type ShortcutActionId =
   | "stop-generation"
   | "switch-model"
   | "toggle-terminal"
+  | "toggle-preview"
   | "open-diff"
   | "create-pr"
   | "voice-input"

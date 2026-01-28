@@ -101,6 +101,24 @@ export const claudeCodeCredentials = sqliteTable("claude_code_credentials", {
   userId: text("user_id"), // Desktop auth user ID (for reference)
 })
 
+// ============ DEV CREDENTIALS ============
+// Stores encrypted credentials for auto-filling login forms in preview
+export const devCredentials = sqliteTable("dev_credentials", {
+  id: text("id")
+    .primaryKey()
+    .$defaultFn(() => createId()),
+  label: text("label").notNull(), // Friendly name like "Test User 1"
+  email: text("email").notNull(),
+  encryptedPassword: text("encrypted_password").notNull(), // Encrypted with safeStorage
+  domain: text("domain"), // Optional domain hint for filtering
+  createdAt: integer("created_at", { mode: "timestamp" }).$defaultFn(
+    () => new Date(),
+  ),
+  updatedAt: integer("updated_at", { mode: "timestamp" }).$defaultFn(
+    () => new Date(),
+  ),
+})
+
 // ============ ANTHROPIC ACCOUNTS (Multi-account support) ============
 // Stores multiple Anthropic OAuth accounts for quick switching
 export const anthropicAccounts = sqliteTable("anthropic_accounts", {
@@ -135,6 +153,8 @@ export type SubChat = typeof subChats.$inferSelect
 export type NewSubChat = typeof subChats.$inferInsert
 export type ClaudeCodeCredential = typeof claudeCodeCredentials.$inferSelect
 export type NewClaudeCodeCredential = typeof claudeCodeCredentials.$inferInsert
+export type DevCredential = typeof devCredentials.$inferSelect
+export type NewDevCredential = typeof devCredentials.$inferInsert
 export type AnthropicAccount = typeof anthropicAccounts.$inferSelect
 export type NewAnthropicAccount = typeof anthropicAccounts.$inferInsert
 export type AnthropicSettings = typeof anthropicSettings.$inferSelect

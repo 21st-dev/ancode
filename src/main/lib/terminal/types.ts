@@ -15,6 +15,11 @@ export interface TerminalSession {
 	usedFallback: boolean
 }
 
+export interface TerminalStartedEvent {
+	type: "started"
+	cwd: string
+}
+
 export interface TerminalDataEvent {
 	type: "data"
 	data: string
@@ -26,7 +31,7 @@ export interface TerminalExitEvent {
 	signal?: number
 }
 
-export type TerminalEvent = TerminalDataEvent | TerminalExitEvent
+export type TerminalEvent = TerminalStartedEvent | TerminalDataEvent | TerminalExitEvent
 
 export interface SessionResult {
 	isNew: boolean

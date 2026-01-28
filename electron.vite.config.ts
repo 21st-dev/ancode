@@ -58,6 +58,9 @@ export default defineConfig({
           : undefined,
       }),
     ],
+    server: {
+      port: 5199, // Use non-default port to avoid conflict with worktree dev servers
+    },
     resolve: {
       alias: {
         "@": resolve(__dirname, "src/renderer"),

@@ -14,6 +14,7 @@ import {
   CursorIcon,
   ExpandIcon,
   IconCloseSidebarRight,
+  IconDoubleChevronRight,
   IconOpenSidebarRight,
   IconSpinner,
   IconTextUndo,
@@ -39,6 +40,7 @@ import { atom, useAtom, useAtomValue, useSetAtom } from "jotai"
 import {
   ArrowDown,
   ChevronDown,
+  Eye,
   GitFork,
   ListTree,
   TerminalSquare
@@ -62,6 +64,7 @@ import { getQueryClient } from "../../../contexts/TRPCProvider"
 import { trackMessageSent } from "../../../lib/analytics"
 import { apiFetch } from "../../../lib/api-fetch"
 import {
+  betaPreviewSidebarEnabledAtom,
   chatSourceModeAtom,
   customClaudeConfigAtom,
   defaultAgentModeAtom,
@@ -127,6 +130,8 @@ import {
   subChatFilesAtom,
   subChatModeAtomFamily,
   undoStackAtom,
+  addPreviewElementContextFnAtom,
+  handleAddAttachmentsFnAtom,
   openLocallyChatIdAtom,
   type AgentMode,
   type SelectedCommit
@@ -143,6 +148,7 @@ import { useDesktopNotifications } from "../hooks/use-desktop-notifications"
 import { useFocusInputOnEnter } from "../hooks/use-focus-input-on-enter"
 import { useHaptic } from "../hooks/use-haptic"
 import { useTextContextSelection } from "../hooks/use-text-context-selection"
+import { usePreviewElementSelection } from "../hooks/use-preview-element-selection"
 import { usePastedTextFiles } from "../hooks/use-pasted-text-files"
 import { useToggleFocusOnCmdEsc } from "../hooks/use-toggle-focus-on-cmd-esc"
 import {
@@ -203,6 +209,7 @@ import { generateCommitToPrMessage, generatePrMessage, generateReviewMessage } f
 import { ChatInputArea } from "./chat-input-area"
 import { IsolatedMessagesSection } from "./isolated-messages-section"
 import { DetailsSidebar } from "../../details-sidebar/details-sidebar"
+import { PreviewSidebar, previewSidebarOpenAtom } from "../../preview-sidebar"
 import {
   detailsSidebarOpenAtom,
   unifiedSidebarEnabledAtom,
@@ -2188,6 +2195,16 @@ const ChatViewInner = memo(function ChatViewInner({
     pastedTextsRef,
   } = usePastedTextFiles(subChatId)
 
+  // Preview element contexts (elements selected from preview sidebar)
+  const {
+    previewElementContexts,
+    addPreviewElementContext,
+    removePreviewElementContext,
+    clearPreviewElementContexts,
+    previewElementContextsRef,
+    setPreviewElementContextsFromDraft,
+  } = usePreviewElementSelection()
+
   // File contents cache - stores content for file mentions (keyed by mentionId)
   // This content gets added to the prompt when sending, without showing a separate card
   const fileContentsRef = useRef<Map<string, string>>(new Map())
@@ -2262,6 +2279,12 @@ const ChatViewInner = memo(function ChatViewInner({
       } else {
         clearTextContexts()
       }
+      // Restore preview element contexts
+      if (savedDraft.previewElementContexts.length > 0) {
+        setPreviewElementContextsFromDraft(savedDraft.previewElementContexts)
+      } else {
+        clearPreviewElementContexts()
+      }
     } else if (
       prevSubChatIdForDraftRef.current &&
       prevSubChatIdForDraftRef.current !== subChatId
@@ -2270,6 +2293,7 @@ const ChatViewInner = memo(function ChatViewInner({
       editorRef.current?.clear()
       clearAll()
       clearTextContexts()
+      clearPreviewElementContexts()
     }
 
     prevSubChatIdForDraftRef.current = subChatId
@@ -2279,8 +2303,10 @@ const ChatViewInner = memo(function ChatViewInner({
     setImagesFromDraft,
     setFilesFromDraft,
     setTextContextsFromDraft,
+    setPreviewElementContextsFromDraft,
     clearAll,
     clearTextContexts,
+    clearPreviewElementContexts,
   ])
 
   // Use subChatId as stable key to prevent HMR-induced duplicate resume requests
@@ -2332,6 +2358,74 @@ const ChatViewInner = memo(function ChatViewInner({
       { method: "DELETE", credentials: "include" },
     )
   }, [subChatId])
+
+  // Handler for preview element selection from preview sidebar
+  const handlePreviewElementSelect = useCallback(
+    (html: string, componentName: string | null, filePath: string | null) => {
+      addPreviewElementContext(html, componentName, filePath)
+      // Focus chat input after adding context
+      editorRef.current?.focus()
+    },
+    [addPreviewElementContext]
+  )
+
+  // Share the addPreviewElementContext function with ChatView via atom
+  // Only the active subchat should export its handler to avoid routing to wrong subchat
+  const setAddPreviewElementContextFn = useSetAtom(addPreviewElementContextFnAtom)
+
+  // Use ref to track if THIS instance set the atom (for cleanup)
+  const didSetElementContextAtomRef = useRef(false)
+
+  useEffect(() => {
+    if (isActive) {
+      console.log("[ChatViewInner] Setting addPreviewElementContextFn for subchat:", subChatId)
+      setAddPreviewElementContextFn(() => addPreviewElementContext)
+      didSetElementContextAtomRef.current = true
+    } else if (didSetElementContextAtomRef.current) {
+      // We were active but now we're not - clear the atom
+      console.log("[ChatViewInner] Became inactive, clearing addPreviewElementContextFn for subchat:", subChatId)
+      setAddPreviewElementContextFn(null)
+      didSetElementContextAtomRef.current = false
+    }
+
+    return () => {
+      // On unmount, only clear if we were the one who set it
+      if (didSetElementContextAtomRef.current) {
+        console.log("[ChatViewInner] Unmounting, clearing addPreviewElementContextFn for subchat:", subChatId)
+        setAddPreviewElementContextFn(null)
+        didSetElementContextAtomRef.current = false
+      }
+    }
+  }, [isActive, setAddPreviewElementContextFn, subChatId]) // Removed addPreviewElementContext - it's stable (empty deps)
+
+  // Share the handleAddAttachments function with ChatView via atom (for screenshot capture)
+  // Only the active subchat should export its handler to avoid routing to wrong subchat
+  const setHandleAddAttachmentsFn = useSetAtom(handleAddAttachmentsFnAtom)
+
+  // Use ref to track if THIS instance set the atom (for cleanup)
+  const didSetAttachmentAtomRef = useRef(false)
+
+  useEffect(() => {
+    if (isActive) {
+      console.log("[ChatViewInner] Setting handleAddAttachmentsFn for subchat:", subChatId)
+      setHandleAddAttachmentsFn(() => handleAddAttachments)
+      didSetAttachmentAtomRef.current = true
+    } else if (didSetAttachmentAtomRef.current) {
+      // We were active but now we're not - clear the atom
+      console.log("[ChatViewInner] Became inactive, clearing handleAddAttachmentsFn for subchat:", subChatId)
+      setHandleAddAttachmentsFn(null)
+      didSetAttachmentAtomRef.current = false
+    }
+
+    return () => {
+      // On unmount, only clear if we were the one who set it
+      if (didSetAttachmentAtomRef.current) {
+        console.log("[ChatViewInner] Unmounting, clearing handleAddAttachmentsFn for subchat:", subChatId)
+        setHandleAddAttachmentsFn(null)
+        didSetAttachmentAtomRef.current = false
+      }
+    }
+  }, [isActive, setHandleAddAttachmentsFn, subChatId]) // Removed handleAddAttachments - it's stable
 
   // Wrapper for addTextContext that handles TextSelectionSource
   const addTextContext = useCallback((text: string, source: TextSelectionSource) => {
@@ -3297,6 +3391,7 @@ const ChatViewInner = memo(function ChatViewInner({
       }
       clearAll()
       clearTextContexts()
+      clearPreviewElementContexts()
       return
     }
 
@@ -3432,6 +3527,7 @@ const ChatViewInner = memo(function ChatViewInner({
     clearAll()
     clearTextContexts()
     clearDiffTextContexts()
+    clearPreviewElementContexts()
     clearPastedTexts()
     clearFileContents()
 
@@ -3494,6 +3590,7 @@ const ChatViewInner = memo(function ChatViewInner({
     onAutoRename,
     clearAll,
     clearTextContexts,
+    clearPreviewElementContexts,
     clearPastedTexts,
     teamId,
     addToQueue,
@@ -4091,6 +4188,8 @@ const ChatViewInner = memo(function ChatViewInner({
         pastedTexts={pastedTexts}
         onAddPastedText={addPastedText}
         onRemovePastedText={removePastedText}
+        previewElementContexts={previewElementContexts}
+        onRemovePreviewElementContext={removePreviewElementContext}
         onCacheFileContent={cacheFileContent}
         messageTokenData={messageTokenData}
         subChatId={subChatId}
@@ -4163,6 +4262,7 @@ export function ChatView({
 
   const isDesktop = useAtomValue(isDesktopAtom)
   const isFullscreen = useAtomValue(isFullscreenAtom)
+  const betaPreviewSidebarEnabled = useAtomValue(betaPreviewSidebarEnabledAtom)
   const customClaudeConfig = useAtomValue(customClaudeConfigAtom)
   const selectedOllamaModel = useAtomValue(selectedOllamaModelAtom)
   const normalizedCustomClaudeConfig =
@@ -4179,11 +4279,43 @@ export function ChatView({
   const setFilteredDiffFiles = useSetAtom(filteredDiffFilesAtom)
   const { notifyAgentComplete } = useDesktopNotifications()
 
+  // Get addPreviewElementContext function from ChatViewInner via atom
+  const addPreviewElementContextFn = useAtomValue(addPreviewElementContextFnAtom)
+  const handlePreviewElementSelect = useCallback(
+    (html: string, componentName: string | null, filePath: string | null) => {
+      console.log("[ChatView] handlePreviewElementSelect called:", {
+        hasFunction: !!addPreviewElementContextFn,
+        componentName,
+        filePath,
+        htmlLength: html?.length,
+      })
+      addPreviewElementContextFn?.(html, componentName, filePath)
+    },
+    [addPreviewElementContextFn]
+  )
+
+  // Get handleAddAttachments function from ChatViewInner via atom (for screenshot capture)
+  const handleAddAttachmentsFn = useAtomValue(handleAddAttachmentsFnAtom)
+  const handleScreenshotCapture = useCallback(
+    async (imageData: { url: string; filename: string; blob: Blob }) => {
+      if (!handleAddAttachmentsFn) return
+
+      // Convert Blob to File for the upload handler
+      const file = new File([imageData.blob], imageData.filename, { type: "image/png" })
+      await handleAddAttachmentsFn([file])
+    },
+    [handleAddAttachmentsFn]
+  )
+
   // Check if any chat has unseen changes
   const hasAnyUnseenChanges = unseenChanges.size > 0
   const [, forceUpdate] = useState({})
   const [isPreviewSidebarOpen, setIsPreviewSidebarOpen] = useAtom(
     agentsPreviewSidebarOpenAtom,
+  )
+  // New Preview sidebar state (with dev server and browser preview)
+  const [isNewPreviewSidebarOpen, setIsNewPreviewSidebarOpen] = useAtom(
+    previewSidebarOpenAtom,
   )
   // Per-chat diff sidebar state - each chat remembers its own open/close state
   const diffSidebarAtom = useMemo(
@@ -4250,22 +4382,30 @@ export function ChatView({
   )
   const [isTerminalSidebarOpen, setIsTerminalSidebarOpen] = useAtom(terminalSidebarAtom)
 
-  // Mutual exclusion: Details sidebar vs Plan/Terminal/Diff(side-peek) sidebars
+  // Mutual exclusion: Details sidebar vs Plan/Terminal/Diff(side-peek)/Preview sidebars
   // When one opens, close the conflicting ones and remember for restoration
 
   // Track what was auto-closed and by whom for restoration
   const autoClosedStateRef = useRef<{
     // What closed Details
-    detailsClosedBy: "plan" | "terminal" | "diff" | null
+    detailsClosedBy: "plan" | "terminal" | "diff" | "preview" | null
     // What Details closed
     planClosedByDetails: boolean
     terminalClosedByDetails: boolean
     diffClosedByDetails: boolean
+    previewClosedByDetails: boolean
+    // What closed Preview (non-Details sidebars)
+    previewClosedBy: "terminal" | "diff" | "plan" | null
+    // What closed Diff (non-Details sidebars)
+    diffClosedBy: "preview" | null
   }>({
     detailsClosedBy: null,
     planClosedByDetails: false,
     terminalClosedByDetails: false,
     diffClosedByDetails: false,
+    previewClosedByDetails: false,
+    previewClosedBy: null,
+    diffClosedBy: null,
   })
 
   // Track previous states to detect opens/closes
@@ -4273,6 +4413,7 @@ export function ChatView({
     details: isDetailsSidebarOpen,
     plan: isPlanSidebarOpen && !!currentPlanPath,
     terminal: isTerminalSidebarOpen,
+    preview: isNewPreviewSidebarOpen,
   })
 
   useEffect(() => {
@@ -4287,6 +4428,8 @@ export function ChatView({
     const planJustClosed = !isPlanOpen && prev.plan
     const terminalJustOpened = isTerminalSidebarOpen && !prev.terminal
     const terminalJustClosed = !isTerminalSidebarOpen && prev.terminal
+    const previewJustOpened = isNewPreviewSidebarOpen && !prev.preview
+    const previewJustClosed = !isNewPreviewSidebarOpen && prev.preview
 
     // Details opened → close conflicting sidebars and remember
     if (detailsJustOpened) {
@@ -4297,6 +4440,10 @@ export function ChatView({
       if (isTerminalSidebarOpen) {
         auto.terminalClosedByDetails = true
         setIsTerminalSidebarOpen(false)
+      }
+      if (isNewPreviewSidebarOpen) {
+        auto.previewClosedByDetails = true
+        setIsNewPreviewSidebarOpen(false)
       }
     }
     // Details closed → restore what it closed
@@ -4309,41 +4456,88 @@ export function ChatView({
         auto.terminalClosedByDetails = false
         setIsTerminalSidebarOpen(true)
       }
+      if (auto.previewClosedByDetails) {
+        auto.previewClosedByDetails = false
+        setIsNewPreviewSidebarOpen(true)
+      }
     }
-    // Plan opened → close Details and remember
-    else if (planJustOpened && isDetailsSidebarOpen) {
-      auto.detailsClosedBy = "plan"
-      setIsDetailsSidebarOpen(false)
+    // Preview opened → close Details/Terminal and remember
+    else if (previewJustOpened) {
+      if (isDetailsSidebarOpen) {
+        auto.detailsClosedBy = "preview"
+        setIsDetailsSidebarOpen(false)
+      }
+      if (isTerminalSidebarOpen) {
+        auto.previewClosedBy = null // Clear any pending restore
+        setIsTerminalSidebarOpen(false)
+      }
     }
-    // Plan closed → restore Details if we closed it
-    else if (planJustClosed && auto.detailsClosedBy === "plan") {
+    // Preview closed → restore Details if we closed it
+    else if (previewJustClosed && auto.detailsClosedBy === "preview") {
       auto.detailsClosedBy = null
       setIsDetailsSidebarOpen(true)
     }
-    // Terminal opened → close Details and remember
-    else if (terminalJustOpened && isDetailsSidebarOpen) {
-      auto.detailsClosedBy = "terminal"
-      setIsDetailsSidebarOpen(false)
+    // Plan opened → close Details and Preview, remember
+    else if (planJustOpened) {
+      if (isDetailsSidebarOpen) {
+        auto.detailsClosedBy = "plan"
+        setIsDetailsSidebarOpen(false)
+      }
+      if (isNewPreviewSidebarOpen) {
+        auto.previewClosedBy = "plan"
+        setIsNewPreviewSidebarOpen(false)
+      }
     }
-    // Terminal closed → restore Details if we closed it
-    else if (terminalJustClosed && auto.detailsClosedBy === "terminal") {
-      auto.detailsClosedBy = null
-      setIsDetailsSidebarOpen(true)
+    // Plan closed → restore Details/Preview if we closed them
+    else if (planJustClosed) {
+      if (auto.detailsClosedBy === "plan") {
+        auto.detailsClosedBy = null
+        setIsDetailsSidebarOpen(true)
+      }
+      if (auto.previewClosedBy === "plan") {
+        auto.previewClosedBy = null
+        setIsNewPreviewSidebarOpen(true)
+      }
+    }
+    // Terminal opened → close Details and Preview, remember
+    else if (terminalJustOpened) {
+      if (isDetailsSidebarOpen) {
+        auto.detailsClosedBy = "terminal"
+        setIsDetailsSidebarOpen(false)
+      }
+      if (isNewPreviewSidebarOpen) {
+        auto.previewClosedBy = "terminal"
+        setIsNewPreviewSidebarOpen(false)
+      }
+    }
+    // Terminal closed → restore Details/Preview if we closed them
+    else if (terminalJustClosed) {
+      if (auto.detailsClosedBy === "terminal") {
+        auto.detailsClosedBy = null
+        setIsDetailsSidebarOpen(true)
+      }
+      if (auto.previewClosedBy === "terminal") {
+        auto.previewClosedBy = null
+        setIsNewPreviewSidebarOpen(true)
+      }
     }
 
     prevSidebarStatesRef.current = {
       details: isDetailsSidebarOpen,
       plan: isPlanOpen,
       terminal: isTerminalSidebarOpen,
+      preview: isNewPreviewSidebarOpen,
     }
   }, [
     isDetailsSidebarOpen,
     isPlanSidebarOpen,
     currentPlanPath,
     isTerminalSidebarOpen,
+    isNewPreviewSidebarOpen,
     setIsDetailsSidebarOpen,
     setIsPlanSidebarOpen,
     setIsTerminalSidebarOpen,
+    setIsNewPreviewSidebarOpen,
   ])
 
   // Diff data cache - stored in atoms to persist across workspace switches
@@ -4401,16 +4595,18 @@ export function ChatView({
     }
   }, [diffDisplayMode])
 
-  // Handle Diff + Details sidebar conflict (side-peek mode only)
+  // Handle Diff + Details/Preview sidebar conflict (side-peek mode only)
   // - If Diff opens in side-peek while Details is open: switch Diff to center-peek (dialog) mode
   // - If user manually switches Diff to side-peek while Details is open: close Details and remember
   // - If Details opens while Diff is in side-peek mode: close Diff and remember
-  const prevDiffStateRef = useRef<{ isOpen: boolean; mode: string; detailsOpen: boolean }>({
+  // - If Preview opens while Diff is in side-peek mode: close Diff and remember
+  const prevDiffStateRef = useRef<{ isOpen: boolean; mode: string; detailsOpen: boolean; previewOpen: boolean }>({
     isOpen: isDiffSidebarOpen,
     mode: diffDisplayMode,
     detailsOpen: isDetailsSidebarOpen,
+    previewOpen: isNewPreviewSidebarOpen,
   })
-  // Flag to skip center-peek switch when restoring Diff after Details closes
+  // Flag to skip center-peek switch when restoring Diff after Details/Preview closes
   const isRestoringDiffRef = useRef(false)
   useEffect(() => {
     const prev = prevDiffStateRef.current
@@ -4419,6 +4615,8 @@ export function ChatView({
     const wasSidePeek = prev.isOpen && prev.mode === "side-peek"
     const detailsJustOpened = isDetailsSidebarOpen && !prev.detailsOpen
     const detailsJustClosed = !isDetailsSidebarOpen && prev.detailsOpen
+    const previewJustOpened = isNewPreviewSidebarOpen && !prev.previewOpen
+    const previewJustClosed = !isNewPreviewSidebarOpen && prev.previewOpen
     const diffSidePeekJustClosed = wasSidePeek && !isNowSidePeek
 
     if (isNowSidePeek && isDetailsSidebarOpen) {
@@ -4438,10 +4636,35 @@ export function ChatView({
         setIsDetailsSidebarOpen(false)
       }
     }
-    // Diff side-peek closed → restore Details if we closed it
-    else if (diffSidePeekJustClosed && auto.detailsClosedBy === "diff") {
-      auto.detailsClosedBy = null
-      setIsDetailsSidebarOpen(true)
+    // Preview just opened while Diff is in side-peek → close Diff and remember
+    else if (previewJustOpened && isNowSidePeek) {
+      auto.diffClosedBy = "preview"
+      setIsDiffSidebarOpen(false)
+    }
+    // Diff just opened in side-peek mode → close Preview sidebar
+    else if (isNowSidePeek && !wasSidePeek && isNewPreviewSidebarOpen) {
+      auto.previewClosedBy = "diff"
+      setIsNewPreviewSidebarOpen(false)
+    }
+    // Diff side-peek closed → restore Details/Preview if we closed them
+    else if (diffSidePeekJustClosed) {
+      if (auto.detailsClosedBy === "diff") {
+        auto.detailsClosedBy = null
+        setIsDetailsSidebarOpen(true)
+      }
+      if (auto.previewClosedBy === "diff") {
+        auto.previewClosedBy = null
+        setIsNewPreviewSidebarOpen(true)
+      }
+    }
+    // Preview closed → restore Diff if we closed it (in side-peek mode)
+    else if (previewJustClosed && auto.diffClosedBy === "preview") {
+      auto.diffClosedBy = null
+      isRestoringDiffRef.current = true
+      setIsDiffSidebarOpen(true)
+      requestAnimationFrame(() => {
+        isRestoringDiffRef.current = false
+      })
     }
     // Details closed → restore Diff if we closed it (in side-peek mode, not switching to dialog)
     else if (detailsJustClosed && auto.diffClosedByDetails) {
@@ -4454,8 +4677,8 @@ export function ChatView({
       })
     }
 
-    prevDiffStateRef.current = { isOpen: isDiffSidebarOpen, mode: diffDisplayMode, detailsOpen: isDetailsSidebarOpen }
-  }, [isDiffSidebarOpen, diffDisplayMode, isDetailsSidebarOpen, setDiffDisplayMode, setIsDetailsSidebarOpen, setIsDiffSidebarOpen])
+    prevDiffStateRef.current = { isOpen: isDiffSidebarOpen, mode: diffDisplayMode, detailsOpen: isDetailsSidebarOpen, previewOpen: isNewPreviewSidebarOpen }
+  }, [isDiffSidebarOpen, diffDisplayMode, isDetailsSidebarOpen, isNewPreviewSidebarOpen, setDiffDisplayMode, setIsDetailsSidebarOpen, setIsDiffSidebarOpen, setIsNewPreviewSidebarOpen])
 
   // Hide traffic lights when full-page diff is open (they would overlap with content)
   useEffect(() => {
@@ -6333,15 +6556,17 @@ Make sure to preserve all functionality from both branches when resolving confli
                   (canOpenPreview ? (
                     <Tooltip delayDuration={500}>
                       <TooltipTrigger asChild>
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          onClick={() => setIsPreviewSidebarOpen(true)}
-                          className="h-6 w-6 p-0 hover:bg-foreground/10 transition-colors text-foreground flex-shrink-0 rounded-md ml-2"
-                          aria-label="Open preview"
-                        >
-                          <IconOpenSidebarRight className="h-4 w-4" />
-                        </Button>
+                        <span className="inline-flex ml-2">
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            onClick={() => setIsPreviewSidebarOpen(true)}
+                            className="h-6 w-6 p-0 hover:bg-foreground/10 transition-colors text-foreground flex-shrink-0 rounded-md"
+                            aria-label="Open preview"
+                          >
+                            <IconOpenSidebarRight className="h-4 w-4" />
+                          </Button>
+                        </span>
                       </TooltipTrigger>
                       <TooltipContent>Open preview</TooltipContent>
                     </Tooltip>
@@ -6360,6 +6585,25 @@ Make sure to preserve all functionality from both branches when resolving confli
                       </span>
                     </PreviewSetupHoverCard>
                   ))}
+                {/* New Preview Button - shows when preview sidebar is closed (desktop only, beta feature) */}
+                {betaPreviewSidebarEnabled && isDesktop && !isMobileFullscreen && !isNewPreviewSidebarOpen && (
+                  <Tooltip delayDuration={500}>
+                    <TooltipTrigger asChild>
+                      <span className="inline-flex ml-2">
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          onClick={() => setIsNewPreviewSidebarOpen(true)}
+                          className="h-6 w-6 p-0 hover:bg-foreground/10 transition-colors text-foreground flex-shrink-0 rounded-md"
+                          aria-label="Open preview"
+                        >
+                          <Eye className="h-4 w-4" />
+                        </Button>
+                      </span>
+                    </TooltipTrigger>
+                    <TooltipContent side="bottom">Preview</TooltipContent>
+                  </Tooltip>
+                )}
                 {/* Overview/Terminal Button - shows when sidebar is closed and worktree/sandbox exists (desktop only) */}
                 {!isMobileFullscreen &&
                   (worktreePath || sandboxId) && (
@@ -6368,15 +6612,17 @@ Make sure to preserve all functionality from both branches when resolving confli
                       !isDetailsSidebarOpen && (
                         <Tooltip delayDuration={500}>
                           <TooltipTrigger asChild>
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              onClick={() => setIsDetailsSidebarOpen(true)}
-                              className="h-6 w-6 p-0 hover:bg-foreground/10 transition-colors text-foreground flex-shrink-0 rounded-md ml-2"
-                              aria-label="View details"
-                            >
-                              <IconOpenSidebarRight className="h-4 w-4" />
-                            </Button>
+                            <span className="inline-flex ml-2">
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                onClick={() => setIsDetailsSidebarOpen(true)}
+                                className="h-6 w-6 p-0 hover:bg-foreground/10 transition-colors text-foreground flex-shrink-0 rounded-md"
+                                aria-label="View details"
+                              >
+                                <IconOpenSidebarRight className="h-4 w-4" />
+                              </Button>
+                            </span>
                           </TooltipTrigger>
                           <TooltipContent side="bottom">
                             View details
@@ -6389,15 +6635,17 @@ Make sure to preserve all functionality from both branches when resolving confli
                       !isTerminalSidebarOpen && (
                         <Tooltip delayDuration={500}>
                           <TooltipTrigger asChild>
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              onClick={() => setIsTerminalSidebarOpen(true)}
-                              className="h-6 w-6 p-0 hover:bg-foreground/10 transition-colors text-foreground flex-shrink-0 rounded-md ml-2"
-                              aria-label="Open terminal"
-                            >
-                              <TerminalSquare className="h-4 w-4" />
-                            </Button>
+                            <span className="inline-flex ml-2">
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                onClick={() => setIsTerminalSidebarOpen(true)}
+                                className="h-6 w-6 p-0 hover:bg-foreground/10 transition-colors text-foreground flex-shrink-0 rounded-md"
+                                aria-label="Open terminal"
+                              >
+                                <TerminalSquare className="h-4 w-4" />
+                              </Button>
+                            </span>
                           </TooltipTrigger>
                           <TooltipContent side="bottom">
                             Open terminal
@@ -6411,16 +6659,18 @@ Make sure to preserve all functionality from both branches when resolving confli
                 {!isMobileFullscreen && isArchived && (
                   <Tooltip delayDuration={500}>
                     <TooltipTrigger asChild>
-                      <Button
-                        variant="ghost"
-                        onClick={handleRestoreWorkspace}
-                        disabled={restoreWorkspaceMutation.isPending}
-                        className="h-6 px-2 gap-1.5 hover:bg-foreground/10 transition-colors text-foreground flex-shrink-0 rounded-md ml-2 flex items-center"
-                        aria-label="Restore workspace"
-                      >
-                        <IconTextUndo className="h-4 w-4" />
-                        <span className="text-xs">Restore</span>
-                      </Button>
+                      <span className="inline-flex ml-2">
+                        <Button
+                          variant="ghost"
+                          onClick={handleRestoreWorkspace}
+                          disabled={restoreWorkspaceMutation.isPending}
+                          className="h-6 px-2 gap-1.5 hover:bg-foreground/10 transition-colors text-foreground flex-shrink-0 rounded-md flex items-center"
+                          aria-label="Restore workspace"
+                        >
+                          <IconTextUndo className="h-4 w-4" />
+                          <span className="text-xs">Restore</span>
+                        </Button>
+                      </span>
                     </TooltipTrigger>
                     <TooltipContent side="bottom">
                       Restore workspace
@@ -6737,6 +6987,16 @@ Make sure to preserve all functionality from both branches when resolving confli
             chatId={chatId}
             cwd={worktreePath}
             workspaceId={chatId}
+          />
+        )}
+
+        {/* New Preview Sidebar - with dev server and browser preview (desktop only, beta feature) */}
+        {betaPreviewSidebarEnabled && isDesktop && !isMobileFullscreen && worktreePath && (
+          <PreviewSidebar
+            chatId={chatId}
+            worktreePath={worktreePath}
+            onElementSelect={handlePreviewElementSelect}
+            onScreenshotCapture={handleScreenshotCapture}
           />
         )}
 

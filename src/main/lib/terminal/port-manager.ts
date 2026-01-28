@@ -1,29 +1,148 @@
 import { EventEmitter } from "node:events"
 import type { DetectedPort } from "./types"
-import { getListeningPortsForPids, getProcessTree } from "./port-scanner"
+import {
+	getListeningPortsForPids,
+	getProcessTree,
+	getAllListeningPorts,
+} from "./port-scanner"
 import type { TerminalSession } from "./types"
 
-// How often to poll for port changes (in ms)
-const SCAN_INTERVAL_MS = 2500
+// Scan intervals based on subscriber type
+const ACTIVE_SCAN_INTERVAL_MS = 2500 // When popover is open - need responsiveness
+const BACKGROUND_SCAN_INTERVAL_MS = 10000 // For badge count only - can be slower
 
 // Ports to ignore (common system ports that are usually not dev servers)
 const IGNORED_PORTS = new Set([22, 80, 443, 5432, 3306, 6379, 27017])
+
+// Special pane ID for ports not associated with a terminal session
+const SYSTEM_PANE_ID = "__system__"
 
 interface RegisteredSession {
 	session: TerminalSession
 	workspaceId: string
 }
 
+/**
+ * Subscription modes for port scanning
+ * - "active": User is actively viewing ports (popover open) - scan frequently
+ * - "background": Just showing badge count - scan less frequently
+ */
+export type PortSubscriptionMode = "active" | "background"
+
+interface Subscriber {
+	id: string
+	mode: PortSubscriptionMode
+}
+
 class PortManager extends EventEmitter {
 	private ports = new Map<string, DetectedPort>()
 	private sessions = new Map<string, RegisteredSession>()
 	private scanInterval: ReturnType<typeof setInterval> | null = null
-	private pendingHintScans = new Map<string, ReturnType<typeof setTimeout>>()
 	private isScanning = false
+
+	// Subscriber tracking for demand-based scanning
+	private subscribers = new Map<string, Subscriber>()
+	private subscriberIdCounter = 0
+
+	// Cached port count for quick access without scanning
+	private cachedPortCount = 0
 
 	constructor() {
 		super()
-		this.startPeriodicScan()
+		// Don't start scanning automatically - wait for subscribers
+	}
+
+	/**
+	 * Subscribe to port updates
+	 * Scanning only runs when there are active subscribers
+	 * Returns a subscriber ID for unsubscribing
+	 */
+	subscribe(mode: PortSubscriptionMode = "background"): string {
+		const id = `sub_${++this.subscriberIdCounter}`
+		this.subscribers.set(id, { id, mode })
+
+		// Recalculate scan interval based on subscriber modes
+		this.updateScanInterval()
+
+		// If this is the first subscriber, run an immediate scan
+		if (this.subscribers.size === 1) {
+			this.scanAllSessions().catch((error) => {
+				console.error("[PortManager] Initial scan error:", error)
+			})
+		}
+
+		return id
+	}
+
+	/**
+	 * Unsubscribe from port updates
+	 */
+	unsubscribe(subscriberId: string): void {
+		this.subscribers.delete(subscriberId)
+		this.updateScanInterval()
+	}
+
+	/**
+	 * Update subscriber mode (e.g., when popover opens/closes)
+	 */
+	updateSubscriberMode(subscriberId: string, mode: PortSubscriptionMode): void {
+		const subscriber = this.subscribers.get(subscriberId)
+		if (subscriber) {
+			subscriber.mode = mode
+			this.updateScanInterval()
+		}
+	}
+
+	/**
+	 * Update the scan interval based on current subscribers
+	 * If any subscriber is "active", use the fast interval
+	 * If only "background" subscribers, use the slow interval
+	 * If no subscribers, stop scanning entirely
+	 */
+	private updateScanInterval(): void {
+		// Stop existing interval
+		if (this.scanInterval) {
+			clearInterval(this.scanInterval)
+			this.scanInterval = null
+		}
+
+		// No subscribers = no scanning
+		if (this.subscribers.size === 0) {
+			return
+		}
+
+		// Check if any subscriber wants active (fast) scanning
+		const hasActiveSubscriber = Array.from(this.subscribers.values()).some(
+			(sub) => sub.mode === "active",
+		)
+
+		const intervalMs = hasActiveSubscriber
+			? ACTIVE_SCAN_INTERVAL_MS
+			: BACKGROUND_SCAN_INTERVAL_MS
+
+		this.scanInterval = setInterval(() => {
+			this.scanAllSessions().catch((error) => {
+				console.error("[PortManager] Scan error:", error)
+			})
+		}, intervalMs)
+
+		// Don't prevent Node from exiting
+		this.scanInterval.unref()
+	}
+
+	/**
+	 * Get cached port count without triggering a scan
+	 * Useful for badge display when no active subscription
+	 */
+	getCachedPortCount(): number {
+		return this.cachedPortCount
+	}
+
+	/**
+	 * Check if there are any active subscribers
+	 */
+	hasSubscribers(): boolean {
+		return this.subscribers.size > 0
 	}
 
 	/**
@@ -39,84 +158,85 @@ class PortManager extends EventEmitter {
 	unregisterSession(paneId: string): void {
 		this.sessions.delete(paneId)
 		this.removePortsForPane(paneId)
-
-		// Cancel any pending hint scan for this pane
-		const pendingTimeout = this.pendingHintScans.get(paneId)
-		if (pendingTimeout) {
-			clearTimeout(pendingTimeout)
-			this.pendingHintScans.delete(paneId)
-		}
 	}
 
 	/**
-	 * Start periodic scanning of all registered sessions
+	 * Stop all scanning (for cleanup)
 	 */
-	private startPeriodicScan(): void {
-		if (this.scanInterval) return
-
-		this.scanInterval = setInterval(() => {
-			this.scanAllSessions().catch((error) => {
-				console.error("[PortManager] Scan error:", error)
-			})
-		}, SCAN_INTERVAL_MS)
-
-		// Don't prevent Node from exiting
-		this.scanInterval.unref()
-	}
-
-	/**
-	 * Stop periodic scanning
-	 */
-	stopPeriodicScan(): void {
+	stopAllScanning(): void {
 		if (this.scanInterval) {
 			clearInterval(this.scanInterval)
 			this.scanInterval = null
 		}
-
-		for (const timeout of this.pendingHintScans.values()) {
-			clearTimeout(timeout)
-		}
-		this.pendingHintScans.clear()
+		this.subscribers.clear()
 	}
 
 	/**
-	 * Scan all registered sessions for ports
+	 * Scan all listening ports on the system
+	 * Associates ports with terminal sessions when possible,
+	 * otherwise marks them as system ports
 	 */
 	private async scanAllSessions(): Promise<void> {
 		if (this.isScanning) return
 		this.isScanning = true
 
 		try {
-			const panePortMap = new Map<
-				string,
-				{ workspaceId: string; pids: number[] }
-			>()
+			// Get all listening ports on the system
+			const allPorts = await getAllListeningPorts()
 
+			// Build a map of PID -> paneId for terminal sessions
+			const pidToPaneMap = new Map<
+				number,
+				{ paneId: string; workspaceId: string }
+			>()
 			for (const [paneId, { session, workspaceId }] of this.sessions) {
 				if (!session.isAlive) continue
 
 				try {
-					const pid = session.pty.pid
-					const pids = await getProcessTree(pid)
-					if (pids.length > 0) {
-						panePortMap.set(paneId, { workspaceId, pids })
+					const pids = await getProcessTree(session.pty.pid)
+					for (const pid of pids) {
+						pidToPaneMap.set(pid, { paneId, workspaceId })
 					}
 				} catch {
 					// Session may have exited
 				}
 			}
 
-			for (const [paneId, { workspaceId, pids }] of panePortMap) {
-				const portInfos = await getListeningPortsForPids(pids)
-				this.updatePortsForPane(paneId, workspaceId, portInfos)
+			// Group ports by pane (or system for unassociated ports)
+			const panePortMap = new Map<
+				string,
+				{ workspaceId: string; ports: typeof allPorts }
+			>()
+
+			for (const portInfo of allPorts) {
+				if (IGNORED_PORTS.has(portInfo.port)) continue
+
+				const sessionInfo = pidToPaneMap.get(portInfo.pid)
+				const paneId = sessionInfo?.paneId ?? SYSTEM_PANE_ID
+				const workspaceId = sessionInfo?.workspaceId ?? ""
+
+				if (!panePortMap.has(paneId)) {
+					panePortMap.set(paneId, { workspaceId, ports: [] })
+				}
+				panePortMap.get(paneId)!.ports.push(portInfo)
 			}
 
+			// Update ports for each pane
+			for (const [paneId, { workspaceId, ports }] of panePortMap) {
+				this.updatePortsForPane(paneId, workspaceId, ports)
+			}
+
+			// Remove ports for panes that no longer have any
+			const activePaneIds = new Set(panePortMap.keys())
 			for (const [key, port] of this.ports) {
-				if (!this.sessions.has(port.paneId)) {
+				if (!activePaneIds.has(port.paneId)) {
 					this.ports.delete(key)
 					this.emit("port:remove", port)
 				}
 			}
+
+			// Update cached port count
+			this.cachedPortCount = this.ports.size
 		} finally {
 			this.isScanning = false
 		}
@@ -204,6 +324,9 @@ class PortManager extends EventEmitter {
 		for (const port of portsToRemove) {
 			this.emit("port:remove", port)
 		}
+
+		// Update cached count
+		this.cachedPortCount = this.ports.size
 	}
 
 	/**

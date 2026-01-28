@@ -55,6 +55,23 @@ export interface QueuedDiffTextContext {
   lineType?: "old" | "new"
 }
 
+// Element context selected from preview sidebar WebView
+export interface PreviewElementContext {
+  id: string
+  html: string // Raw HTML of selected element
+  componentName: string | null // React component name if available
+  filePath: string | null // Source file path if available
+  preview: string // Truncated HTML for display
+  createdAt: Date
+}
+
+export interface QueuedPreviewElementContext {
+  id: string
+  html: string
+  componentName: string | null
+  filePath: string | null
+}
+
 export type AgentQueueItem = {
   id: string
   message: string // Serialized value with @[id] tokens for mentions
@@ -62,6 +79,7 @@ export type AgentQueueItem = {
   files?: QueuedFile[]
   textContexts?: QueuedTextContext[]
   diffTextContexts?: QueuedDiffTextContext[]
+  previewElementContexts?: QueuedPreviewElementContext[]
   timestamp: Date
   status: "pending" | "processing"
 }
@@ -76,7 +94,8 @@ export function createQueueItem(
   images?: QueuedImage[],
   files?: QueuedFile[],
   textContexts?: QueuedTextContext[],
-  diffTextContexts?: QueuedDiffTextContext[]
+  diffTextContexts?: QueuedDiffTextContext[],
+  previewElementContexts?: QueuedPreviewElementContext[]
 ): AgentQueueItem {
   return {
     id,
@@ -85,6 +104,7 @@ export function createQueueItem(
     files: files && files.length > 0 ? files : undefined,
     textContexts: textContexts && textContexts.length > 0 ? textContexts : undefined,
     diffTextContexts: diffTextContexts && diffTextContexts.length > 0 ? diffTextContexts : undefined,
+    previewElementContexts: previewElementContexts && previewElementContexts.length > 0 ? previewElementContexts : undefined,
     timestamp: new Date(),
     status: "pending",
   }
@@ -152,6 +172,16 @@ export function toQueuedDiffTextContext(ctx: DiffTextContext): QueuedDiffTextCon
     filePath: ctx.filePath,
     lineNumber: ctx.lineNumber,
     lineType: ctx.lineType,
+  }
+}
+
+// Helper to convert PreviewElementContext to QueuedPreviewElementContext
+export function toQueuedPreviewElementContext(ctx: PreviewElementContext): QueuedPreviewElementContext {
+  return {
+    id: ctx.id,
+    html: ctx.html,
+    componentName: ctx.componentName,
+    filePath: ctx.filePath,
   }
 }
 

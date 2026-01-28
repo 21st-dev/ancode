@@ -1,3 +1,8 @@
+export interface TerminalStartedEvent {
+  type: "started"
+  cwd: string
+}
+
 export interface TerminalDataEvent {
   type: "data"
   data: string
@@ -9,7 +14,7 @@ export interface TerminalExitEvent {
   signal?: number
 }
 
-export type TerminalEvent = TerminalDataEvent | TerminalExitEvent
+export type TerminalEvent = TerminalStartedEvent | TerminalDataEvent | TerminalExitEvent
 
 export interface TerminalProps {
   paneId: string
@@ -21,7 +26,8 @@ export interface TerminalProps {
 }
 
 export interface TerminalStreamEvent {
-  type: "data" | "exit"
+  type: "started" | "data" | "exit"
+  cwd?: string
   data?: string
   exitCode?: number
   signal?: number
@@ -40,4 +46,17 @@ export interface TerminalInstance {
   name: string
   /** Creation timestamp */
   createdAt: number
+}
+
+/**
+ * Represents a detected localhost server/port running in a terminal session
+ */
+export interface DetectedPort {
+  port: number
+  pid: number
+  processName: string
+  paneId: string
+  workspaceId: string
+  detectedAt: number
+  address: string
 }

@@ -3,7 +3,7 @@ import type {
   UploadedImage,
   UploadedFile,
 } from "../hooks/use-agents-file-upload"
-import type { SelectedTextContext } from "./queue-utils"
+import type { SelectedTextContext, PreviewElementContext } from "./queue-utils"
 
 // Constants
 export const DRAFTS_STORAGE_KEY = "agent-drafts-global"
@@ -38,6 +38,15 @@ export interface DraftTextContext {
   createdAt: string // ISO string instead of Date
 }
 
+export interface DraftPreviewElementContext {
+  id: string
+  html: string
+  componentName: string | null
+  filePath: string | null
+  preview: string
+  createdAt: string // ISO string instead of Date
+}
+
 // Types
 export interface DraftContent {
   text: string
@@ -45,6 +54,7 @@ export interface DraftContent {
   images?: DraftImage[]
   files?: DraftFile[]
   textContexts?: DraftTextContext[]
+  previewElementContexts?: DraftPreviewElementContext[]
 }
 
 export interface DraftProject {
@@ -414,6 +424,25 @@ export function toDraftTextContext(
 }
 
 /**
+ * Convert PreviewElementContext to DraftPreviewElementContext
+ */
+export function toDraftPreviewElementContext(
+  ctx: PreviewElementContext
+): DraftPreviewElementContext {
+  return {
+    id: ctx.id,
+    html: ctx.html,
+    componentName: ctx.componentName,
+    filePath: ctx.filePath,
+    preview: ctx.preview,
+    createdAt:
+      ctx.createdAt instanceof Date
+        ? ctx.createdAt.toISOString()
+        : String(ctx.createdAt),
+  }
+}
+
+/**
  * Revoke blob URLs associated with a draft item
  */
 export function revokeDraftBlobUrls(draftId: string): void {
@@ -520,6 +549,22 @@ export function fromDraftTextContext(
 }
 
 /**
+ * Restore PreviewElementContext from DraftPreviewElementContext
+ */
+export function fromDraftPreviewElementContext(
+  draft: DraftPreviewElementContext
+): PreviewElementContext {
+  return {
+    id: draft.id,
+    html: draft.html,
+    componentName: draft.componentName,
+    filePath: draft.filePath,
+    preview: draft.preview,
+    createdAt: new Date(draft.createdAt),
+  }
+}
+
+/**
  * Full draft data including attachments
  */
 export interface FullDraftData {
@@ -527,6 +572,7 @@ export interface FullDraftData {
   images: UploadedImage[]
   files: UploadedFile[]
   textContexts: SelectedTextContext[]
+  previewElementContexts: PreviewElementContext[]
 }
 
 /**
@@ -553,6 +599,8 @@ export function getSubChatDraftFull(
         ?.map(fromDraftFile)
         .filter((f): f is UploadedFile => f !== null) ?? [],
     textContexts: draft.textContexts?.map(fromDraftTextContext) ?? [],
+    previewElementContexts:
+      draft.previewElementContexts?.map(fromDraftPreviewElementContext) ?? [],
   }
 }
 
@@ -567,6 +615,7 @@ export async function saveSubChatDraftWithAttachments(
     images?: UploadedImage[]
     files?: UploadedFile[]
     textContexts?: SelectedTextContext[]
+    previewElementContexts?: PreviewElementContext[]
   }
 ): Promise<{ success: boolean; error?: string }> {
   const globalDrafts = loadGlobalDrafts()
@@ -576,7 +625,8 @@ export async function saveSubChatDraftWithAttachments(
     text.trim() ||
     (options?.images?.length ?? 0) > 0 ||
     (options?.files?.length ?? 0) > 0 ||
-    (options?.textContexts?.length ?? 0) > 0
+    (options?.textContexts?.length ?? 0) > 0 ||
+    (options?.previewElementContexts?.length ?? 0) > 0
 
   if (!hasContent) {
     delete globalDrafts[key]
@@ -597,6 +647,8 @@ export async function saveSubChatDraftWithAttachments(
     : []
 
   const draftTextContexts = options?.textContexts?.map(toDraftTextContext) ?? []
+  const draftPreviewElementContexts =
+    options?.previewElementContexts?.map(toDraftPreviewElementContext) ?? []
 
   const draft: DraftContent = {
     text,
@@ -604,6 +656,9 @@ export async function saveSubChatDraftWithAttachments(
     ...(draftImages.length > 0 && { images: draftImages }),
     ...(draftFiles.length > 0 && { files: draftFiles }),
     ...(draftTextContexts.length > 0 && { textContexts: draftTextContexts }),
+    ...(draftPreviewElementContexts.length > 0 && {
+      previewElementContexts: draftPreviewElementContexts,
+    }),
   }
 
   // Check storage limits before saving

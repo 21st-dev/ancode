@@ -27,6 +27,8 @@ interface ResizableSidebarProps {
   showResizeTooltip?: boolean
   /** Custom styles for the sidebar container */
   style?: React.CSSProperties
+  /** Called when resize state changes (useful for blocking webviews) */
+  onResizeChange?: (isResizing: boolean) => void
 }
 
 const DEFAULT_MIN_WIDTH = 200
@@ -51,6 +53,7 @@ export function ResizableSidebar({
   disableClickToClose = false,
   showResizeTooltip = false,
   style,
+  onResizeChange,
 }: ResizableSidebarProps) {
   const [sidebarWidth, setSidebarWidth] = useAtom(widthAtom)
 
@@ -73,6 +76,11 @@ export function ResizableSidebar({
 
   // Use local width during resize, otherwise use persisted width
   const currentWidth = localWidth ?? sidebarWidth
+
+  // Notify parent of resize state changes (useful for blocking webviews)
+  useEffect(() => {
+    onResizeChange?.(isResizing)
+  }, [isResizing, onResizeChange])
 
   // Calculate tooltip position dynamically based on sidebar position
   const tooltipPosition = useMemo(() => {

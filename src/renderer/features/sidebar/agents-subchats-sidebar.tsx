@@ -212,6 +212,28 @@ export function AgentsSubChatsSidebar({
   )
   const [loadingSubChats] = useAtom(loadingSubChatsAtom)
   const subChatFiles = useAtomValue(subChatFilesAtom)
+
+  // Memoized stats calculation to avoid expensive reduce() in render loops
+  const subChatStats = useMemo(() => {
+    const stats = new Map<string, { fileCount: number; additions: number; deletions: number }>()
+    subChatFiles.forEach((fileChanges, subChatId) => {
+      if (fileChanges.length > 0) {
+        stats.set(
+          subChatId,
+          fileChanges.reduce(
+            (acc, f) => ({
+              fileCount: acc.fileCount + 1,
+              additions: acc.additions + f.additions,
+              deletions: acc.deletions + f.deletions,
+            }),
+            { fileCount: 0, additions: 0, deletions: 0 }
+          )
+        )
+      }
+    })
+    return stats
+  }, [subChatFiles])
+
   const selectedTeamId = useAtomValue(selectedTeamIdAtom)
   const [selectedChatId, setSelectedChatId] = useAtom(selectedAgentChatIdAtom)
   const previousChatId = useAtomValue(previousAgentChatIdAtom)
@@ -986,16 +1008,18 @@ export function AgentsSubChatsSidebar({
       />
       <Tooltip delayDuration={500}>
         <TooltipTrigger asChild>
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={onClose}
-            tabIndex={-1}
-            className="h-6 w-6 p-0 hover:bg-foreground/10 transition-[background-color,transform] duration-150 ease-out active:scale-[0.97] text-foreground flex-shrink-0 rounded-md"
-            aria-label="Close sidebar"
-          >
-            <IconDoubleChevronLeft className="h-4 w-4" />
-          </Button>
+          <span className="inline-flex">
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={onClose}
+              tabIndex={-1}
+              className="h-6 w-6 p-0 hover:bg-foreground/10 transition-[background-color,transform] duration-150 ease-out active:scale-[0.97] text-foreground flex-shrink-0 rounded-md"
+              aria-label="Close sidebar"
+            >
+              <IconDoubleChevronLeft className="h-4 w-4" />
+            </Button>
+          </span>
         </TooltipTrigger>
         <TooltipContent side="bottom">Close chats pane</TooltipContent>
       </Tooltip>
@@ -1047,20 +1071,22 @@ export function AgentsSubChatsSidebar({
               {onBackToChats && (
                 <Tooltip delayDuration={500}>
                   <TooltipTrigger asChild>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      onClick={onBackToChats}
-                      tabIndex={-1}
-                      className="h-6 w-6 p-0 hover:bg-foreground/10 transition-[background-color,transform] duration-150 ease-out active:scale-[0.97] flex-shrink-0 rounded-md"
-                      aria-label="Toggle agents sidebar"
-                      style={{
-                        // @ts-expect-error - WebKit-specific property
-                        WebkitAppRegion: "no-drag",
-                      }}
-                    >
-                      <AlignJustify className="h-4 w-4" />
-                    </Button>
+                    <span className="inline-flex">
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        onClick={onBackToChats}
+                        tabIndex={-1}
+                        className="h-6 w-6 p-0 hover:bg-foreground/10 transition-[background-color,transform] duration-150 ease-out active:scale-[0.97] flex-shrink-0 rounded-md"
+                        aria-label="Toggle agents sidebar"
+                        style={{
+                          // @ts-expect-error - WebKit-specific property
+                          WebkitAppRegion: "no-drag",
+                        }}
+                      >
+                        <AlignJustify className="h-4 w-4" />
+                      </Button>
+                    </span>
                   </TooltipTrigger>
                   <TooltipContent>Open chats sidebar</TooltipContent>
                 </Tooltip>
@@ -1140,14 +1166,16 @@ export function AgentsSubChatsSidebar({
           >
             <Tooltip delayDuration={500}>
               <TooltipTrigger asChild>
-                <Button
-                  onClick={handleCreateNew}
-                  variant="outline"
-                  size="sm"
-                  className="h-7 px-2 w-full hover:bg-foreground/10 transition-[background-color,transform] duration-150 ease-out active:scale-[0.97] text-foreground rounded-lg"
-                >
-                  <span className="text-sm font-medium">New Chat</span>
-                </Button>
+                <span className="inline-flex w-full">
+                  <Button
+                    onClick={handleCreateNew}
+                    variant="outline"
+                    size="sm"
+                    className="h-7 px-2 w-full hover:bg-foreground/10 transition-[background-color,transform] duration-150 ease-out active:scale-[0.97] text-foreground rounded-lg"
+                  >
+                    <span className="text-sm font-medium">New Chat</span>
+                  </Button>
+                </span>
               </TooltipTrigger>
             <TooltipContent side="right">
               Create a new chat
@@ -1230,18 +1258,7 @@ export function AgentsSubChatsSidebar({
                           const draftText = getDraftText(subChat.id)
                           const hasPendingQuestion = pendingQuestionsMap.has(subChat.id)
                           const hasPendingPlan = pendingPlanApprovals.has(subChat.id)
-                          const fileChanges = subChatFiles.get(subChat.id) || []
-                          const stats =
-                            fileChanges.length > 0
-                              ? fileChanges.reduce(
-                                  (acc, f) => ({
-                                    fileCount: acc.fileCount + 1,
-                                    additions: acc.additions + f.additions,
-                                    deletions: acc.deletions + f.deletions,
-                                  }),
-                                  { fileCount: 0, additions: 0, deletions: 0 },
-                                )
-                              : null
+                          const stats = subChatStats.get(subChat.id) ?? null
 
                           return (
                             <ContextMenu key={subChat.id}>
@@ -1504,18 +1521,7 @@ export function AgentsSubChatsSidebar({
                           const draftText = getDraftText(subChat.id)
                           const hasPendingQuestion = pendingQuestionsMap.has(subChat.id)
                           const hasPendingPlan = pendingPlanApprovals.has(subChat.id)
-                          const fileChanges = subChatFiles.get(subChat.id) || []
-                          const stats =
-                            fileChanges.length > 0
-                              ? fileChanges.reduce(
-                                  (acc, f) => ({
-                                    fileCount: acc.fileCount + 1,
-                                    additions: acc.additions + f.additions,
-                                    deletions: acc.deletions + f.deletions,
-                                  }),
-                                  { fileCount: 0, additions: 0, deletions: 0 },
-                                )
-                              : null
+                          const stats = subChatStats.get(subChat.id) ?? null
 
                           return (
                             <ContextMenu key={subChat.id}>
