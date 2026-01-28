@@ -137,10 +137,6 @@ type ImageAttachment = {
 }
 
 export class IPCChatTransport implements ChatTransport<UIMessage> {
-  // When a session is cancelled (abort), the Claude process is killed and the
-  // sessionId becomes stale. Skip it on the next send so we start fresh.
-  private sessionInvalidated = false
-
   constructor(private config: IPCChatTransportConfig) {}
 
   async sendMessages(options: {
@@ -154,13 +150,13 @@ export class IPCChatTransport implements ChatTransport<UIMessage> {
     const prompt = this.extractText(lastUser)
     const images = this.extractImages(lastUser)
 
-    // Get sessionId for resume (skip if session was invalidated by a cancel/abort)
+    // Get sessionId for resume (server preserves sessionId on abort so
+    // the next message can resume with full conversation context)
     const lastAssistant = [...options.messages]
       .reverse()
       .find((m) => m.role === "assistant")
     const metadata = lastAssistant?.metadata as AgentMessageMetadata | undefined
-    const sessionId = this.sessionInvalidated ? undefined : metadata?.sessionId
-    this.sessionInvalidated = false
+    const sessionId = metadata?.sessionId
 
     // Read extended thinking setting dynamically (so toggle applies to existing chats)
     const thinkingEnabled = appStore.get(extendedThinkingEnabledAtom)
@@ -447,7 +443,6 @@ export class IPCChatTransport implements ChatTransport<UIMessage> {
         // Handle abort
         options.abortSignal?.addEventListener("abort", () => {
           console.log(`[SD] R:ABORT sub=${subId} n=${chunkCount} last=${lastChunkType}`)
-          this.sessionInvalidated = true
           sub.unsubscribe()
           try {
             controller.close()

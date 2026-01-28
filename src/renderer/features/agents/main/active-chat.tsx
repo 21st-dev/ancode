@@ -3529,8 +3529,8 @@ const ChatViewInner = memo(function ChatViewInner({
 
     try {
       // Stop current stream if streaming and wait for status to become ready.
-      // The server-side save block sets sessionId=null on abort, so the next
-      // message starts fresh without needing an explicit cancel mutation.
+      // The server-side save block preserves sessionId on abort, so the next
+      // message can resume the session with full conversation context.
       if (isStreamingRef.current) {
         await handleStop()
         await waitForStreamingReady(subChatId)

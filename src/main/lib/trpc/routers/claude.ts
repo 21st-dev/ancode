@@ -1504,7 +1504,7 @@ ${prompt}
 
                 // When result arrives, assign the last assistant UUID to metadata
                 // It will be emitted as part of the merged message-metadata chunk below
-                if (msgAny.type === "result" && historyEnabled && lastAssistantUuid) {
+                if (msgAny.type === "result" && historyEnabled && lastAssistantUuid && !abortController.signal.aborted) {
                   metadata.sdkMessageUuid = lastAssistantUuid
                 }
 
@@ -1788,9 +1788,7 @@ ${prompt}
                 db.update(subChats)
                   .set({
                     messages: JSON.stringify(finalMessages),
-                    // Don't save sessionId on abort — the session is stale and
-                    // the transport already marks it as invalidated client-side
-                    sessionId: abortController.signal.aborted ? null : metadata.sessionId,
+                    sessionId: metadata.sessionId,
                     streamId: null,
                     updatedAt: new Date(),
                   })
@@ -1834,9 +1832,7 @@ ${prompt}
               parts.push({ type: "text", text: currentText })
             }
 
-            // Don't save sessionId on abort — the session is stale and
-            // the transport already marks it as invalidated client-side
-            const savedSessionId = abortController.signal.aborted ? null : metadata.sessionId
+            const savedSessionId = metadata.sessionId
 
             if (parts.length > 0) {
               const assistantMessage = {
@@ -1971,17 +1967,6 @@ ${prompt}
         clearPendingApprovals("Session cancelled.", input.subChatId)
       }
 
-      // The save block in the async function sets sessionId=null on abort,
-      // so this DB write is only needed when cancel is called directly
-      // (no active subscription / save block to handle it).
-      if (!controller) {
-        console.log(`[claude] cancel: no active session for ${input.subChatId.slice(-8)}, clearing sessionId from DB`)
-        const db = getDatabase()
-        db.update(subChats)
-          .set({ sessionId: null })
-          .where(eq(subChats.id, input.subChatId))
-          .run()
-      }
 
       return { cancelled: !!controller }
     }),
