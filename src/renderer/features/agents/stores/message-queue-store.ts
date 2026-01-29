@@ -11,6 +11,9 @@ interface MessageQueueState {
   // Map: subChatId -> queue items
   queues: Record<string, AgentQueueItem[]>
 
+  // Track which items are being edited (pauses processing for items at top of queue)
+  editingItemIds: Set<string>
+
   // Actions
   addToQueue: (subChatId: string, item: AgentQueueItem) => void
   removeFromQueue: (subChatId: string, itemId: string) => void
@@ -21,11 +24,17 @@ interface MessageQueueState {
   popItem: (subChatId: string, itemId: string) => AgentQueueItem | null
   // Add item to front of queue (for error recovery)
   prependItem: (subChatId: string, item: AgentQueueItem) => void
+  // Update a queue item (for editing)
+  updateQueueItem: (subChatId: string, itemId: string, updates: Partial<Pick<AgentQueueItem, "message" | "images" | "files" | "textContexts" | "diffTextContexts">>) => void
+  // Track editing state
+  setEditingItem: (itemId: string, isEditing: boolean) => void
+  isItemEditing: (itemId: string) => boolean
 }
 
 export const useMessageQueueStore = create<MessageQueueState>()(
   subscribeWithSelector((set, get) => ({
     queues: {},
+    editingItemIds: new Set<string>(),
 
   addToQueue: (subChatId, item) => {
     set((state) => ({
@@ -91,5 +100,37 @@ export const useMessageQueueStore = create<MessageQueueState>()(
         [subChatId]: [item, ...(state.queues[subChatId] || [])],
       },
     }))
+  },
+
+  // Update a queue item (for editing queued messages)
+  updateQueueItem: (subChatId, itemId, updates) => {
+    set((state) => {
+      const currentQueue = state.queues[subChatId] || []
+      return {
+        queues: {
+          ...state.queues,
+          [subChatId]: currentQueue.map((item) =>
+            item.id === itemId ? { ...item, ...updates } : item
+          ),
+        },
+      }
+    })
+  },
+
+  // Track which item is being edited (prevents processing if at top of queue)
+  setEditingItem: (itemId, isEditing) => {
+    set((state) => {
+      const newEditingIds = new Set(state.editingItemIds)
+      if (isEditing) {
+        newEditingIds.add(itemId)
+      } else {
+        newEditingIds.delete(itemId)
+      }
+      return { editingItemIds: newEditingIds }
+    })
+  },
+
+  isItemEditing: (itemId) => {
+    return get().editingItemIds.has(itemId)
   },
 })))

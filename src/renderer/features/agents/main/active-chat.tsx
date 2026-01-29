@@ -4110,6 +4110,7 @@ const ChatViewInner = memo(function ChatViewInner({
                   onSendNow={handleSendFromQueue}
                   isStreaming={isStreaming}
                   hasStatusCardBelow={changedFilesForSubChat.length > 0}
+                  subChatId={subChatId}
                 />
               )}
               {/* Status card - bottom card, only when there are changed files */}

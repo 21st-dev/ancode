@@ -1,7 +1,7 @@
 "use client"
 
 import { memo, useState, useCallback, useEffect } from "react"
-import { ChevronDown, ArrowUp, X } from "lucide-react"
+import { ChevronDown, ArrowUp, X, Pencil } from "lucide-react"
 import { motion, AnimatePresence } from "motion/react"
 import {
   Tooltip,
@@ -12,6 +12,7 @@ import { cn } from "../../../lib/utils"
 import type { AgentQueueItem } from "../lib/queue-utils"
 import { RenderFileMentions } from "../mentions/render-file-mentions"
 import { getWindowId } from "../../../contexts/WindowContext"
+import { EditQueuedMessageDialog } from "../components/edit-queued-message-dialog"
 
 // Window-scoped key so each window has its own queue expanded state
 const getQueueExpandedKey = () => `${getWindowId()}:agent-queue-expanded`
@@ -21,10 +22,12 @@ const QueueItemRow = memo(function QueueItemRow({
   item,
   onRemove,
   onSendNow,
+  onEdit,
 }: {
   item: AgentQueueItem
   onRemove?: (itemId: string) => void
   onSendNow?: (itemId: string) => void
+  onEdit?: (item: AgentQueueItem) => void
 }) {
   const handleRemove = useCallback(
     (e: React.MouseEvent) => {
@@ -40,6 +43,14 @@ const QueueItemRow = memo(function QueueItemRow({
       onSendNow?.(item.id)
     },
     [item.id, onSendNow]
+  )
+
+  const handleEdit = useCallback(
+    (e: React.MouseEvent) => {
+      e.stopPropagation()
+      onEdit?.(item)
+    },
+    [item, onEdit]
   )
 
   // Get display text - truncate message and show attachment count
@@ -65,6 +76,19 @@ const QueueItemRow = memo(function QueueItemRow({
         </span>
       )}
       <div className="flex items-center gap-1">
+        {onEdit && (
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <button
+                onClick={handleEdit}
+                className="flex-shrink-0 p-1 hover:bg-foreground/10 rounded text-muted-foreground hover:text-foreground transition-all"
+              >
+                <Pencil className="w-3.5 h-3.5" />
+              </button>
+            </TooltipTrigger>
+            <TooltipContent side="top">Edit</TooltipContent>
+          </Tooltip>
+        )}
         {onSendNow && (
           <Tooltip>
             <TooltipTrigger asChild>
@@ -103,6 +127,8 @@ interface AgentQueueIndicatorProps {
   isStreaming?: boolean
   /** Whether there's a status card below this one - affects border radius */
   hasStatusCardBelow?: boolean
+  /** Sub-chat ID for editing messages */
+  subChatId: string
 }
 
 export const AgentQueueIndicator = memo(function AgentQueueIndicator({
@@ -111,6 +137,7 @@ export const AgentQueueIndicator = memo(function AgentQueueIndicator({
   onSendNow,
   isStreaming = false,
   hasStatusCardBelow = false,
+  subChatId,
 }: AgentQueueIndicatorProps) {
   // Load expanded state from localStorage (window-scoped)
   const [isExpanded, setIsExpanded] = useState(() => {
@@ -119,10 +146,24 @@ export const AgentQueueIndicator = memo(function AgentQueueIndicator({
     return saved !== null ? saved === "true" : true // Default to expanded
   })
 
+  // Edit dialog state
+  const [editingItem, setEditingItem] = useState<AgentQueueItem | null>(null)
+  const [isEditDialogOpen, setIsEditDialogOpen] = useState(false)
+
   // Save expanded state to localStorage (window-scoped)
   useEffect(() => {
     localStorage.setItem(getQueueExpandedKey(), String(isExpanded))
   }, [isExpanded])
+
+  const handleEdit = useCallback((item: AgentQueueItem) => {
+    setEditingItem(item)
+    setIsEditDialogOpen(true)
+  }, [])
+
+  const handleCloseEditDialog = useCallback(() => {
+    setIsEditDialogOpen(false)
+    setEditingItem(null)
+  }, [])
 
   if (queue.length === 0) {
     return null
@@ -177,18 +218,28 @@ export const AgentQueueIndicator = memo(function AgentQueueIndicator({
             className="overflow-hidden"
           >
             <div className="border-t border-border max-h-[200px] overflow-y-auto">
-              {queue.map((item) => (
+              {queue.map((item, index) => (
                 <QueueItemRow
                   key={item.id}
                   item={item}
                   onRemove={onRemoveItem}
                   onSendNow={onSendNow}
+                  onEdit={handleEdit}
                 />
               ))}
             </div>
           </motion.div>
         )}
       </AnimatePresence>
+
+      {/* Edit queued message dialog */}
+      <EditQueuedMessageDialog
+        isOpen={isEditDialogOpen}
+        onClose={handleCloseEditDialog}
+        item={editingItem}
+        subChatId={subChatId}
+        isFirstInQueue={editingItem ? queue[0]?.id === editingItem.id : false}
+      />
     </div>
   )
 })

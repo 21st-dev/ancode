@@ -50,6 +50,12 @@ export function QueueProcessor() {
         return
       }
 
+      // Check if the first item is being edited - pause processing if so
+      const firstItem = queue[0]
+      if (firstItem && useMessageQueueStore.getState().isItemEditing(firstItem.id)) {
+        return
+      }
+
       // Get the Chat object from agentChatStore
       const chat = agentChatStore.get(subChatId)
       if (!chat) {
@@ -164,10 +170,17 @@ export function QueueProcessor() {
     // Check all queues and schedule processing for ready sub-chats
     const checkAllQueues = () => {
       const queues = useMessageQueueStore.getState().queues
+      const editingItemIds = useMessageQueueStore.getState().editingItemIds
 
       for (const subChatId of Object.keys(queues)) {
         const queue = queues[subChatId]
         if (!queue || queue.length === 0) continue
+
+        // Skip if first item is being edited (pause processing)
+        const firstItem = queue[0]
+        if (firstItem && editingItemIds.has(firstItem.id)) {
+          continue
+        }
 
         const status = useStreamingStatusStore.getState().getStatus(subChatId)
 
@@ -194,6 +207,12 @@ export function QueueProcessor() {
       () => checkAllQueues()
     )
 
+    // Subscribe to editing state changes (to resume processing when editing finishes)
+    const unsubscribeEditing = useMessageQueueStore.subscribe(
+      (state) => state.editingItemIds,
+      () => checkAllQueues()
+    )
+
     // Initial check
     checkAllQueues()
 
@@ -201,6 +220,7 @@ export function QueueProcessor() {
     return () => {
       unsubscribeQueue()
       unsubscribeStatus()
+      unsubscribeEditing()
 
       // Clear all timers
       for (const timer of timersRef.current.values()) {
