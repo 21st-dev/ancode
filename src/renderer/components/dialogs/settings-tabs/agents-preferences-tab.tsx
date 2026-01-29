@@ -8,6 +8,7 @@ import {
   desktopNotificationsEnabledAtom,
   extendedThinkingEnabledAtom,
   soundNotificationsEnabledAtom,
+  promptSoundNotificationsEnabledAtom,
   preferredEditorAtom,
   type AgentMode,
   type AutoAdvanceTarget,
@@ -145,6 +146,7 @@ export function AgentsPreferencesTab() {
     extendedThinkingEnabledAtom,
   )
   const [soundEnabled, setSoundEnabled] = useAtom(soundNotificationsEnabledAtom)
+  const [promptSoundEnabled, setPromptSoundEnabled] = useAtom(promptSoundNotificationsEnabledAtom)
   const [desktopNotificationsEnabled, setDesktopNotificationsEnabled] = useAtom(desktopNotificationsEnabledAtom)
   const [analyticsOptOut, setAnalyticsOptOut] = useAtom(analyticsOptOutAtom)
   const [ctrlTabTarget, setCtrlTabTarget] = useAtom(ctrlTabTargetAtom)
@@ -235,6 +237,19 @@ export function AgentsPreferencesTab() {
               </span>
             </div>
             <Switch checked={soundEnabled} onCheckedChange={setSoundEnabled} />
+          </div>
+
+          {/* Prompt Sound Notifications Toggle */}
+          <div className="flex items-start justify-between">
+            <div className="flex flex-col space-y-1">
+              <span className="text-sm font-medium text-foreground">
+                Prompt Sound
+              </span>
+              <span className="text-xs text-muted-foreground">
+                Play a distinct sound when agent asks you a question
+              </span>
+            </div>
+            <Switch checked={promptSoundEnabled} onCheckedChange={setPromptSoundEnabled} />
           </div>
 
           {/* Co-Authored-By Toggle */}

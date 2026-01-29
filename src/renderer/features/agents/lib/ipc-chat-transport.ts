@@ -11,9 +11,11 @@ import {
   selectedOllamaModelAtom,
   showOfflineModeFeaturesAtom,
   autoOfflineModeAtom,
+  promptSoundNotificationsEnabledAtom,
   type CustomClaudeConfig,
   normalizeCustomClaudeConfig,
 } from "../../../lib/atoms"
+import { playPromptSound } from "../../../lib/notification-sounds"
 import { appStore } from "../../../lib/jotai-store"
 import { trpcClient } from "../../../lib/trpc"
 import {
@@ -230,6 +232,12 @@ export class IPCChatTransport implements ChatTransport<UIMessage> {
                   questions: chunk.questions,
                 })
                 appStore.set(pendingUserQuestionsAtom, newMap)
+
+                // Play prompt notification sound if enabled
+                const isPromptSoundEnabled = appStore.get(promptSoundNotificationsEnabledAtom)
+                if (isPromptSoundEnabled) {
+                  playPromptSound()
+                }
 
                 // Clear any expired question (new question replaces it)
                 const currentExpired = appStore.get(expiredUserQuestionsAtom)

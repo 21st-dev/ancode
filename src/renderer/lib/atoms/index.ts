@@ -379,6 +379,15 @@ export const soundNotificationsEnabledAtom = atomWithStorage<boolean>(
   { getOnInit: true },
 )
 
+// Preferences - Prompt Sound Notifications
+// When enabled, play a distinct sound when agent asks a question (AskUserQuestion)
+export const promptSoundNotificationsEnabledAtom = atomWithStorage<boolean>(
+  "preferences:prompt-sound-notifications-enabled",
+  true,
+  undefined,
+  { getOnInit: true },
+)
+
 // Preferences - Desktop Notifications (Windows)
 // When enabled, show Windows desktop notification when agent completes work
 export const desktopNotificationsEnabledAtom = atomWithStorage<boolean>(
