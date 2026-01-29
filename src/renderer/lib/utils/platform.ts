@@ -111,8 +111,8 @@ export const SHORTCUTS = {
     desktop: { hotkey: "cmd+p", display: "⌘P" },
   },
   toggleSidebar: {
-    web: { hotkey: "cmd+backslash", display: "⌘\\" },
-    desktop: { hotkey: "cmd+backslash", display: "⌘\\" },
+    web: { hotkey: "cmd+b", display: "⌘B" },
+    desktop: { hotkey: "cmd+b", display: "⌘B" },
   },
   settings: {
     web: { hotkey: "cmd+comma", display: "⌘," },

@@ -30,7 +30,7 @@ export const ALL_SHORTCUT_ACTIONS: ShortcutAction[] = [
     id: "toggle-sidebar",
     label: "Toggle sidebar",
     category: "general",
-    defaultKeys: ["cmd", "\\"],
+    defaultKeys: ["cmd", "B"],
   },
   {
     id: "undo-archive",

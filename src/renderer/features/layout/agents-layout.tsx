@@ -37,7 +37,7 @@ import { QueueProcessor } from "../agents/components/queue-processor"
 const SIDEBAR_MIN_WIDTH = 160
 const SIDEBAR_MAX_WIDTH = 300
 const SIDEBAR_ANIMATION_DURATION = 0
-const SIDEBAR_CLOSE_HOTKEY = "⌘\\"
+const SIDEBAR_CLOSE_HOTKEY = "⌘B"
 
 // ============================================================================
 // Component
