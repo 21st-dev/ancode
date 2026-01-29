@@ -26,6 +26,7 @@ import {
   pendingUserQuestionsAtom,
 } from "../atoms"
 import { useAgentSubChatStore } from "../stores/sub-chat-store"
+import type { AgentMessageMetadata } from "../ui/agent-message-usage"
 
 // Error categories and their user-friendly messages
 const ERROR_TOAST_CONFIG: Record<
@@ -151,11 +152,13 @@ export class IPCChatTransport implements ChatTransport<UIMessage> {
     const prompt = this.extractText(lastUser)
     const images = this.extractImages(lastUser)
 
-    // Get sessionId for resume
+    // Get sessionId for resume (server preserves sessionId on abort so
+    // the next message can resume with full conversation context)
     const lastAssistant = [...options.messages]
       .reverse()
       .find((m) => m.role === "assistant")
-    const sessionId = (lastAssistant as any)?.metadata?.sessionId
+    const metadata = lastAssistant?.metadata as AgentMessageMetadata | undefined
+    const sessionId = metadata?.sessionId
 
     // Read extended thinking setting dynamically (so toggle applies to existing chats)
     const thinkingEnabled = appStore.get(extendedThinkingEnabledAtom)
@@ -464,7 +467,6 @@ export class IPCChatTransport implements ChatTransport<UIMessage> {
         options.abortSignal?.addEventListener("abort", () => {
           console.log(`[SD] R:ABORT sub=${subId} n=${chunkCount} last=${lastChunkType}`)
           sub.unsubscribe()
-          trpcClient.claude.cancel.mutate({ subChatId: this.config.subChatId })
           try {
             controller.close()
           } catch {
