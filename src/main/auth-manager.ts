@@ -5,9 +5,9 @@ import { AUTH_SERVER_PORT } from "./constants"
 // Get API URL - in packaged app always use production, in dev allow override
 function getApiBaseUrl(): string {
   if (app.isPackaged) {
-    return "https://getcrunch.dev"
+    return "https://www.getcrunch.dev"
   }
-  return import.meta.env.MAIN_VITE_API_URL || "https://getcrunch.dev"
+  return import.meta.env.MAIN_VITE_API_URL || "https://www.getcrunch.dev"
 }
 
 export class AuthManager {
