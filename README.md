@@ -1,16 +1,16 @@
-# 1Code
+# Crunch
 
-[1Code.dev](https://1code.dev)
+[getcrunch.dev](https://getcrunch.dev)
 
 Best UI for Claude Code with local and remote agent execution.
 
-By [21st.dev](https://21st.dev) team
+By [getcrunch.dev](https://getcrunch.dev) team
 
 > **Platforms:** macOS, Linux, and Windows. Windows support improved thanks to community contributions from [@jesus-mgtc](https://github.com/jesus-mgtc) and [@evgyur](https://github.com/evgyur).
 
-## 1Code vs Claude Code
+## Crunch vs Claude Code
 
-| Feature | 1Code | Claude Code |
+| Feature | Crunch | Claude Code |
 |---------|-------|-------------|
 | **Visual UI** | ✅ Cursor-like desktop app | ✅ |
 | **Git Worktree Isolation** | ✅ Each chat runs in isolated worktree | ✅ |
@@ -90,11 +90,11 @@ bun run package:mac  # or package:win, package:linux
 
 > **Important:** The `claude:download` step downloads the Claude CLI binary which is required for the agent chat to work. If you skip this step, the app will build but agent functionality won't work.
 
-### Option 2: Subscribe to 1code.dev (recommended)
+### Option 2: Subscribe to getcrunch.dev (recommended)
 
-Get pre-built releases + background agents support by subscribing at [1code.dev](https://1code.dev).
+Get pre-built releases + background agents support by subscribing at [getcrunch.dev](https://getcrunch.dev).
 
-Your subscription helps us maintain and improve 1Code.
+Your subscription helps us maintain and improve Crunch.
 
 ## Development
 

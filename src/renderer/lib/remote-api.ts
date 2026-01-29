@@ -9,7 +9,7 @@ let API_BASE: string | null = null
 
 async function getApiBase(): Promise<string> {
   if (!API_BASE) {
-    API_BASE = await window.desktopApi?.getApiBaseUrl() || "https://21st.dev"
+    API_BASE = await window.desktopApi?.getApiBaseUrl() || "https://getcrunch.dev"
   }
   return API_BASE
 }

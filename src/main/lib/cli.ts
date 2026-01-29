@@ -1,9 +1,9 @@
 /**
- * CLI command support for 1code
- * Allows users to open 1code from terminal with: 1code . or 1code /path/to/project
+ * CLI command support for crunch
+ * Allows users to open crunch from terminal with: crunch . or crunch /path/to/project
  *
  * Based on PR #16 by @caffeinum (Aleksey Bykhun)
- * https://github.com/21st-dev/1code/pull/16
+ * https://github.com/getcrunch-dev/crunch/pull/16
  */
 
 import { app } from "electron"
@@ -11,7 +11,7 @@ import { join } from "path"
 import { existsSync, lstatSync } from "fs"
 import { platform } from "./platform"
 
-// Launch directory from CLI (e.g., `1code /path/to/project`)
+// Launch directory from CLI (e.g., `crunch /path/to/project`)
 let launchDirectory: string | null = null
 
 /**
@@ -25,7 +25,7 @@ export function getLaunchDirectory(): string | null {
 
 /**
  * Parse CLI arguments to find a directory argument
- * Called on app startup to handle `1code .` or `1code /path/to/project`
+ * Called on app startup to handle `crunch .` or `crunch /path/to/project`
  */
 export function parseLaunchDirectory(): void {
   // Look for a directory argument in argv

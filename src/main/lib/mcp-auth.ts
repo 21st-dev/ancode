@@ -28,7 +28,7 @@ export async function fetchMcpTools(
 
   try {
     client = new Client({
-      name: '21st-desktop',
+      name: 'crunch-desktop',
       version: '1.0.0',
     });
 
@@ -90,7 +90,7 @@ export async function fetchMcpToolsStdio(config: {
 
   try {
     const client = new Client({
-      name: '21st-desktop',
+      name: 'crunch-desktop',
       version: '1.0.0',
     });
 

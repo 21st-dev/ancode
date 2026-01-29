@@ -114,7 +114,7 @@ export const anthropicAccounts = sqliteTable("anthropic_accounts", {
     () => new Date(),
   ),
   lastUsedAt: integer("last_used_at", { mode: "timestamp" }),
-  desktopUserId: text("desktop_user_id"), // Reference to 21st.dev user
+  desktopUserId: text("desktop_user_id"), // Reference to getcrunch.dev user
 })
 
 // Tracks which Anthropic account is currently active

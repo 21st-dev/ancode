@@ -263,8 +263,8 @@ export const AgentEditTool = memo(function AgentEditTool({
         return filePath.slice(prefix.length)
       }
     }
-    // Handle worktree paths: /Users/.../.21st/worktrees/{chatId}/{subChatId}/relativePath
-    const worktreeMatch = filePath.match(/\.21st\/worktrees\/[^/]+\/[^/]+\/(.+)$/)
+    // Handle worktree paths: /Users/.../.crunch/worktrees/{chatId}/{subChatId}/relativePath
+    const worktreeMatch = filePath.match(/\.crunch\/worktrees\/[^/]+\/[^/]+\/(.+)$/)
     if (worktreeMatch) {
       return worktreeMatch[1]
     }

@@ -1,11 +1,11 @@
 {
-  "name": "21st-desktop",
+  "name": "crunch-desktop",
   "version": "0.0.46",
   "private": true,
-  "description": "1Code - UI for parallel work with AI agents",
+  "description": "Crunch - UI for parallel work with AI agents",
   "author": {
-    "name": "21st.dev",
-    "email": "support@21st.dev"
+    "name": "getcrunch.dev",
+    "email": "support@getcrunch.dev"
   },
   "main": "out/main/index.js",
   "scripts": {
@@ -140,14 +140,14 @@
     "vite": "^6.3.4"
   },
   "build": {
-    "appId": "dev.21st.agents",
-    "productName": "1Code",
+    "appId": "dev.getcrunch.app",
+    "productName": "Crunch",
     "npmRebuild": true,
     "protocols": [
       {
-        "name": "1Code",
+        "name": "Crunch",
         "schemes": [
-          "twentyfirst-agents"
+          "crunch"
         ]
       }
     ],
@@ -205,7 +205,7 @@
       "entitlements": "build/entitlements.mac.plist",
       "entitlementsInherit": "build/entitlements.mac.plist",
       "extendInfo": {
-        "NSMicrophoneUsageDescription": "1Code needs microphone access for voice dictation"
+        "NSMicrophoneUsageDescription": "Crunch needs microphone access for voice dictation"
       }
     },
     "dmg": {
@@ -251,7 +251,7 @@
     },
     "publish": {
       "provider": "generic",
-      "url": "https://cdn.21st.dev/releases/desktop"
+      "url": "https://cdn.getcrunch.dev/releases/desktop"
     }
   }
 }
