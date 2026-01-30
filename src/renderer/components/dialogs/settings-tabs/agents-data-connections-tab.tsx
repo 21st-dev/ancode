@@ -2,12 +2,14 @@
 
 import { useState, useEffect } from "react"
 import { toast } from "sonner"
-import { Loader2, Check, X, Trash2, Eye, EyeOff } from "lucide-react"
+import { Loader2, Check, X, Trash2, Eye, EyeOff, ChevronRight } from "lucide-react"
+import { motion, AnimatePresence } from "motion/react"
 import { trpc } from "../../../lib/trpc"
 import { cn } from "../../../lib/utils"
 import { Button } from "../../ui/button"
 import { Input } from "../../ui/input"
 import { Label } from "../../ui/label"
+import { getDataConnectionIcon, getDataConnectionColor, type DataConnectionType } from "../../ui/icons"
 
 // Hook to detect narrow screen
 function useIsNarrowScreen(): boolean {
@@ -30,39 +32,49 @@ function useIsNarrowScreen(): boolean {
 function ConnectionStatus({ isConnected, hasCredentials }: { isConnected: boolean; hasCredentials: boolean }) {
   if (!hasCredentials) {
     return (
-      <div className="flex items-center gap-1.5">
-        <span className="h-2 w-2 rounded-full bg-muted-foreground/50" />
-        <span className="text-sm text-muted-foreground">Not configured</span>
-      </div>
+      <span className="px-1.5 py-0.5 text-[10px] font-medium rounded bg-muted text-muted-foreground">
+        Not configured
+      </span>
     )
   }
 
   if (isConnected) {
     return (
-      <div className="flex items-center gap-1.5">
-        <span className="h-2 w-2 rounded-full bg-emerald-500" />
-        <span className="text-sm text-emerald-500">Connected</span>
-      </div>
+      <span className="px-1.5 py-0.5 text-[10px] font-medium rounded bg-emerald-500/10 text-emerald-500">
+        Connected
+      </span>
     )
   }
 
   return (
-    <div className="flex items-center gap-1.5">
-      <span className="h-2 w-2 rounded-full bg-amber-500" />
-      <span className="text-sm text-amber-500">Disconnected</span>
-    </div>
+    <span className="px-1.5 py-0.5 text-[10px] font-medium rounded bg-amber-500/10 text-amber-500">
+      Disconnected
+    </span>
   )
 }
 
-export function AgentsDataConnectionsTab() {
-  const isNarrowScreen = useIsNarrowScreen()
+// Snowflake connection form
+function SnowflakeConnectionForm({
+  onSave,
+  onTest,
+  onDelete,
+  isSaving,
+  isTesting,
+  isDeleting,
+  connection,
+  status,
+}: {
+  onSave: (data: SnowflakeFormData) => void
+  onTest: () => void
+  onDelete: () => void
+  isSaving: boolean
+  isTesting: boolean
+  isDeleting: boolean
+  connection: SnowflakeConnection | null
+  status: { isConnected: boolean; hasCredentials: boolean } | undefined
+}) {
   const [showPassword, setShowPassword] = useState(false)
-  const [isSaving, setIsSaving] = useState(false)
-  const [isTesting, setIsTesting] = useState(false)
-  const [isDeleting, setIsDeleting] = useState(false)
-
-  // Form state
-  const [formData, setFormData] = useState({
+  const [formData, setFormData] = useState<SnowflakeFormData>({
     account: "",
     username: "",
     password: "",
@@ -73,24 +85,13 @@ export function AgentsDataConnectionsTab() {
     name: "",
   })
 
-  // Get connection status
-  const { data: status, refetch: refetchStatus } = trpc.snowflake.getStatus.useQuery()
-
-  // Get saved connection
-  const { data: connection, refetch: refetchConnection } = trpc.snowflake.getConnection.useQuery()
-
-  // Mutations
-  const saveConnectionMutation = trpc.snowflake.saveConnection.useMutation()
-  const testConnectionMutation = trpc.snowflake.testConnection.useMutation()
-  const deleteConnectionMutation = trpc.snowflake.deleteConnection.useMutation()
-
   // Populate form with saved connection data
   useEffect(() => {
     if (connection) {
       setFormData({
         account: connection.account || "",
         username: connection.username || "",
-        password: "", // Don't populate password for security
+        password: "",
         role: connection.role || "",
         warehouse: connection.warehouse || "",
         database: connection.database || "",
@@ -105,12 +106,280 @@ export function AgentsDataConnectionsTab() {
     setFormData((prev) => ({ ...prev, [name]: value }))
   }
 
-  const handleSave = async () => {
+  const handleSubmit = () => {
     if (!formData.account || !formData.username || !formData.password) {
       toast.error("Account, username, and password are required")
       return
     }
+    onSave(formData)
+  }
 
+  const hasChanges = connection
+    ? formData.account !== connection.account ||
+      formData.username !== connection.username ||
+      formData.password !== "" ||
+      formData.role !== (connection.role || "") ||
+      formData.warehouse !== (connection.warehouse || "") ||
+      formData.database !== (connection.database || "") ||
+      formData.schema !== (connection.schema || "") ||
+      formData.name !== (connection.name || "")
+    : formData.account || formData.username || formData.password
+
+  return (
+    <div className="px-4 pb-4 pt-0 border-t border-border bg-muted/20">
+      <div className="pt-4 space-y-4">
+        {/* Connection Name */}
+        <div className="space-y-1.5">
+          <Label htmlFor="name" className="text-xs text-muted-foreground">
+            Connection Name (optional)
+          </Label>
+          <Input
+            id="name"
+            name="name"
+            placeholder="My Snowflake Connection"
+            value={formData.name}
+            onChange={handleInputChange}
+            className="h-8"
+          />
+        </div>
+
+        {/* Account */}
+        <div className="space-y-1.5">
+          <Label htmlFor="account" className="text-xs text-muted-foreground">
+            Account <span className="text-red-500">*</span>
+          </Label>
+          <Input
+            id="account"
+            name="account"
+            placeholder="xy12345.us-east-1"
+            value={formData.account}
+            onChange={handleInputChange}
+            className="h-8"
+          />
+          <p className="text-xs text-muted-foreground">
+            Your Snowflake account identifier (e.g., xy12345.us-east-1)
+          </p>
+        </div>
+
+        {/* Username */}
+        <div className="space-y-1.5">
+          <Label htmlFor="username" className="text-xs text-muted-foreground">
+            Username <span className="text-red-500">*</span>
+          </Label>
+          <Input
+            id="username"
+            name="username"
+            placeholder="your_username"
+            value={formData.username}
+            onChange={handleInputChange}
+            className="h-8"
+          />
+        </div>
+
+        {/* Password */}
+        <div className="space-y-1.5">
+          <Label htmlFor="password" className="text-xs text-muted-foreground">
+            Password <span className="text-red-500">*</span>
+          </Label>
+          <div className="relative">
+            <Input
+              id="password"
+              name="password"
+              type={showPassword ? "text" : "password"}
+              placeholder={connection ? "••••••••" : "Enter password"}
+              value={formData.password}
+              onChange={handleInputChange}
+              className="h-8 pr-10"
+            />
+            <button
+              type="button"
+              onClick={() => setShowPassword(!showPassword)}
+              className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
+            >
+              {showPassword ? (
+                <EyeOff className="h-4 w-4" />
+              ) : (
+                <Eye className="h-4 w-4" />
+              )}
+            </button>
+          </div>
+          {connection && (
+            <p className="text-xs text-muted-foreground">
+              Leave blank to keep existing password
+            </p>
+          )}
+        </div>
+
+        {/* Role */}
+        <div className="space-y-1.5">
+          <Label htmlFor="role" className="text-xs text-muted-foreground">
+            Role
+          </Label>
+          <Input
+            id="role"
+            name="role"
+            placeholder="ACCOUNTADMIN"
+            value={formData.role}
+            onChange={handleInputChange}
+            className="h-8"
+          />
+          <p className="text-xs text-muted-foreground">
+            Snowflake role to use (e.g., ACCOUNTADMIN, SYSADMIN, PUBLIC)
+          </p>
+        </div>
+
+        {/* Divider */}
+        <div className="border-t border-border pt-4">
+          <p className="text-xs text-muted-foreground mb-3">
+            Optional defaults (can be changed per query)
+          </p>
+        </div>
+
+        {/* Warehouse */}
+        <div className="space-y-1.5">
+          <Label htmlFor="warehouse" className="text-xs text-muted-foreground">
+            Warehouse
+          </Label>
+          <Input
+            id="warehouse"
+            name="warehouse"
+            placeholder="COMPUTE_WH"
+            value={formData.warehouse}
+            onChange={handleInputChange}
+            className="h-8"
+          />
+        </div>
+
+        {/* Database */}
+        <div className="space-y-1.5">
+          <Label htmlFor="database" className="text-xs text-muted-foreground">
+            Database
+          </Label>
+          <Input
+            id="database"
+            name="database"
+            placeholder="MY_DATABASE"
+            value={formData.database}
+            onChange={handleInputChange}
+            className="h-8"
+          />
+        </div>
+
+        {/* Schema */}
+        <div className="space-y-1.5">
+          <Label htmlFor="schema" className="text-xs text-muted-foreground">
+            Schema
+          </Label>
+          <Input
+            id="schema"
+            name="schema"
+            placeholder="PUBLIC"
+            value={formData.schema}
+            onChange={handleInputChange}
+            className="h-8"
+          />
+        </div>
+
+        {/* Actions */}
+        <div className="flex items-center justify-between gap-2 pt-4 border-t border-border">
+          <div>
+            {connection && (
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={onDelete}
+                disabled={isDeleting}
+                className="text-red-500 hover:text-red-600 hover:bg-red-500/10"
+              >
+                {isDeleting ? (
+                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                ) : (
+                  <Trash2 className="h-4 w-4 mr-2" />
+                )}
+                Delete
+              </Button>
+            )}
+          </div>
+          <div className="flex items-center gap-2">
+            {status?.hasCredentials && (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={onTest}
+                disabled={isTesting}
+              >
+                {isTesting ? (
+                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                ) : status?.isConnected ? (
+                  <Check className="h-4 w-4 mr-2" />
+                ) : (
+                  <X className="h-4 w-4 mr-2" />
+                )}
+                Test
+              </Button>
+            )}
+            <Button
+              size="sm"
+              onClick={handleSubmit}
+              disabled={isSaving || !hasChanges}
+            >
+              {isSaving ? (
+                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+              ) : null}
+              {connection ? "Update" : "Save"} & Connect
+            </Button>
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+interface SnowflakeFormData {
+  account: string
+  username: string
+  password: string
+  role: string
+  warehouse: string
+  database: string
+  schema: string
+  name: string
+}
+
+interface SnowflakeConnection {
+  account: string
+  username: string
+  role?: string
+  warehouse?: string
+  database?: string
+  schema?: string
+  name?: string
+  isConnected?: boolean
+}
+
+export function AgentsDataConnectionsTab() {
+  const isNarrowScreen = useIsNarrowScreen()
+  const [expandedType, setExpandedType] = useState<string | null>(null)
+  const [isSaving, setIsSaving] = useState(false)
+  const [isTesting, setIsTesting] = useState(false)
+  const [isDeleting, setIsDeleting] = useState(false)
+
+  // Get connection status
+  const { data: status, refetch: refetchStatus } = trpc.snowflake.getStatus.useQuery()
+
+  // Get saved connection
+  const { data: connection, refetch: refetchConnection } = trpc.snowflake.getConnection.useQuery()
+
+  // Mutations
+  const saveConnectionMutation = trpc.snowflake.saveConnection.useMutation()
+  const testConnectionMutation = trpc.snowflake.testConnection.useMutation()
+  const deleteConnectionMutation = trpc.snowflake.deleteConnection.useMutation()
+
+  const handleToggle = (type: string) => {
+    setExpandedType(expandedType === type ? null : type)
+  }
+
+  const handleSave = async (formData: SnowflakeFormData) => {
     setIsSaving(true)
     try {
       const result = await saveConnectionMutation.mutateAsync(formData)
@@ -153,18 +422,9 @@ export function AgentsDataConnectionsTab() {
       const result = await deleteConnectionMutation.mutateAsync()
       if (result.success) {
         toast.success("Connection deleted")
-        setFormData({
-          account: "",
-          username: "",
-          password: "",
-          role: "",
-          warehouse: "",
-          database: "",
-          schema: "",
-          name: "",
-        })
         await refetchStatus()
         await refetchConnection()
+        setExpandedType(null)
       } else {
         toast.error(result.error || "Failed to delete connection")
       }
@@ -176,22 +436,38 @@ export function AgentsDataConnectionsTab() {
     }
   }
 
-  const hasChanges = connection
-    ? formData.account !== connection.account ||
-      formData.username !== connection.username ||
-      formData.password !== "" ||
-      formData.role !== (connection.role || "") ||
-      formData.warehouse !== (connection.warehouse || "") ||
-      formData.database !== (connection.database || "") ||
-      formData.schema !== (connection.schema || "") ||
-      formData.name !== (connection.name || "")
-    : formData.account || formData.username || formData.password
+  // Connection types configuration
+  const connectionTypes: Array<{
+    id: DataConnectionType
+    name: string
+    description: string
+    hasConnection: boolean
+    isConnected: boolean
+    disabled?: boolean
+  }> = [
+    {
+      id: "snowflake",
+      name: "Snowflake",
+      description: "Connect to your Snowflake data warehouse",
+      hasConnection: status?.hasCredentials || false,
+      isConnected: status?.isConnected || false,
+    },
+    // Future connection types can be added here
+    // {
+    //   id: "postgres",
+    //   name: "PostgreSQL",
+    //   description: "Connect to PostgreSQL databases",
+    //   hasConnection: false,
+    //   isConnected: false,
+    //   disabled: true,
+    // },
+  ]
 
   return (
-    <div className="p-6 space-y-6 h-full">
-      {/* Header */}
+    <div className="p-6 space-y-6 overflow-y-auto max-h-[70vh]">
+      {/* Header - hidden on narrow screens */}
       {!isNarrowScreen && (
-        <div className="flex flex-col space-y-1.5 text-center sm:text-left">
+        <div className="flex flex-col space-y-1.5 text-left">
           <h3 className="text-sm font-semibold text-foreground">Data Connections</h3>
           <p className="text-xs text-muted-foreground">
             Connect to external databases for Claude to query.
@@ -199,238 +475,91 @@ export function AgentsDataConnectionsTab() {
         </div>
       )}
 
-      {/* Snowflake Connection */}
-      <div className="space-y-4">
-        <div className="flex items-center justify-between">
-          <div>
-            <h4 className="text-sm font-medium text-foreground">Snowflake</h4>
-            <p className="text-xs text-muted-foreground mt-0.5">
-              Connect to your Snowflake data warehouse
-            </p>
-          </div>
-          <ConnectionStatus
-            isConnected={status?.isConnected || false}
-            hasCredentials={status?.hasCredentials || false}
-          />
-        </div>
-
+      {/* Connection Types */}
+      <div className="space-y-2">
         <div className="bg-background rounded-lg border border-border overflow-hidden">
-          <div className="p-4 space-y-4">
-            {/* Connection Name */}
-            <div className="space-y-1.5">
-              <Label htmlFor="name" className="text-xs text-muted-foreground">
-                Connection Name (optional)
-              </Label>
-              <Input
-                id="name"
-                name="name"
-                placeholder="My Snowflake Connection"
-                value={formData.name}
-                onChange={handleInputChange}
-                className="h-8"
-              />
-            </div>
-
-            {/* Account */}
-            <div className="space-y-1.5">
-              <Label htmlFor="account" className="text-xs text-muted-foreground">
-                Account <span className="text-red-500">*</span>
-              </Label>
-              <Input
-                id="account"
-                name="account"
-                placeholder="xy12345.us-east-1"
-                value={formData.account}
-                onChange={handleInputChange}
-                className="h-8"
-              />
-              <p className="text-xs text-muted-foreground">
-                Your Snowflake account identifier (e.g., xy12345.us-east-1)
-              </p>
-            </div>
-
-            {/* Username */}
-            <div className="space-y-1.5">
-              <Label htmlFor="username" className="text-xs text-muted-foreground">
-                Username <span className="text-red-500">*</span>
-              </Label>
-              <Input
-                id="username"
-                name="username"
-                placeholder="your_username"
-                value={formData.username}
-                onChange={handleInputChange}
-                className="h-8"
-              />
-            </div>
-
-            {/* Password */}
-            <div className="space-y-1.5">
-              <Label htmlFor="password" className="text-xs text-muted-foreground">
-                Password <span className="text-red-500">*</span>
-              </Label>
-              <div className="relative">
-                <Input
-                  id="password"
-                  name="password"
-                  type={showPassword ? "text" : "password"}
-                  placeholder={connection ? "••••••••" : "Enter password"}
-                  value={formData.password}
-                  onChange={handleInputChange}
-                  className="h-8 pr-10"
-                />
+          <div className="divide-y divide-border">
+            {connectionTypes.map((type) => (
+              <div key={type.id}>
                 <button
-                  type="button"
-                  onClick={() => setShowPassword(!showPassword)}
-                  className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
+                  onClick={() => handleToggle(type.id)}
+                  className="w-full flex items-center gap-3 p-4 text-left hover:bg-muted/30 transition-colors"
                 >
-                  {showPassword ? (
-                    <EyeOff className="h-4 w-4" />
-                  ) : (
-                    <Eye className="h-4 w-4" />
-                  )}
+                  <ChevronRight
+                    className={cn(
+                      "h-4 w-4 text-muted-foreground transition-transform flex-shrink-0",
+                      expandedType === type.id && "rotate-90",
+                    )}
+                  />
+                  {(() => {
+                    const Icon = getDataConnectionIcon(type.id)
+                    return <Icon className={cn("h-5 w-5 flex-shrink-0", getDataConnectionColor(type.id))} />
+                  })()}
+                  <div className="flex flex-col space-y-0.5 min-w-0 flex-1">
+                    <span className="text-sm font-medium text-foreground">
+                      {type.name}
+                    </span>
+                    <span className="text-xs text-muted-foreground truncate">
+                      {type.description}
+                    </span>
+                  </div>
+                  <ConnectionStatus
+                    isConnected={type.isConnected}
+                    hasCredentials={type.hasConnection}
+                  />
                 </button>
+
+                <AnimatePresence initial={false}>
+                  {expandedType === type.id && (
+                    <motion.div
+                      initial={{ height: 0, opacity: 0 }}
+                      animate={{ height: "auto", opacity: 1 }}
+                      exit={{ height: 0, opacity: 0 }}
+                      transition={{
+                        height: { type: "spring", stiffness: 300, damping: 30 },
+                        opacity: { duration: 0.2 },
+                      }}
+                      className="overflow-hidden"
+                    >
+                      {type.id === "snowflake" && (
+                        <SnowflakeConnectionForm
+                          onSave={handleSave}
+                          onTest={handleTest}
+                          onDelete={handleDelete}
+                          isSaving={isSaving}
+                          isTesting={isTesting}
+                          isDeleting={isDeleting}
+                          connection={connection as SnowflakeConnection | null}
+                          status={status}
+                        />
+                      )}
+                    </motion.div>
+                  )}
+                </AnimatePresence>
               </div>
-              {connection && (
-                <p className="text-xs text-muted-foreground">
-                  Leave blank to keep existing password
-                </p>
-              )}
-            </div>
-
-            {/* Role */}
-            <div className="space-y-1.5">
-              <Label htmlFor="role" className="text-xs text-muted-foreground">
-                Role
-              </Label>
-              <Input
-                id="role"
-                name="role"
-                placeholder="ACCOUNTADMIN"
-                value={formData.role}
-                onChange={handleInputChange}
-                className="h-8"
-              />
-              <p className="text-xs text-muted-foreground">
-                Snowflake role to use (e.g., ACCOUNTADMIN, SYSADMIN, PUBLIC)
-              </p>
-            </div>
-
-            {/* Divider */}
-            <div className="border-t border-border pt-4">
-              <p className="text-xs text-muted-foreground mb-3">
-                Optional defaults (can be changed per query)
-              </p>
-            </div>
-
-            {/* Warehouse */}
-            <div className="space-y-1.5">
-              <Label htmlFor="warehouse" className="text-xs text-muted-foreground">
-                Warehouse
-              </Label>
-              <Input
-                id="warehouse"
-                name="warehouse"
-                placeholder="COMPUTE_WH"
-                value={formData.warehouse}
-                onChange={handleInputChange}
-                className="h-8"
-              />
-            </div>
-
-            {/* Database */}
-            <div className="space-y-1.5">
-              <Label htmlFor="database" className="text-xs text-muted-foreground">
-                Database
-              </Label>
-              <Input
-                id="database"
-                name="database"
-                placeholder="MY_DATABASE"
-                value={formData.database}
-                onChange={handleInputChange}
-                className="h-8"
-              />
-            </div>
-
-            {/* Schema */}
-            <div className="space-y-1.5">
-              <Label htmlFor="schema" className="text-xs text-muted-foreground">
-                Schema
-              </Label>
-              <Input
-                id="schema"
-                name="schema"
-                placeholder="PUBLIC"
-                value={formData.schema}
-                onChange={handleInputChange}
-                className="h-8"
-              />
-            </div>
-          </div>
-
-          {/* Actions */}
-          <div className="flex items-center justify-between gap-2 p-4 border-t border-border bg-muted/30">
-            <div>
-              {connection && (
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={handleDelete}
-                  disabled={isDeleting}
-                  className="text-red-500 hover:text-red-600 hover:bg-red-500/10"
-                >
-                  {isDeleting ? (
-                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                  ) : (
-                    <Trash2 className="h-4 w-4 mr-2" />
-                  )}
-                  Delete
-                </Button>
-              )}
-            </div>
-            <div className="flex items-center gap-2">
-              {status?.hasCredentials && (
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={handleTest}
-                  disabled={isTesting}
-                >
-                  {isTesting ? (
-                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                  ) : status?.isConnected ? (
-                    <Check className="h-4 w-4 mr-2" />
-                  ) : (
-                    <X className="h-4 w-4 mr-2" />
-                  )}
-                  Test Connection
-                </Button>
-              )}
-              <Button
-                size="sm"
-                onClick={handleSave}
-                disabled={isSaving || !hasChanges}
-              >
-                {isSaving ? (
-                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                ) : null}
-                {connection ? "Update" : "Save"} & Connect
-              </Button>
-            </div>
+            ))}
           </div>
         </div>
       </div>
 
       {/* Info Section */}
-      <div className="text-xs text-muted-foreground bg-muted p-3 rounded space-y-2">
-        <p className="font-medium">How it works:</p>
-        <ul className="list-disc list-inside space-y-1 ml-2">
-          <li>Your credentials are encrypted using your OS keychain</li>
-          <li>Claude can query your Snowflake database when you ask</li>
-          <li>Use the Schema Browser widget to explore your data</li>
-          <li>Ask Claude things like "Show me the top 10 customers by revenue"</li>
-        </ul>
+      <div className="pt-4 border-t border-border space-y-3">
+        <div>
+          <h4 className="text-xs font-medium text-foreground mb-1.5">
+            How Data Connections Work
+          </h4>
+          <p className="text-xs text-muted-foreground">
+            Your credentials are encrypted using your OS keychain. Claude can query your connected databases when you ask questions about your data.
+          </p>
+        </div>
+        <div>
+          <h4 className="text-xs font-medium text-foreground mb-1.5">
+            Example Queries
+          </h4>
+          <p className="text-xs text-muted-foreground">
+            Ask Claude things like "Show me the top 10 customers by revenue" or "What's the average order value this month?" and it will query your database to find the answer.
+          </p>
+        </div>
       </div>
     </div>
   )
