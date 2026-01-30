@@ -1,8 +1,10 @@
 import { z } from "zod"
 import { router, publicProcedure } from "../index"
 import { readdir, stat, readFile, writeFile, mkdir } from "node:fs/promises"
-import { join, relative, basename } from "node:path"
+import { join, relative, basename, extname } from "node:path"
 import { app } from "electron"
+import { watch } from "node:fs"
+import { observable } from "@trpc/server/observable"
 
 // Directories to ignore when scanning
 const IGNORED_DIRS = new Set([
@@ -278,6 +280,109 @@ export const filesRouter = router({
         console.error(`[files] Error reading file ${filePath}:`, error)
         throw new Error(`Failed to read file: ${error instanceof Error ? error.message : "Unknown error"}`)
       }
+    }),
+
+  /**
+   * Read a text file with size/binary validation
+   * Returns structured result with error reasons
+   */
+  readTextFile: publicProcedure
+    .input(z.object({ filePath: z.string() }))
+    .query(async ({ input }) => {
+      const { filePath } = input
+      const MAX_SIZE = 2 * 1024 * 1024 // 2 MB
+
+      try {
+        const fileStat = await stat(filePath)
+
+        if (fileStat.size > MAX_SIZE) {
+          return { ok: false as const, reason: "too-large" as const, byteLength: fileStat.size }
+        }
+
+        const buffer = await readFile(filePath)
+
+        // Check if binary by looking for null bytes in first 8KB
+        const sample = buffer.subarray(0, 8192)
+        if (sample.includes(0)) {
+          return { ok: false as const, reason: "binary" as const, byteLength: fileStat.size }
+        }
+
+        const content = buffer.toString("utf-8")
+        return { ok: true as const, content, byteLength: fileStat.size }
+      } catch (error) {
+        const msg = error instanceof Error ? error.message : "Unknown error"
+        if (msg.includes("ENOENT") || msg.includes("no such file")) {
+          return { ok: false as const, reason: "not-found" as const, byteLength: 0 }
+        }
+        throw new Error(`Failed to read file: ${msg}`)
+      }
+    }),
+
+  /**
+   * Read a binary file as base64 (for images)
+   */
+  readBinaryFile: publicProcedure
+    .input(z.object({ filePath: z.string() }))
+    .query(async ({ input }) => {
+      const { filePath } = input
+      const MAX_SIZE = 20 * 1024 * 1024 // 20 MB
+
+      try {
+        const fileStat = await stat(filePath)
+
+        if (fileStat.size > MAX_SIZE) {
+          return { ok: false as const, reason: "too-large" as const, byteLength: fileStat.size }
+        }
+
+        const buffer = await readFile(filePath)
+        const ext = extname(filePath).toLowerCase()
+
+        // Determine MIME type
+        const mimeMap: Record<string, string> = {
+          ".png": "image/png",
+          ".jpg": "image/jpeg",
+          ".jpeg": "image/jpeg",
+          ".gif": "image/gif",
+          ".svg": "image/svg+xml",
+          ".webp": "image/webp",
+          ".ico": "image/x-icon",
+          ".bmp": "image/bmp",
+        }
+        const mimeType = mimeMap[ext] || "application/octet-stream"
+
+        return {
+          ok: true as const,
+          data: buffer.toString("base64"),
+          mimeType,
+          byteLength: fileStat.size,
+        }
+      } catch (error) {
+        const msg = error instanceof Error ? error.message : "Unknown error"
+        if (msg.includes("ENOENT") || msg.includes("no such file")) {
+          return { ok: false as const, reason: "not-found" as const, byteLength: 0 }
+        }
+        throw new Error(`Failed to read binary file: ${msg}`)
+      }
+    }),
+
+  /**
+   * Watch for file changes in a project directory
+   * Emits events when files are modified
+   */
+  watchChanges: publicProcedure
+    .input(z.object({ projectPath: z.string() }))
+    .subscription(({ input }) => {
+      return observable<{ filename: string; eventType: string }>((emit) => {
+        const watcher = watch(input.projectPath, { recursive: true }, (eventType, filename) => {
+          if (filename) {
+            emit.next({ filename, eventType })
+          }
+        })
+
+        return () => {
+          watcher.close()
+        }
+      })
     }),
 
   /**

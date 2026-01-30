@@ -19,6 +19,7 @@ import { getToolStatus } from "./agent-tool-registry"
 import { AgentToolInterrupted } from "./agent-tool-interrupted"
 import { areToolPropsEqual } from "./agent-tool-utils"
 import { getFileIconByExtension } from "../mentions/agents-file-mention"
+import { useFileOpen } from "../mentions"
 import { agentsDiffSidebarOpenAtom, agentsFocusedDiffFileAtom } from "../atoms"
 import { cn } from "../../../lib/utils"
 
@@ -225,6 +226,7 @@ export const AgentEditTool = memo(function AgentEditTool({
   // Atoms for opening diff sidebar and focusing on file
   const setDiffSidebarOpen = useSetAtom(agentsDiffSidebarOpenAtom)
   const setFocusedDiffFile = useSetAtom(agentsFocusedDiffFileAtom)
+  const onOpenFile = useFileOpen()
 
   // Determine tool type
   const isWriteMode = part.type === "tool-Write"
@@ -298,11 +300,11 @@ export const AgentEditTool = memo(function AgentEditTool({
   }, [isPending, isInputStreaming])
 
   const handleFilenameClick = useCallback((e: React.MouseEvent) => {
-    if (displayPath) {
+    if (filePath && onOpenFile) {
       e.stopPropagation()
-      handleOpenInDiff()
+      onOpenFile(filePath)
     }
-  }, [displayPath, handleOpenInDiff])
+  }, [filePath, onOpenFile])
 
   const handleExpandButtonClick = useCallback((e: React.MouseEvent) => {
     e.stopPropagation()
@@ -563,29 +565,26 @@ export const AgentEditTool = memo(function AgentEditTool({
         </div>
 
         {/* Status and expand button */}
-        <div className="flex items-center gap-2 flex-shrink-0 ml-2">
-          {/* Diff stats or spinner */}
-          <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+        <div className="flex items-center gap-1.5 flex-shrink-0 ml-2">
+          {/* Diff stats - only show when not pending */}
+          {!isPending && !isInputStreaming && diffStats && (
+            <div className="flex items-center gap-1.5 text-xs">
+              <span className="text-green-600 dark:text-green-400">
+                +{diffStats.addedLines}
+              </span>
+              {diffStats.removedLines > 0 && (
+                <span className="text-red-600 dark:text-red-400">
+                  -{diffStats.removedLines}
+                </span>
+              )}
+            </div>
+          )}
+
+          {/* Expand/Collapse button or spinner */}
+          <div className="w-6 h-6 flex items-center justify-center">
             {isPending || isInputStreaming ? (
               <IconSpinner className="w-3 h-3" />
-            ) : diffStats ? (
-              <>
-                <span className="text-green-600 dark:text-green-400">
-                  +{diffStats.addedLines}
-                </span>
-                {diffStats.removedLines > 0 && (
-                  <span className="text-red-600 dark:text-red-400">
-                    -{diffStats.removedLines}
-                  </span>
-                )}
-              </>
-            ) : null}
-          </div>
-
-          {/* Expand/Collapse button - show when has visible content and not streaming */}
-          {/* Always render container for consistent spacing */}
-          <div className="w-6 h-6 flex items-center justify-center">
-            {hasVisibleContent && !isPending && !isInputStreaming && (
+            ) : hasVisibleContent ? (
               <button
                 onClick={handleExpandButtonClick}
                 className="p-1 rounded-md hover:bg-accent transition-[background-color,transform] duration-150 ease-out active:scale-95"
@@ -609,7 +608,7 @@ export const AgentEditTool = memo(function AgentEditTool({
                   />
                 </div>
               </button>
-            )}
+            ) : null}
           </div>
         </div>
       </div>

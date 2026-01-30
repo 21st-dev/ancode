@@ -44,6 +44,12 @@ export interface FileListItemProps {
   onCopyRelativePath?: () => void
   /** Open in Finder/Explorer */
   onRevealInFinder?: () => void
+  /** Open in file preview sidebar */
+  onOpenInFilePreview?: () => void
+  /** Open in preferred editor */
+  onOpenInEditor?: () => void
+  /** Label for the preferred editor (e.g. "Cursor", "VS Code") */
+  editorLabel?: string
   /** Toggle viewed state */
   onToggleViewed?: () => void
   /** Discard changes */
@@ -71,6 +77,9 @@ export const FileListItem = memo(function FileListItem({
   onCopyPath,
   onCopyRelativePath,
   onRevealInFinder,
+  onOpenInFilePreview,
+  onOpenInEditor,
+  editorLabel,
   onToggleViewed,
   onDiscard,
   showContextMenu = true,
@@ -135,6 +144,19 @@ export const FileListItem = memo(function FileListItem({
         {onRevealInFinder && (
           <ContextMenuItem onClick={onRevealInFinder}>
             Reveal in Finder
+          </ContextMenuItem>
+        )}
+        {(onOpenInFilePreview || onOpenInEditor) && (
+          <ContextMenuSeparator />
+        )}
+        {onOpenInFilePreview && (
+          <ContextMenuItem onClick={onOpenInFilePreview}>
+            Open in File Preview
+          </ContextMenuItem>
+        )}
+        {onOpenInEditor && (
+          <ContextMenuItem onClick={onOpenInEditor}>
+            Open in {editorLabel || "Editor"}
           </ContextMenuItem>
         )}
         {onToggleViewed && (

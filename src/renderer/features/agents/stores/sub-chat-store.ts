@@ -3,6 +3,7 @@ import { useMessageQueueStore } from "./message-queue-store"
 import { useStreamingStatusStore } from "./streaming-status-store"
 import { agentChatStore } from "./agent-chat-store"
 import { getWindowId } from "../../../contexts/WindowContext"
+import { clearTaskSnapshotCache } from "../ui/agent-task-tools"
 
 export interface SubChatMeta {
   id: string
@@ -184,11 +185,12 @@ export const useAgentSubChatStore = create<AgentSubChatStore>((set, get) => ({
       saveToLS(chatId, "active", newActive)
     }
 
-    // Cleanup queue, streaming status, and Chat instance to prevent memory leaks
-    // and race conditions (QueueProcessor sending to closed subChat)
+    // Cleanup queue, streaming status, Chat instance, and task snapshot cache
+    // to prevent memory leaks and race conditions (QueueProcessor sending to closed subChat)
     useMessageQueueStore.getState().clearQueue(subChatId)
     useStreamingStatusStore.getState().clearStatus(subChatId)
     agentChatStore.delete(subChatId)
+    clearTaskSnapshotCache(subChatId)
   },
 
   togglePinSubChat: (subChatId) => {

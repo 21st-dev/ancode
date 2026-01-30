@@ -4,6 +4,7 @@
  */
 
 import type { SettingsTab } from "../../../lib/atoms"
+import type { DesktopView } from "../atoms"
 
 // ============================================================================
 // TYPES
@@ -18,11 +19,13 @@ export interface AgentActionContext {
   setSelectedChatId?: (id: string | null) => void
   setSelectedDraftId?: (id: string | null) => void
   setShowNewChatForm?: (show: boolean) => void
+  setDesktopView?: (view: DesktopView) => void
 
   // UI states
   setSidebarOpen?: (open: boolean | ((prev: boolean) => boolean)) => void
   setSettingsDialogOpen?: (open: boolean) => void
   setSettingsActiveTab?: (tab: SettingsTab) => void
+  setFileSearchDialogOpen?: (open: boolean) => void
   toggleChatSearch?: () => void
 
   // Data
@@ -81,6 +84,8 @@ const createNewAgentAction: AgentActionDefinition = {
     context.setSelectedDraftId?.(null)
     // Explicitly show new chat form
     context.setShowNewChatForm?.(true)
+    // Clear automations/inbox view
+    context.setDesktopView?.(null)
     return { success: true }
   },
 }
@@ -133,6 +138,73 @@ const openKanbanAction: AgentActionDefinition = {
     context.setSelectedChatId?.(null)
     context.setSelectedDraftId?.(null)
     context.setShowNewChatForm?.(false)
+    // Clear automations/inbox view
+    context.setDesktopView?.(null)
+    return { success: true }
+  },
+}
+
+const openAutomationsAction: AgentActionDefinition = {
+  id: "open-automations",
+  label: "Automations",
+  description: "Open automations page",
+  category: "navigation",
+  handler: async (context) => {
+    context.setSelectedChatId?.(null)
+    context.setSelectedDraftId?.(null)
+    context.setShowNewChatForm?.(false)
+    context.setDesktopView?.("automations")
+    return { success: true }
+  },
+}
+
+const openInEditorAction: AgentActionDefinition = {
+  id: "open-in-editor",
+  label: "Open in editor",
+  description: "Open worktree in preferred editor",
+  category: "general",
+  hotkey: "cmd+o",
+  handler: async () => {
+    // Handled by the info-section component via event dispatch
+    window.dispatchEvent(new CustomEvent("open-in-editor"))
+    return { success: true }
+  },
+}
+
+const openInboxAction: AgentActionDefinition = {
+  id: "open-inbox",
+  label: "Inbox",
+  description: "Open inbox",
+  category: "navigation",
+  handler: async (context) => {
+    context.setSelectedChatId?.(null)
+    context.setSelectedDraftId?.(null)
+    context.setShowNewChatForm?.(false)
+    context.setDesktopView?.("inbox")
+    return { success: true }
+  },
+}
+
+const openFileInEditorAction: AgentActionDefinition = {
+  id: "open-file-in-editor",
+  label: "Open file in editor",
+  description: "Open currently previewed file in preferred editor",
+  category: "general",
+  hotkey: "cmd+shift+o",
+  handler: async () => {
+    window.dispatchEvent(new CustomEvent("open-file-in-editor"))
+    return { success: true }
+  },
+}
+
+const fileSearchAction: AgentActionDefinition = {
+  id: "file-search",
+  label: "Go to file",
+  description: "Search and open a file in the workspace",
+  category: "navigation",
+  hotkey: "cmd+p",
+  handler: async (context) => {
+    context.setFileSearchDialogOpen?.(true)
     return { success: true }
   },
 }
@@ -148,6 +220,11 @@ export const AGENT_ACTIONS: Record<string, AgentActionDefinition> = {
   "toggle-sidebar": toggleSidebarAction,
   "toggle-chat-search": toggleChatSearchAction,
   "open-kanban": openKanbanAction,
+  "open-automations": openAutomationsAction,
+  "open-inbox": openInboxAction,
+  "open-in-editor": openInEditorAction,
+  "open-file-in-editor": openFileInEditorAction,
+  "file-search": fileSearchAction,
 }
 
 export function getAgentAction(id: string): AgentActionDefinition | undefined {

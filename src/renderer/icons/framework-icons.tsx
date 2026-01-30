@@ -1402,6 +1402,62 @@ export function SVGIcon({ className }: FrameworkIconProps) {
   )
 }
 
+// NPM icon - npm logo
+export function NpmIcon({ className }: FrameworkIconProps) {
+  return (
+    <svg
+      xmlns="http://www.w3.org/2000/svg"
+      viewBox="0 0 24 24"
+      fill="none"
+      className={cn("w-4 h-4", className)}
+    >
+      <path
+        d="M3 21H12V7.5H16.5V21H21V3H3V21Z"
+        fill="#CB3837"
+      />
+    </svg>
+  )
+}
+
+// Git icon - Git logo
+export function GitIcon({ className }: FrameworkIconProps) {
+  return (
+    <svg
+      xmlns="http://www.w3.org/2000/svg"
+      viewBox="0 0 24 24"
+      fill="none"
+      className={cn("w-4 h-4", className)}
+    >
+      <path
+        d="M22.1043 11.0646L12.9354 1.89612C12.4075 1.36796 11.5511 1.36796 11.0228 1.89612L9.11899 3.80034L11.534 6.21535C12.0953 6.02566 12.7389 6.15296 13.1861 6.60045C13.6361 7.05068 13.7623 7.69974 13.5678 8.2631L15.8957 10.5908C16.4591 10.3965 17.1086 10.5222 17.5584 10.9727C18.1869 11.6012 18.1869 12.6196 17.5584 13.2485C16.9294 13.8773 15.9111 13.8773 15.2819 13.2485C14.8092 12.7754 14.6922 12.0807 14.932 11.4983L12.7608 9.32742V15.0403C12.9139 15.1162 13.0586 15.2172 13.1861 15.3447C13.8146 15.9732 13.8146 16.9916 13.1861 17.6208C12.5576 18.249 11.5386 18.249 10.9105 17.6208C10.282 16.9914 10.282 15.973 10.9105 15.3447C11.0659 15.1895 11.2458 15.0721 11.4378 14.9935V9.22732C11.2458 9.1487 11.0664 9.03237 10.9105 8.87605C10.4345 8.40022 10.32 7.70134 10.5641 7.11673L8.18333 4.73554L1.89612 11.0221C1.36796 11.5507 1.36796 12.407 1.89612 12.9352L11.0655 22.1039C11.5934 22.632 12.4495 22.632 12.9782 22.1039L22.1043 12.9777C22.6325 12.4495 22.6325 11.5927 22.1043 11.0646Z"
+        fill="#F05032"
+      />
+    </svg>
+  )
+}
+
+// TXT icon - text lines
+export function TxtIcon({ className }: FrameworkIconProps) {
+  return (
+    <svg
+      width="24"
+      height="24"
+      viewBox="0 0 24 24"
+      fill="none"
+      xmlns="http://www.w3.org/2000/svg"
+      className={cn("w-4 h-4", className)}
+    >
+      <path
+        d="M4 14H17.5M4 10H12M4 6H20M4 18.5H14"
+        stroke="currentColor"
+        strokeWidth="2"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  )
+}
+
 // PDF icon - red document with PDF text
 export function PDFIcon({ className }: FrameworkIconProps) {
   return (

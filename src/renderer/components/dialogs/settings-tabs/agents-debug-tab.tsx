@@ -4,7 +4,8 @@ import { Button } from "../../ui/button"
 import { Switch } from "../../ui/switch"
 import { trpc } from "../../../lib/trpc"
 import { toast } from "sonner"
-import { Copy, FolderOpen, RefreshCw, Terminal, Check, Scan, WifiOff } from "lucide-react"
+import { Copy, FolderOpen, RefreshCw, Terminal, Check, Scan, WifiOff, FileJson } from "lucide-react"
+import { showMessageJsonAtom } from "../../../features/agents/atoms"
 
 // Hook to detect narrow screen
 function useIsNarrowScreen(): boolean {
@@ -61,6 +62,7 @@ export function AgentsDebugTab() {
   const [copiedInfo, setCopiedInfo] = useState(false)
   const [reactScanEnabled, setReactScanEnabled] = useState(false)
   const [reactScanLoading, setReactScanLoading] = useState(false)
+  const [showMessageJson, setShowMessageJson] = useAtom(showMessageJsonAtom)
   const isNarrowScreen = useIsNarrowScreen()
 
   // Check if we're in dev mode (only show React Scan in dev)
@@ -292,6 +294,21 @@ export function AgentsDebugTab() {
                   setOfflineSimulationMutation.mutate({ enabled })
                 }
                 disabled={setOfflineSimulationMutation.isPending}
+              />
+            </div>
+            <div className="flex items-center justify-between p-3">
+              <div className="flex items-center gap-2">
+                <FileJson className="h-4 w-4 text-muted-foreground" />
+                <div>
+                  <span className="text-sm">Show Message JSON</span>
+                  <p className="text-xs text-muted-foreground">
+                    Display raw JSON below each message in chat
+                  </p>
+                </div>
+              </div>
+              <Switch
+                checked={showMessageJson}
+                onCheckedChange={setShowMessageJson}
               />
             </div>
           </div>

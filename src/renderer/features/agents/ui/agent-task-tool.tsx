@@ -2,6 +2,7 @@
 
 import { memo, useState, useEffect, useRef } from "react"
 import { ChevronRight } from "lucide-react"
+import { useFileOpen } from "../mentions"
 import { AgentToolRegistry, getToolStatus } from "./agent-tool-registry"
 import { AgentToolCall } from "./agent-tool-call"
 import { AgentToolInterrupted } from "./agent-tool-interrupted"
@@ -36,6 +37,7 @@ export const AgentTaskTool = memo(function AgentTaskTool({
   chatStatus,
 }: AgentTaskToolProps) {
   const { isPending, isInterrupted } = getToolStatus(part, chatStatus)
+  const onOpenFile = useFileOpen()
 
   // Default: collapsed
   const [isExpanded, setIsExpanded] = useState(false)
@@ -91,12 +93,12 @@ export const AgentTaskTool = memo(function AgentTaskTool({
 
   // Get title text based on status
   const getTitle = () => {
-    return isPending ? "Running Task" : "Completed Task"
+    return isPending ? "Running Subagent" : "Completed Subagent"
   }
 
   // Show interrupted state if task was interrupted without completing
   if (isInterrupted && !part.output) {
-    return <AgentToolInterrupted toolName="Task" subtitle={subtitle} />
+    return <AgentToolInterrupted toolName="Subagent" subtitle={subtitle} />
   }
 
   return (
@@ -187,14 +189,19 @@ export const AgentTaskTool = memo(function AgentTaskTool({
               }
               const { isPending: nestedIsPending, isError: nestedIsError } =
                 getToolStatus(nestedPart, chatStatus)
+              const handleClick = nestedPart.type === "tool-Read" && onOpenFile && nestedPart.input?.file_path
+                ? () => onOpenFile(nestedPart.input.file_path)
+                : undefined
               return (
                 <AgentToolCall
                   key={idx}
                   icon={nestedMeta.icon}
                   title={nestedMeta.title(nestedPart)}
                   subtitle={nestedMeta.subtitle?.(nestedPart)}
+                  tooltipContent={nestedMeta.tooltipContent?.(nestedPart)}
                   isPending={nestedIsPending}
                   isError={nestedIsError}
+                  onClick={handleClick}
                 />
               )
             })}

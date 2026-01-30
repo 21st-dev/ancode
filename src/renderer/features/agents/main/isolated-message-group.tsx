@@ -9,7 +9,8 @@ import {
   isStreamingAtom,
 } from "../stores/message-store"
 import { MemoizedAssistantMessages } from "./messages-list"
-import { extractTextMentions, TextMentionBlocks } from "../mentions/render-file-mentions"
+import { extractTextMentions, TextMentionBlocks, TextMentionBlock } from "../mentions/render-file-mentions"
+import { AgentImageItem } from "../ui/agent-image-item"
 
 // ============================================================================
 // ISOLATED MESSAGE GROUP (LAYER 4)
@@ -130,22 +131,31 @@ export const IsolatedMessageGroup = memo(function IsolatedMessageGroup({
 
   return (
     <MessageGroupWrapper isLastGroup={isLastGroup}>
-      {/* Attachments - NOT sticky (only when there's also text) */}
-      {imageParts.length > 0 && !isImageOnlyMessage && (
-        <div className="mb-2 pointer-events-auto">
-          <UserBubbleComponent
-            messageId={userMsgId}
-            textContent=""
-            imageParts={imageParts}
-            skipTextMentionBlocks
-          />
-        </div>
-      )}
-
-      {/* Text mentions (quote/diff/pasted) - NOT sticky */}
-      {textMentions.length > 0 && (
-        <div className="mb-2 pointer-events-auto">
-          <TextMentionBlocks mentions={textMentions} />
+      {/* All attachments in one row - NOT sticky (only when there's also text) */}
+      {((!isImageOnlyMessage && imageParts.length > 0) || textMentions.length > 0) && (
+        <div className="mb-2 pointer-events-auto flex flex-wrap items-end gap-1.5">
+          {imageParts.length > 0 && !isImageOnlyMessage && (() => {
+            const allImages = imageParts
+              .filter((img: any) => img.data?.url)
+              .map((img: any, idx: number) => ({
+                id: `${userMsgId}-img-${idx}`,
+                filename: img.data?.filename || "image",
+                url: img.data?.url || "",
+              }))
+            return imageParts.map((img: any, idx: number) => (
+              <AgentImageItem
+                key={`${userMsgId}-img-${idx}`}
+                id={`${userMsgId}-img-${idx}`}
+                filename={img.data?.filename || "image"}
+                url={img.data?.url || ""}
+                allImages={allImages}
+                imageIndex={idx}
+              />
+            ))
+          })()}
+          {textMentions.map((mention, idx) => (
+            <TextMentionBlock key={`mention-${idx}`} mention={mention} />
+          ))}
         </div>
       )}
 

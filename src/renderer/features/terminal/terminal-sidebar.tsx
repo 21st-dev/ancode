@@ -11,10 +11,18 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip"
 import {
+  DropdownMenu,
+  DropdownMenuTrigger,
+  DropdownMenuContent,
+  DropdownMenuItem,
+} from "@/components/ui/dropdown-menu"
+import {
   IconDoubleChevronRight,
   CustomTerminalIcon,
+  IconSidePeek,
+  IconBottomPanel,
 } from "@/components/ui/icons"
-import { AlignJustify } from "lucide-react"
+import { AlignJustify, Check, ChevronsDown } from "lucide-react"
 import { Kbd } from "@/components/ui/kbd"
 import { useResolvedHotkeyDisplay } from "@/lib/hotkeys"
 import { Terminal } from "./terminal"
@@ -23,9 +31,11 @@ import { getDefaultTerminalBg } from "./helpers"
 import {
   terminalSidebarOpenAtomFamily,
   terminalSidebarWidthAtom,
+  terminalDisplayModeAtom,
   terminalsAtom,
   activeTerminalIdAtom,
   terminalCwdAtom,
+  type TerminalDisplayMode,
 } from "./atoms"
 import { trpc } from "@/lib/trpc"
 import type { TerminalInstance } from "./types"
@@ -78,6 +88,51 @@ function getNextTerminalName(terminals: TerminalInstance[]): string {
   return `Terminal ${maxNumber + 1}`
 }
 
+const TERMINAL_MODES = [
+  { value: "side-peek" as const, label: "Sidebar", Icon: IconSidePeek },
+  { value: "bottom" as const, label: "Bottom", Icon: IconBottomPanel },
+]
+
+function TerminalModeSwitcher({
+  mode,
+  onModeChange,
+}: {
+  mode: TerminalDisplayMode
+  onModeChange: (mode: TerminalDisplayMode) => void
+}) {
+  const currentMode = TERMINAL_MODES.find((m) => m.value === mode) ?? TERMINAL_MODES[0]
+  const CurrentIcon = currentMode.Icon
+
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <Button
+          variant="ghost"
+          size="sm"
+          className="h-6 w-6 p-0 flex-shrink-0 hover:bg-foreground/10"
+        >
+          <CurrentIcon className="size-4 text-muted-foreground" />
+        </Button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="start" className="min-w-[140px]">
+        {TERMINAL_MODES.map(({ value, label, Icon }) => (
+          <DropdownMenuItem
+            key={value}
+            onClick={() => onModeChange(value)}
+            className="flex items-center gap-2"
+          >
+            <Icon className="size-4 text-muted-foreground" />
+            <span className="flex-1">{label}</span>
+            {mode === value && (
+              <Check className="size-4 text-muted-foreground ml-auto" />
+            )}
+          </DropdownMenuItem>
+        ))}
+      </DropdownMenuContent>
+    </DropdownMenu>
+  )
+}
+
 export function TerminalSidebar({
   chatId,
   cwd,
@@ -93,6 +148,7 @@ export function TerminalSidebar({
     [chatId],
   )
   const [isOpen, setIsOpen] = useAtom(terminalSidebarAtom)
+  const [displayMode, setDisplayMode] = useAtom(terminalDisplayModeAtom)
   const [allTerminals, setAllTerminals] = useAtom(terminalsAtom)
   const [allActiveIds, setAllActiveIds] = useAtom(activeTerminalIdAtom)
   const terminalCwds = useAtomValue(terminalCwdAtom)
@@ -330,25 +386,8 @@ export function TerminalSidebar({
     }
   }, [isOpen, terminals.length, createTerminal])
 
-  // Keyboard shortcut: Cmd+J to toggle terminal sidebar
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (
-        e.metaKey &&
-        !e.altKey &&
-        !e.shiftKey &&
-        !e.ctrlKey &&
-        e.code === "KeyJ"
-      ) {
-        e.preventDefault()
-        e.stopPropagation()
-        setIsOpen((prev) => !prev)
-      }
-    }
-
-    window.addEventListener("keydown", handleKeyDown, true)
-    return () => window.removeEventListener("keydown", handleKeyDown, true)
-  }, [setIsOpen])
+  // Note: Cmd+J keyboard shortcut is handled in active-chat.tsx
+  // to ensure it works regardless of terminal display mode or focus state.
 
   // Handle mobile close - also close the sidebar atom to prevent re-opening as desktop sidebar
   const handleMobileClose = useCallback(() => {
@@ -437,7 +476,12 @@ export function TerminalSidebar({
     )
   }
 
-  // Desktop sidebar layout
+  // Bottom mode — rendering handled by TerminalBottomPanel in active-chat
+  if (displayMode === "bottom") {
+    return null
+  }
+
+  // Desktop sidebar layout (side-peek mode)
   return (
     <ResizableSidebar
       isOpen={isOpen}
@@ -460,7 +504,7 @@ export function TerminalSidebar({
           style={{ backgroundColor: terminalBg }}
         >
           {/* Close button - on the left */}
-          <div className="flex items-center flex-shrink-0">
+          <div className="flex items-center flex-shrink-0 gap-0.5">
             <Tooltip>
               <TooltipTrigger asChild>
                 <Button
@@ -478,6 +522,7 @@ export function TerminalSidebar({
                 {toggleTerminalHotkey && <Kbd>{toggleTerminalHotkey}</Kbd>}
               </TooltipContent>
             </Tooltip>
+            <TerminalModeSwitcher mode={displayMode} onModeChange={setDisplayMode} />
           </div>
 
           {/* Terminal Tabs */}
@@ -528,5 +573,248 @@ export function TerminalSidebar({
         </div>
       </div>
     </ResizableSidebar>
+  )
+}
+
+/**
+ * Terminal Bottom Panel — used when displayMode is "bottom".
+ * Renders terminal content in a horizontal panel at the bottom of active-chat.
+ */
+interface TerminalBottomPanelContentProps {
+  chatId: string
+  cwd: string
+  workspaceId: string
+  tabId?: string
+  initialCommands?: string[]
+  onClose: () => void
+}
+
+export function TerminalBottomPanelContent({
+  chatId,
+  cwd,
+  workspaceId,
+  tabId,
+  initialCommands,
+  onClose,
+}: TerminalBottomPanelContentProps) {
+  const [allTerminals, setAllTerminals] = useAtom(terminalsAtom)
+  const [allActiveIds, setAllActiveIds] = useAtom(activeTerminalIdAtom)
+  const terminalCwds = useAtomValue(terminalCwdAtom)
+  const [displayMode, setDisplayMode] = useAtom(terminalDisplayModeAtom)
+
+  const { resolvedTheme } = useTheme()
+  const isDark = resolvedTheme === "dark"
+  const toggleTerminalHotkey = useResolvedHotkeyDisplay("toggle-terminal")
+  const fullThemeData = useAtomValue(fullThemeDataAtom)
+
+  const terminalBg = useMemo(() => {
+    if (fullThemeData?.colors?.["terminal.background"]) {
+      return fullThemeData.colors["terminal.background"]
+    }
+    if (fullThemeData?.colors?.["editor.background"]) {
+      return fullThemeData.colors["editor.background"]
+    }
+    return getDefaultTerminalBg(isDark)
+  }, [isDark, fullThemeData])
+
+  const terminals = useMemo(
+    () => allTerminals[chatId] || [],
+    [allTerminals, chatId],
+  )
+  const activeTerminalId = useMemo(
+    () => allActiveIds[chatId] || null,
+    [allActiveIds, chatId],
+  )
+  const activeTerminal = useMemo(
+    () => terminals.find((t) => t.id === activeTerminalId) || null,
+    [terminals, activeTerminalId],
+  )
+
+  const killMutation = trpc.terminal.kill.useMutation()
+
+  const chatIdRef = useRef(chatId)
+  chatIdRef.current = chatId
+  const terminalsRef = useRef(terminals)
+  terminalsRef.current = terminals
+  const activeTerminalIdRef = useRef(activeTerminalId)
+  activeTerminalIdRef.current = activeTerminalId
+
+  const createTerminal = useCallback(() => {
+    const currentChatId = chatIdRef.current
+    const currentTerminals = terminalsRef.current
+    const id = generateTerminalId()
+    const paneId = generatePaneId(currentChatId, id)
+    const name = getNextTerminalName(currentTerminals)
+    const newTerminal: TerminalInstance = { id, paneId, name, createdAt: Date.now() }
+    setAllTerminals((prev) => ({
+      ...prev,
+      [currentChatId]: [...(prev[currentChatId] || []), newTerminal],
+    }))
+    setAllActiveIds((prev) => ({ ...prev, [currentChatId]: id }))
+  }, [setAllTerminals, setAllActiveIds])
+
+  const selectTerminal = useCallback(
+    (id: string) => {
+      setAllActiveIds((prev) => ({ ...prev, [chatIdRef.current]: id }))
+    },
+    [setAllActiveIds],
+  )
+
+  const closeTerminal = useCallback(
+    (id: string) => {
+      const currentChatId = chatIdRef.current
+      const currentTerminals = terminalsRef.current
+      const currentActiveId = activeTerminalIdRef.current
+      const terminal = currentTerminals.find((t) => t.id === id)
+      if (!terminal) return
+      killMutation.mutate({ paneId: terminal.paneId })
+      const newTerminals = currentTerminals.filter((t) => t.id !== id)
+      setAllTerminals((prev) => ({ ...prev, [currentChatId]: newTerminals }))
+      if (currentActiveId === id) {
+        const newActive = newTerminals[newTerminals.length - 1]?.id || null
+        setAllActiveIds((prev) => ({ ...prev, [currentChatId]: newActive }))
+      }
+    },
+    [setAllTerminals, setAllActiveIds, killMutation],
+  )
+
+  const renameTerminal = useCallback(
+    (id: string, name: string) => {
+      const currentChatId = chatIdRef.current
+      setAllTerminals((prev) => ({
+        ...prev,
+        [currentChatId]: (prev[currentChatId] || []).map((t) =>
+          t.id === id ? { ...t, name } : t,
+        ),
+      }))
+    },
+    [setAllTerminals],
+  )
+
+  const closeOtherTerminals = useCallback(
+    (id: string) => {
+      const currentChatId = chatIdRef.current
+      const currentTerminals = terminalsRef.current
+      currentTerminals.forEach((terminal) => {
+        if (terminal.id !== id) {
+          killMutation.mutate({ paneId: terminal.paneId })
+        }
+      })
+      const remainingTerminal = currentTerminals.find((t) => t.id === id)
+      setAllTerminals((prev) => ({
+        ...prev,
+        [currentChatId]: remainingTerminal ? [remainingTerminal] : [],
+      }))
+      setAllActiveIds((prev) => ({ ...prev, [currentChatId]: id }))
+    },
+    [setAllTerminals, setAllActiveIds, killMutation],
+  )
+
+  const closeTerminalsToRight = useCallback(
+    (id: string) => {
+      const currentChatId = chatIdRef.current
+      const currentTerminals = terminalsRef.current
+      const index = currentTerminals.findIndex((t) => t.id === id)
+      if (index === -1) return
+      const terminalsToClose = currentTerminals.slice(index + 1)
+      terminalsToClose.forEach((terminal) => {
+        killMutation.mutate({ paneId: terminal.paneId })
+      })
+      const remainingTerminals = currentTerminals.slice(0, index + 1)
+      setAllTerminals((prev) => ({ ...prev, [currentChatId]: remainingTerminals }))
+      const currentActiveId = activeTerminalIdRef.current
+      if (currentActiveId && !remainingTerminals.find((t) => t.id === currentActiveId)) {
+        setAllActiveIds((prev) => ({
+          ...prev,
+          [currentChatId]: remainingTerminals[remainingTerminals.length - 1]?.id || null,
+        }))
+      }
+    },
+    [setAllTerminals, setAllActiveIds, killMutation],
+  )
+
+  // Auto-create first terminal when no terminals exist
+  useEffect(() => {
+    if (terminals.length === 0) {
+      createTerminal()
+    }
+  }, [terminals.length, createTerminal])
+
+  return (
+    <div className="flex flex-col h-full min-w-0 overflow-hidden">
+      {/* Header with tabs */}
+      <div
+        className="flex items-center gap-1 pl-1 pr-2 py-1.5 flex-shrink-0 border-t"
+        style={{ backgroundColor: terminalBg, borderTopWidth: "0.5px" }}
+      >
+        {/* Close button + mode switcher */}
+        <div className="flex items-center flex-shrink-0 gap-0.5">
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={onClose}
+                className="h-6 w-6 p-0 hover:bg-foreground/10 transition-[background-color,transform] duration-150 ease-out active:scale-[0.97] text-foreground flex-shrink-0 rounded-md"
+                aria-label="Close terminal"
+              >
+                <ChevronsDown className="h-4 w-4" />
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent side="top">
+              Close terminal
+              {toggleTerminalHotkey && <Kbd>{toggleTerminalHotkey}</Kbd>}
+            </TooltipContent>
+          </Tooltip>
+          <TerminalModeSwitcher mode={displayMode} onModeChange={setDisplayMode} />
+        </div>
+
+        {/* Terminal Tabs */}
+        {terminals.length > 0 && (
+          <TerminalTabs
+            terminals={terminals}
+            activeTerminalId={activeTerminalId}
+            cwds={terminalCwds}
+            initialCwd={cwd}
+            terminalBg={terminalBg}
+            onSelectTerminal={selectTerminal}
+            onCloseTerminal={closeTerminal}
+            onCloseOtherTerminals={closeOtherTerminals}
+            onCloseTerminalsToRight={closeTerminalsToRight}
+            onCreateTerminal={createTerminal}
+            onRenameTerminal={renameTerminal}
+          />
+        )}
+      </div>
+
+      {/* Terminal Content */}
+      <div
+        className="flex-1 min-h-0 min-w-0 overflow-hidden"
+        style={{ backgroundColor: terminalBg }}
+      >
+        {activeTerminal ? (
+          <motion.div
+            key={activeTerminal.paneId}
+            className="h-full"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            transition={{ duration: 0 }}
+          >
+            <Terminal
+              paneId={activeTerminal.paneId}
+              cwd={cwd}
+              workspaceId={workspaceId}
+              tabId={tabId}
+              initialCommands={initialCommands}
+              initialCwd={cwd}
+            />
+          </motion.div>
+        ) : (
+          <div className="flex items-center justify-center h-full text-muted-foreground text-sm">
+            No terminal open
+          </div>
+        )}
+      </div>
+    </div>
   )
 }

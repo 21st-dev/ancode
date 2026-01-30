@@ -176,6 +176,7 @@ interface SubChatSelectorProps {
   diffStats?: DiffStats
   onOpenTerminal?: () => void
   canOpenTerminal?: boolean
+  isTerminalOpen?: boolean
   chatId?: string
 }
 
@@ -191,6 +192,7 @@ export function SubChatSelector({
   diffStats,
   onOpenTerminal,
   canOpenTerminal = false,
+  isTerminalOpen = false,
   chatId,
 }: SubChatSelectorProps) {
   // Use shallow comparison to prevent re-renders when arrays have same content
@@ -931,8 +933,8 @@ export function SubChatSelector({
         </div>
       )}
 
-      {/* Terminal button - visible on desktop when unified sidebar is disabled OR terminal widget is hidden */}
-      {!isMobile && canOpenTerminal && showTerminalButton && (
+      {/* Terminal button - visible on desktop when unified sidebar is disabled OR terminal widget is hidden, and terminal is not already open */}
+      {!isMobile && canOpenTerminal && showTerminalButton && !isTerminalOpen && (
         <div
           className="rounded-md bg-background/10 backdrop-blur-[10px] flex items-center justify-center"
           style={{
