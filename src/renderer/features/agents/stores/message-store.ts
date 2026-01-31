@@ -51,6 +51,45 @@ export const messageAtomFamily = atomFamily((_messageId: string) =>
 // Track active message IDs per subChat for cleanup
 const activeMessageIdsByChat = new Map<string, Set<string>>()
 
+// Track text part cache keys per message for O(1) cleanup
+const textPartKeysByMessage = new Map<string, Set<string>>()
+
+// ============================================================================
+// LRU CACHE EVICTION - Prevents memory leaks from accumulated subChat caches
+// ============================================================================
+// Uses Map's insertion order for O(1) LRU operations.
+// Delete + set moves item to end; first key is oldest.
+// ============================================================================
+const MAX_CACHED_SUBCHATS = 10
+const subChatLRU = new Map<string, true>()
+
+// Track the current (most recent) subChat to avoid unnecessary LRU updates
+let currentLRUSubChat: string | null = null
+
+function touchSubChat(subChatId: string) {
+  // Skip if this is already the most recent subChat (common case during streaming)
+  if (subChatId === currentLRUSubChat) {
+    return
+  }
+  currentLRUSubChat = subChatId
+
+  // Delete and re-add to move to end (most recently used)
+  // This is O(1) because Map maintains insertion order
+  if (subChatLRU.has(subChatId)) {
+    subChatLRU.delete(subChatId)
+  }
+  subChatLRU.set(subChatId, true)
+
+  // Evict oldest subchats if we exceed the threshold
+  while (subChatLRU.size > MAX_CACHED_SUBCHATS) {
+    const oldestSubChatId = subChatLRU.keys().next().value
+    if (oldestSubChatId) {
+      subChatLRU.delete(oldestSubChatId)
+      clearSubChatCaches(oldestSubChatId)
+    }
+  }
+}
+
 // Ordered list of message IDs (for rendering order)
 export const messageIdsAtom = atom<string[]>([])
 
@@ -113,6 +152,16 @@ export const textPartAtomFamily = atomFamily((key: string) => {
   // Key format: "messageId:partIndex"
   const [messageId, partIndexStr] = key.split(":")
   const partIndex = parseInt(partIndexStr!, 10)
+
+  // Track this key for O(1) cleanup when message is removed
+  if (messageId) {
+    let keys = textPartKeysByMessage.get(messageId)
+    if (!keys) {
+      keys = new Set()
+      textPartKeysByMessage.set(messageId, keys)
+    }
+    keys.add(key)
+  }
 
   return atom((get) => {
     const message = get(messageAtomFamily(messageId!))
@@ -581,6 +630,9 @@ export const syncMessagesWithStatusAtom = atom(
     }
     const currentSubChatId = subChatId ?? prevSubChatId
 
+    // Track this subChat in LRU list and evict old caches if needed
+    touchSubChat(currentSubChatId)
+
     // Update status only if changed
     const prevStatus = get(chatStatusAtom)
     if (status !== prevStatus) {
@@ -622,21 +674,48 @@ export const syncMessagesWithStatusAtom = atom(
       set(messageRolesAtom, newRoles)
     }
 
+    // ========================================================================
+    // OPTIMIZED MESSAGE SYNC - O(1) during streaming, O(n) only when needed
+    // ========================================================================
+    // Key insight: During streaming, only the LAST message changes.
+    // We only need to check all messages when:
+    // 1. IDs changed (new message added/removed)
+    // 2. First sync for this subChat (atoms not populated)
+    //
+    // During streaming (same IDs, atoms populated), only check the last message.
+    // This reduces the loop from O(n) to O(1) for streaming updates.
+    // ========================================================================
+
+    const isStreaming = status === "streaming" || status === "submitted"
+    const previousIds = activeMessageIdsByChat.get(currentSubChatId)
+    const isFirstSync = !previousIds || previousIds.size === 0
+
+    // Determine which messages to check
+    let messagesToCheck: Message[]
+    if (isFirstSync || idsChanged) {
+      // Full sync needed - check all messages
+      messagesToCheck = messages
+    } else if (isStreaming && messages.length > 0) {
+      // Streaming optimization - only check last message
+      // The last message is the only one that changes during streaming
+      messagesToCheck = [messages[messages.length - 1]!]
+    } else {
+      // Not streaming and no ID changes - likely status change only
+      // Still check last message for metadata updates (token counts, etc.)
+      messagesToCheck = messages.length > 0 ? [messages[messages.length - 1]!] : []
+    }
+
     // Update individual message atoms ONLY if they changed
-    // This is the key optimization - only changed messages trigger re-renders
     // CRITICAL: AI SDK mutates objects in-place, so we MUST create a new reference
     // for Jotai to detect the change (it uses Object.is() for comparison)
-    // We need to deep clone the message because:
-    // 1. msg object itself is mutated in-place
-    // 2. msg.parts array is mutated in-place
-    // 3. Individual part objects inside parts are mutated in-place
-    for (const msg of messages) {
+    for (const msg of messagesToCheck) {
       const currentAtomValue = get(messageAtomFamily(msg.id))
       const msgChanged = hasMessageChanged(currentSubChatId, msg.id, msg)
 
       // CRITICAL FIX: Also update if atom is null (not yet populated)
       if (msgChanged || !currentAtomValue) {
         // Deep clone message with new parts array and new part objects
+        // Only clone parts that exist to avoid unnecessary allocations
         const clonedMsg = {
           ...msg,
           parts: msg.parts?.map((part: any) => ({ ...part, input: part.input ? { ...part.input } : undefined })),
@@ -647,14 +726,24 @@ export const syncMessagesWithStatusAtom = atom(
 
     // Cleanup removed message atoms to prevent memory leaks
     const newIdsSet = new Set(newIds)
-    const previousIds = activeMessageIdsByChat.get(currentSubChatId) ?? new Set()
+    const prevIdsForCleanup = activeMessageIdsByChat.get(currentSubChatId) ?? new Set()
 
-    for (const oldId of previousIds) {
+    for (const oldId of prevIdsForCleanup) {
       if (!newIdsSet.has(oldId)) {
         // Message was removed - cleanup its atom and caches
         messageAtomFamily.remove(oldId)
         previousMessageState.delete(`${currentSubChatId}:${oldId}`)
         assistantIdsCacheByChat.delete(`${currentSubChatId}:${oldId}`)
+        // Clean up text part cache entries for this message (O(1) using tracked keys)
+        const textKeys = textPartKeysByMessage.get(oldId)
+        if (textKeys) {
+          for (const key of textKeys) {
+            textPartCache.delete(key)
+          }
+          textPartKeysByMessage.delete(oldId)
+        }
+        // Clean up message structure cache
+        messageStructureCache.delete(oldId)
       }
     }
 
@@ -662,7 +751,7 @@ export const syncMessagesWithStatusAtom = atom(
     activeMessageIdsByChat.set(currentSubChatId, newIdsSet)
 
     // Update streaming message ID
-    if (status === "streaming" || status === "submitted") {
+    if (isStreaming) {
       const lastId = newIds[newIds.length - 1] ?? null
       set(streamingMessageIdAtom, lastId)
     } else {
@@ -685,18 +774,30 @@ export const syncMessagesAtom = atom(
 
 // Clear all caches for a specific subChat (call when unmounting/switching)
 export function clearSubChatCaches(subChatId: string) {
-  // Clear message atoms
+  // Clear message atoms and related caches
   const activeIds = activeMessageIdsByChat.get(subChatId)
   if (activeIds) {
     for (const id of activeIds) {
       messageAtomFamily.remove(id)
       previousMessageState.delete(`${subChatId}:${id}`)
       assistantIdsCacheByChat.delete(`${subChatId}:${id}`)
+
+      // Clear text part cache entries for this message (O(1) using tracked keys)
+      const textKeys = textPartKeysByMessage.get(id)
+      if (textKeys) {
+        for (const key of textKeys) {
+          textPartCache.delete(key)
+        }
+        textPartKeysByMessage.delete(id)
+      }
+
+      // Clear message structure cache
+      messageStructureCache.delete(id)
     }
     activeMessageIdsByChat.delete(subChatId)
   }
 
-  // Clear other caches
+  // Clear other caches keyed by subChatId
   userMessageIdsCacheByChat.delete(subChatId)
   messageGroupsCacheByChat.delete(subChatId)
   lastAssistantCacheByChat.delete(subChatId)
