@@ -7,7 +7,8 @@ import { basename, join } from "path"
 import { exec } from "node:child_process"
 import { promisify } from "node:util"
 import { existsSync } from "node:fs"
-import { mkdir } from "node:fs/promises"
+import { mkdir, copyFile, unlink } from "node:fs/promises"
+import { extname } from "node:path"
 import { getGitRemoteInfo } from "../../git"
 import { trackProjectOpened } from "../../analytics"
 import { getLaunchDirectory } from "../../cli"
@@ -481,5 +482,68 @@ export const projectsRouter = router({
 
       const targetPath = join(result.filePaths[0], input.suggestedName)
       return { success: true as const, targetPath }
+    }),
+
+  /**
+   * Upload a custom icon for a project (opens file picker for images)
+   */
+  uploadIcon: publicProcedure
+    .input(z.object({ id: z.string() }))
+    .mutation(async ({ input, ctx }) => {
+      const window = ctx.getWindow?.() ?? BrowserWindow.getFocusedWindow()
+      if (!window) return null
+
+      if (!window.isFocused()) {
+        window.focus()
+        await new Promise((resolve) => setTimeout(resolve, 100))
+      }
+
+      const result = await dialog.showOpenDialog(window, {
+        properties: ["openFile"],
+        title: "Select Project Icon",
+        buttonLabel: "Set Icon",
+        filters: [
+          { name: "Images", extensions: ["png", "jpg", "jpeg", "svg", "webp", "ico"] },
+        ],
+      })
+
+      if (result.canceled || !result.filePaths[0]) return null
+
+      const sourcePath = result.filePaths[0]
+      const ext = extname(sourcePath)
+      const iconsDir = join(app.getPath("userData"), "project-icons")
+      await mkdir(iconsDir, { recursive: true })
+
+      const destPath = join(iconsDir, `${input.id}${ext}`)
+      await copyFile(sourcePath, destPath)
+
+      const db = getDatabase()
+      return db
+        .update(projects)
+        .set({ iconPath: destPath, updatedAt: new Date() })
+        .where(eq(projects.id, input.id))
+        .returning()
+        .get()
+    }),
+
+  /**
+   * Remove custom icon for a project
+   */
+  removeIcon: publicProcedure
+    .input(z.object({ id: z.string() }))
+    .mutation(async ({ input }) => {
+      const db = getDatabase()
+      const project = db.select().from(projects).where(eq(projects.id, input.id)).get()
+
+      if (project?.iconPath && existsSync(project.iconPath)) {
+        try { await unlink(project.iconPath) } catch {}
+      }
+
+      return db
+        .update(projects)
+        .set({ iconPath: null, updatedAt: new Date() })
+        .where(eq(projects.id, input.id))
+        .returning()
+        .get()
     }),
 })

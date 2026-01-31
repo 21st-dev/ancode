@@ -1,15 +1,21 @@
-import { useAtom, useAtomValue } from "jotai"
-import { useState, useEffect } from "react"
+import { useAtom } from "jotai"
+import { Check, Copy, RefreshCw } from "lucide-react"
+import { useEffect, useState } from "react"
+import { useQuery } from "@tanstack/react-query"
 import {
-  historyEnabledAtom,
-  showOfflineModeFeaturesAtom,
   autoOfflineModeAtom,
-  selectedOllamaModelAtom,
+  betaAutomationsEnabledAtom,
   betaKanbanEnabledAtom,
-  betaPreviewSidebarEnabledAtom,
+  enableTasksAtom,
+  historyEnabledAtom,
+  selectedOllamaModelAtom,
+  showOfflineModeFeaturesAtom,
 } from "../../../lib/atoms"
 import { trpc } from "../../../lib/trpc"
-import { Switch } from "../../ui/switch"
+import { remoteTrpc } from "../../../lib/remote-trpc"
+import { cn } from "../../../lib/utils"
+import { Button } from "../../ui/button"
+import { ExternalLinkIcon } from "../../ui/icons"
 import {
   Select,
   SelectContent,
@@ -17,31 +23,20 @@ import {
   SelectTrigger,
   SelectValue,
 } from "../../ui/select"
-import { ExternalLinkIcon } from "../../ui/icons"
-import { Copy, Check, RefreshCw } from "lucide-react"
-import { Button } from "../../ui/button"
-import { cn } from "../../../lib/utils"
+import { Switch } from "../../ui/switch"
 
-// Hook to detect narrow screen (debounced to prevent excessive re-renders)
+// Hook to detect narrow screen
 function useIsNarrowScreen(): boolean {
-  const [isNarrow, setIsNarrow] = useState(() => window.innerWidth <= 768)
+  const [isNarrow, setIsNarrow] = useState(false)
 
   useEffect(() => {
-    let timeoutId: ReturnType<typeof setTimeout>
-
     const checkWidth = () => {
-      clearTimeout(timeoutId)
-      timeoutId = setTimeout(() => {
-        const newIsNarrow = window.innerWidth <= 768
-        setIsNarrow(prev => (prev !== newIsNarrow ? newIsNarrow : prev))
-      }, 150)
+      setIsNarrow(window.innerWidth <= 768)
     }
 
+    checkWidth()
     window.addEventListener("resize", checkWidth)
-    return () => {
-      clearTimeout(timeoutId)
-      window.removeEventListener("resize", checkWidth)
-    }
+    return () => window.removeEventListener("resize", checkWidth)
   }, [])
 
   return isNarrow
@@ -57,7 +52,17 @@ export function AgentsBetaTab() {
   const [autoOffline, setAutoOffline] = useAtom(autoOfflineModeAtom)
   const [selectedOllamaModel, setSelectedOllamaModel] = useAtom(selectedOllamaModelAtom)
   const [kanbanEnabled, setKanbanEnabled] = useAtom(betaKanbanEnabledAtom)
-  const [previewSidebarEnabled, setPreviewSidebarEnabled] = useAtom(betaPreviewSidebarEnabledAtom)
+  const [automationsEnabled, setAutomationsEnabled] = useAtom(betaAutomationsEnabledAtom)
+  const [enableTasks, setEnableTasks] = useAtom(enableTasksAtom)
+
+  // Check subscription to gate automations behind paid plan
+  const { data: subscription } = useQuery({
+    queryKey: ["agents", "subscription"],
+    queryFn: () => remoteTrpc.agents.getAgentsSubscription.query(),
+  })
+  const isPaidPlan = subscription?.type !== "free" && !!subscription?.type
+  const isDev = process.env.NODE_ENV === "development"
+  const canEnableAutomations = isPaidPlan || isDev
   const [copied, setCopied] = useState(false)
   const [updateStatus, setUpdateStatus] = useState<"idle" | "checking" | "available" | "not-available" | "error">("idle")
   const [updateVersion, setUpdateVersion] = useState<string | null>(null)
@@ -120,70 +125,91 @@ export function AgentsBetaTab() {
 
       {/* Beta Features Section */}
       <div className="bg-background rounded-lg border border-border overflow-hidden">
-        <div className="p-4 space-y-6">
-          {/* Rollback Toggle */}
-          <div className="flex items-start justify-between">
-            <div className="flex flex-col space-y-1">
-              <span className="text-sm font-medium text-foreground">
-                Rollback
-              </span>
-              <span className="text-xs text-muted-foreground">
-                Allow rolling back to previous messages and restoring files.
-              </span>
-            </div>
-            <Switch
-              checked={historyEnabled}
-              onCheckedChange={setHistoryEnabled}
-            />
+        {/* Rollback Toggle */}
+        <div className="flex items-center justify-between p-4">
+          <div className="flex flex-col space-y-1">
+            <span className="text-sm font-medium text-foreground">
+              Rollback
+            </span>
+            <span className="text-xs text-muted-foreground">
+              Allow rolling back to previous messages and restoring files.
+            </span>
           </div>
+          <Switch
+            checked={historyEnabled}
+            onCheckedChange={setHistoryEnabled}
+          />
+        </div>
 
-          {/* Offline Mode Toggle */}
-          <div className="flex items-start justify-between">
-            <div className="flex flex-col space-y-1">
-              <span className="text-sm font-medium text-foreground">
-                Offline Mode
-              </span>
-              <span className="text-xs text-muted-foreground">
-                Enable offline mode UI and Ollama integration.
-              </span>
-            </div>
-            <Switch
-              checked={showOfflineFeatures}
-              onCheckedChange={setShowOfflineFeatures}
-            />
+        {/* Offline Mode Toggle */}
+        <div className="flex items-center justify-between p-4 border-t border-border">
+          <div className="flex flex-col space-y-1">
+            <span className="text-sm font-medium text-foreground">
+              Offline Mode
+            </span>
+            <span className="text-xs text-muted-foreground">
+              Enable offline mode UI and Ollama integration.
+            </span>
           </div>
+          <Switch
+            checked={showOfflineFeatures}
+            onCheckedChange={setShowOfflineFeatures}
+          />
+        </div>
 
-          {/* Kanban Board Toggle */}
-          <div className="flex items-start justify-between">
-            <div className="flex flex-col space-y-1">
-              <span className="text-sm font-medium text-foreground">
-                Kanban Board
-              </span>
-              <span className="text-xs text-muted-foreground">
-                View workspaces as a Kanban board organized by status.
-              </span>
-            </div>
-            <Switch
-              checked={kanbanEnabled}
-              onCheckedChange={setKanbanEnabled}
-            />
+        {/* Kanban Board Toggle */}
+        <div className="flex items-center justify-between p-4 border-t border-border">
+          <div className="flex flex-col space-y-1">
+            <span className="text-sm font-medium text-foreground">
+              Kanban Board
+            </span>
+            <span className="text-xs text-muted-foreground">
+              View workspaces as a Kanban board organized by status.
+            </span>
           </div>
+          <Switch
+            checked={kanbanEnabled}
+            onCheckedChange={setKanbanEnabled}
+          />
+        </div>
 
-          {/* Preview Sidebar Toggle */}
-          <div className="flex items-start justify-between">
-            <div className="flex flex-col space-y-1">
-              <span className="text-sm font-medium text-foreground">
-                Preview Sidebar
-              </span>
-              <span className="text-xs text-muted-foreground">
-                New preview panel with element selection and screenshot capture.
-              </span>
-            </div>
-            <Switch
-              checked={previewSidebarEnabled}
-              onCheckedChange={setPreviewSidebarEnabled}
-            />
+        {/* Automations & Inbox Toggle */}
+        <div className="flex items-center justify-between p-4 border-t border-border">
+          <div className="flex flex-col space-y-1">
+            <span className={cn("text-sm font-medium", canEnableAutomations ? "text-foreground" : "text-muted-foreground")}>
+              Automations & Inbox
+            </span>
+            <span className="text-xs text-muted-foreground">
+              {canEnableAutomations
+                ? "Automate workflows with GitHub and Linear triggers, and manage inbox notifications."
+                : "Requires a paid plan. Upgrade to enable automations and inbox."}
+            </span>
           </div>
+          <Switch
+            checked={automationsEnabled && canEnableAutomations}
+            onCheckedChange={(checked) => {
+              if (canEnableAutomations) {
+                setAutomationsEnabled(checked)
+              }
+            }}
+            disabled={!canEnableAutomations}
+          />
+        </div>
+
+        {/* Agent Tasks Toggle */}
+        <div className="flex items-center justify-between p-4 border-t border-border">
+          <div className="flex flex-col space-y-1">
+            <span className="text-sm font-medium text-foreground">
+              Agent Tasks
+            </span>
+            <span className="text-xs text-muted-foreground">
+              Enable Task instead of legacy Todo system.
+            </span>
+          </div>
+          <Switch
+            checked={enableTasks}
+            onCheckedChange={setEnableTasks}
+          />
         </div>
       </div>
 

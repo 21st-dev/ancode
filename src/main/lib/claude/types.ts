@@ -55,14 +55,30 @@ export type UIMessageChunk =
 
 export type MCPServerStatus = "connected" | "failed" | "pending" | "needs-auth"
 
+export type MCPServerIcon = {
+  src: string
+  mimeType?: string
+  sizes?: string[]
+  theme?: "light" | "dark"
+}
+
 export type MCPServer = {
   name: string
   status: MCPServerStatus
   serverInfo?: {
     name: string
     version: string
+    icons?: MCPServerIcon[]
   }
   error?: string
+}
+
+export type ModelUsageEntry = {
+  inputTokens: number
+  outputTokens: number
+  cacheReadInputTokens: number
+  cacheCreationInputTokens: number
+  costUSD: number
 }
 
 export type MessageMetadata = {
@@ -75,4 +91,6 @@ export type MessageMetadata = {
   durationMs?: number
   resultSubtype?: string
   finalTextId?: string
+  // Per-model usage breakdown from SDK (model name -> usage)
+  modelUsage?: Record<string, ModelUsageEntry>
 }

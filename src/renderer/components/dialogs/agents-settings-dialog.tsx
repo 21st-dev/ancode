@@ -1,5 +1,5 @@
 import { useAtom } from "jotai"
-import { ChevronLeft, ChevronRight, FolderOpen, Key, X } from "lucide-react"
+import { ChevronLeft, ChevronRight, X } from "lucide-react"
 import { AnimatePresence, motion } from "motion/react"
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { createPortal } from "react-dom"
@@ -9,9 +9,8 @@ import {
   SlidersFilledIcon
 } from "../../icons"
 import { agentsSettingsDialogActiveTabAtom, devToolsUnlockedAtom, type SettingsTab } from "../../lib/atoms"
-import { trpc } from "../../lib/trpc"
 import { cn } from "../../lib/utils"
-import { BrainFilledIcon, BugFilledIcon, CustomAgentIconFilled, FlaskFilledIcon, KeyboardFilledIcon, OriginalMCPIcon, SkillIconFilled } from "../ui/icons"
+import { BrainFilledIcon, BugFilledIcon, CustomAgentIconFilled, FlaskFilledIcon, FolderFilledIcon, KeyboardFilledIcon, OriginalMCPIcon, SkillIconFilled } from "../ui/icons"
 import { AgentsAppearanceTab } from "./settings-tabs/agents-appearance-tab"
 import { AgentsBetaTab } from "./settings-tabs/agents-beta-tab"
 import { AgentsCustomAgentsTab } from "./settings-tabs/agents-custom-agents-tab"
@@ -21,38 +20,8 @@ import { AgentsMcpTab } from "./settings-tabs/agents-mcp-tab"
 import { AgentsModelsTab } from "./settings-tabs/agents-models-tab"
 import { AgentsPreferencesTab } from "./settings-tabs/agents-preferences-tab"
 import { AgentsProfileTab } from "./settings-tabs/agents-profile-tab"
-import { AgentsProjectWorktreeTab } from "./settings-tabs/agents-project-worktree-tab"
+import { AgentsProjectsTab } from "./settings-tabs/agents-project-worktree-tab"
 import { AgentsSkillsTab } from "./settings-tabs/agents-skills-tab"
-import { AgentsDevAccountsTab } from "./settings-tabs/agents-dev-accounts-tab"
-
-// GitHub avatar icon with loading placeholder
-function GitHubAvatarIcon({ gitOwner, className }: { gitOwner: string; className?: string }) {
-  const [isLoaded, setIsLoaded] = useState(false)
-  const [hasError, setHasError] = useState(false)
-
-  const handleLoad = useCallback(() => setIsLoaded(true), [])
-  const handleError = useCallback(() => setHasError(true), [])
-
-  if (hasError) {
-    return <FolderOpen className={cn("text-muted-foreground flex-shrink-0", className)} />
-  }
-
-  return (
-    <div className={cn("relative flex-shrink-0", className)}>
-      {/* Placeholder background while loading */}
-      {!isLoaded && (
-        <div className="absolute inset-0 rounded-sm bg-muted" />
-      )}
-      <img
-        src={`https://github.com/${gitOwner}.png?size=64`}
-        alt={gitOwner}
-        className={cn("rounded-sm flex-shrink-0", className, isLoaded ? 'opacity-100' : 'opacity-0')}
-        onLoad={handleLoad}
-        onError={handleError}
-      />
-    </div>
-  )
-}
 
 // Hook to detect narrow screen
 function useIsNarrowScreen(): boolean {
@@ -116,8 +85,17 @@ const MAIN_TABS = [
   },
 ]
 
+// Tabs that use a two-panel (sidebar + content) layout and need overflow-hidden on the wrapper
+const TWO_PANEL_TABS: SettingsTab[] = ["keyboard", "mcp", "skills", "agents", "projects"]
+
 // Advanced/experimental tabs (base - without Debug)
 const ADVANCED_TABS_BASE = [
+  {
+    id: "projects" as SettingsTab,
+    label: "Projects",
+    icon: FolderFilledIcon,
+    description: "Manage your projects",
+  },
   {
     id: "skills" as SettingsTab,
     label: "Skills",
@@ -135,12 +113,6 @@ const ADVANCED_TABS_BASE = [
     label: "MCP Servers",
     icon: OriginalMCPIcon,
     description: "Model Context Protocol servers",
-  },
-  {
-    id: "dev-accounts" as SettingsTab,
-    label: "Dev Accounts",
-    icon: Key,
-    description: "Login credentials for preview",
   },
   {
     id: "beta" as SettingsTab,
@@ -232,28 +204,6 @@ export function AgentsSettingsDialog({
   const betaClickCountRef = useRef(0)
   const betaClickTimeoutRef = useRef<NodeJS.Timeout | null>(null)
 
-  // Get projects list for dynamic tabs
-  const { data: projects } = trpc.projects.list.useQuery()
-
-  // Generate dynamic project tabs
-  const projectTabs = useMemo(() => {
-    if (!projects || projects.length === 0) {
-      return []
-    }
-
-    return projects.map((project) => ({
-      id: `project-${project.id}` as SettingsTab,
-      label: project.name,
-      icon: (project.gitOwner && project.gitProvider === 'github')
-        ? ({ className }: { className?: string }) => (
-            <GitHubAvatarIcon gitOwner={project.gitOwner!} className={className} />
-          )
-        : FolderOpen,
-      description: `Worktree setup for ${project.name}`,
-      projectId: project.id,
-    }))
-  }, [projects])
-
   // Show debug tab if in development OR if devtools are unlocked
   const showDebugTab = isDevelopment || devToolsUnlocked
 
@@ -267,8 +217,8 @@ export function AgentsSettingsDialog({
 
   // All tabs combined for lookups
   const ALL_TABS = useMemo(
-    () => [...MAIN_TABS, ...ADVANCED_TABS, ...projectTabs],
-    [ADVANCED_TABS, projectTabs]
+    () => [...MAIN_TABS, ...ADVANCED_TABS],
+    [ADVANCED_TABS]
   )
 
   // Helper to get tab label from tab id
@@ -345,13 +295,6 @@ export function AgentsSettingsDialog({
   }
 
   const renderTabContent = () => {
-    // Handle dynamic project tabs
-    if (activeTab.startsWith('project-')) {
-      const projectId = activeTab.replace('project-', '')
-      return <AgentsProjectWorktreeTab projectId={projectId} />
-    }
-
-    // Handle static tabs
     switch (activeTab) {
       case "profile":
         return <AgentsProfileTab />
@@ -369,8 +312,8 @@ export function AgentsSettingsDialog({
         return <AgentsCustomAgentsTab />
       case "mcp":
         return <AgentsMcpTab />
-      case "dev-accounts":
-        return <AgentsDevAccountsTab />
+      case "projects":
+        return <AgentsProjectsTab />
       case "beta":
         return <AgentsBetaTab />
       case "debug":
@@ -412,24 +355,6 @@ export function AgentsSettingsDialog({
       </div>
 
       {/* Project tabs */}
-      {projectTabs.length > 0 && (
-        <>
-          {/* Separator */}
-          <div className="border-t border-border/50 mx-2" />
-
-          <div className="space-y-1">
-            {projectTabs.map((tab) => (
-              <TabButton
-                key={tab.id}
-                tab={tab}
-                isActive={activeTab === tab.id}
-                onClick={() => handleTabClick(tab.id)}
-                isNarrow={isNarrowScreen}
-              />
-            ))}
-          </div>
-        </>
-      )}
     </div>
   )
 
@@ -565,29 +490,14 @@ export function AgentsSettingsDialog({
                     ))}
                   </div>
 
-                  {/* Project Tabs */}
-                  {projectTabs.length > 0 && (
-                    <>
-                      {/* Separator */}
-                      <div className="border-t border-border/50 mx-2" />
-
-                      <div className="space-y-1">
-                        {projectTabs.map((tab) => (
-                          <TabButton
-                            key={tab.id}
-                            tab={tab}
-                            isActive={activeTab === tab.id}
-                            onClick={() => setActiveTab(tab.id)}
-                          />
-                        ))}
-                      </div>
-                    </>
-                  )}
                 </div>
 
                 {/* Right Content Area */}
                 <div className="flex-1 h-full overflow-hidden">
-                  <div className="flex flex-col relative h-full bg-tl-background rounded-xl w-full transition-all duration-300 overflow-y-auto">
+                  <div className={cn(
+                    "flex flex-col relative h-full bg-tl-background rounded-xl w-full transition-all duration-300",
+                    TWO_PANEL_TABS.includes(activeTab) ? "overflow-hidden" : "overflow-y-auto"
+                  )}>
                     {renderTabContent()}
                   </div>
                 </div>

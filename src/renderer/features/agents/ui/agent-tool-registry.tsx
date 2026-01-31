@@ -2,12 +2,16 @@
 
 import {
   Database,
+  Eye,
   FileCode2,
   FolderSearch,
   GitBranch,
+  List,
   ListTodo,
   LogOut,
   Minimize2,
+  Plus,
+  RefreshCw,
   Server,
   Terminal,
   XCircle,
@@ -29,7 +33,7 @@ export interface ToolMeta {
   icon: React.ComponentType<{ className?: string }>
   title: (part: any) => string
   subtitle?: (part: any) => string
-  tooltipContent?: (part: any) => string
+  tooltipContent?: (part: any, projectPath?: string) => string
   variant: ToolVariant
 }
 
@@ -50,18 +54,37 @@ export function getToolStatus(part: any, chatStatus?: string) {
   return { isPending, isError, isSuccess, isInterrupted }
 }
 
-// Utility to get clean display path (remove sandbox prefix)
-function getDisplayPath(filePath: string): string {
+// Utility to get clean display path (remove sandbox/worktree/absolute prefixes)
+// projectPath: optional absolute path to the project root, used to compute relative paths
+export function getDisplayPath(filePath: string, projectPath?: string): string {
   if (!filePath) return ""
+
+  // If projectPath is provided, strip it to get a project-relative path
+  if (projectPath && filePath.startsWith(projectPath)) {
+    const relative = filePath.slice(projectPath.length).replace(/^\//, "")
+    return relative || filePath.split("/").pop() || filePath
+  }
+
   const prefixes = [
     "/project/sandbox/repo/",
     "/project/sandbox/",
     "/project/",
+    "/workspace/",
   ]
   for (const prefix of prefixes) {
     if (filePath.startsWith(prefix)) {
       return filePath.slice(prefix.length)
     }
+  }
+  // Handle worktree paths: /.21st/worktrees/{chatId}/{subChatId}/relativePath
+  const worktreeMatch = filePath.match(/\.21st\/worktrees\/[^/]+\/[^/]+\/(.+)$/)
+  if (worktreeMatch) {
+    return worktreeMatch[1]
+  }
+  // Handle claude-sessions paths: .../claude-sessions/{sessionId}/{folder}/{file}
+  const sessionMatch = filePath.match(/claude-sessions\/[^/]+\/(.+)$/)
+  if (sessionMatch) {
+    return sessionMatch[1]
   }
   if (filePath.startsWith("/")) {
     const parts = filePath.split("/")
@@ -71,6 +94,10 @@ function getDisplayPath(filePath: string): string {
     )
     if (rootIndex > 0) {
       return parts.slice(rootIndex).join("/")
+    }
+    // For other absolute paths, show last 3 segments to keep it short
+    if (parts.length > 3) {
+      return parts.slice(-3).join("/")
     }
   }
   return filePath
@@ -108,8 +135,8 @@ export const AgentToolRegistry: Record<string, ToolMeta> = {
       const isPending =
         part.state !== "output-available" && part.state !== "output-error"
       const isInputStreaming = part.state === "input-streaming"
-      if (isInputStreaming) return "Preparing task"
-      return isPending ? "Running Task" : "Completed Task"
+      if (isInputStreaming) return "Preparing subagent"
+      return isPending ? "Running Subagent" : "Completed Subagent"
     },
     subtitle: (part) => {
       // Don't show subtitle while input is still streaming
@@ -152,8 +179,9 @@ export const AgentToolRegistry: Record<string, ToolMeta> = {
       const path = part.input?.path || ""
 
       if (path) {
-        // Show "pattern in path"
-        const combined = `${pattern} in ${path}`
+        // Show "pattern in path" with shortened path
+        const displayPath = getDisplayPath(path)
+        const combined = `${pattern} in ${displayPath}`
         return combined.length > 40 ? combined.slice(0, 37) + "..." : combined
       }
 
@@ -171,15 +199,6 @@ export const AgentToolRegistry: Record<string, ToolMeta> = {
       if (isInputStreaming) return "Preparing search"
       if (isPending) return "Exploring files"
 
-      // DEBUG: Log the part.output to understand its structure
-      console.log("[Glob DEBUG] part.output:", {
-        state: part.state,
-        output: part.output,
-        outputType: typeof part.output,
-        outputKeys: part.output && typeof part.output === 'object' ? Object.keys(part.output) : null,
-        numFiles: part.output?.numFiles,
-      })
-
       const numFiles = part.output?.numFiles || 0
       return numFiles > 0 ? `Found ${numFiles} files` : "No files found"
     },
@@ -190,8 +209,9 @@ export const AgentToolRegistry: Record<string, ToolMeta> = {
       const targetDir = part.input?.target_directory || ""
 
       if (targetDir) {
-        // Show "pattern in targetDir"
-        const combined = `${pattern} in ${targetDir}`
+        // Show "pattern in targetDir" with shortened path
+        const displayTargetDir = getDisplayPath(targetDir)
+        const combined = `${pattern} in ${displayTargetDir}`
         return combined.length > 40 ? combined.slice(0, 37) + "..." : combined
       }
 
@@ -216,10 +236,10 @@ export const AgentToolRegistry: Record<string, ToolMeta> = {
       if (!filePath) return "" // Don't show "file" placeholder during streaming
       return filePath.split("/").pop() || ""
     },
-    tooltipContent: (part) => {
+    tooltipContent: (part, projectPath) => {
       if (part.state === "input-streaming") return ""
       const filePath = part.input?.file_path || ""
-      return getDisplayPath(filePath)
+      return getDisplayPath(filePath, projectPath)
     },
     variant: "simple",
   },
@@ -321,8 +341,12 @@ export const AgentToolRegistry: Record<string, ToolMeta> = {
       if (part.state === "input-streaming") return ""
       const command = part.input?.command || ""
       if (!command) return ""
-      // Normalize line continuations and show truncated command
-      const normalized = command.replace(/\\\s*\n\s*/g, " ").trim()
+      // Normalize line continuations, shorten absolute paths, and truncate
+      let normalized = command.replace(/\\\s*\n\s*/g, " ").trim()
+      // Replace absolute paths that look like project paths with relative versions
+      normalized = normalized.replace(/\/(?:Users|home|root)\/[^\s"']+/g, (match) => {
+        return getDisplayPath(match)
+      })
       return normalized.length > 50 ? normalized.slice(0, 47) + "..." : normalized
     },
     variant: "simple",
@@ -385,6 +409,81 @@ export const AgentToolRegistry: Record<string, ToolMeta> = {
       if (todos.length === 0) return ""
       return `${todos.length} ${todos.length === 1 ? "item" : "items"}`
     },
+    variant: "simple",
+  },
+
+  // Task management tools
+  "tool-TaskCreate": {
+    icon: Plus,
+    title: (part) => {
+      const isPending =
+        part.state !== "output-available" && part.state !== "output-error"
+      return isPending ? "Creating task" : "Created task"
+    },
+    subtitle: (part) => {
+      const subject = part.input?.subject || ""
+      return subject.length > 40 ? subject.slice(0, 37) + "..." : subject
+    },
+    variant: "simple",
+  },
+
+  "tool-TaskUpdate": {
+    icon: RefreshCw,
+    title: (part) => {
+      // Status comes from INPUT (output is just confirmation string)
+      const status = part.input?.status
+      const isPending =
+        part.state !== "output-available" && part.state !== "output-error"
+      if (isPending) {
+        if (status === "in_progress") return "Starting task"
+        if (status === "completed") return "Completing task"
+        if (status === "deleted") return "Deleting task"
+        return "Updating task"
+      }
+      if (status === "in_progress") return "Started task"
+      if (status === "completed") return "Completed task"
+      if (status === "deleted") return "Deleted task"
+      return "Updated task"
+    },
+    subtitle: (part) => {
+      const subject = part.input?.subject
+      const taskId = part.input?.taskId
+      if (subject) {
+        return subject.length > 40 ? subject.slice(0, 37) + "..." : subject
+      }
+      return taskId ? `#${taskId}` : ""
+    },
+    variant: "simple",
+  },
+
+  "tool-TaskGet": {
+    icon: Eye,
+    title: (part) => {
+      const isPending =
+        part.state !== "output-available" && part.state !== "output-error"
+      return isPending ? "Getting task" : "Got task"
+    },
+    subtitle: (part) => {
+      const subject = part.output?.task?.subject
+      const taskId = part.input?.taskId
+      if (subject) {
+        return subject.length > 40 ? subject.slice(0, 37) + "..." : subject
+      }
+      return taskId ? `#${taskId}` : ""
+    },
+    variant: "simple",
+  },
+
+  "tool-TaskList": {
+    icon: List,
+    title: (part) => {
+      const isPending =
+        part.state !== "output-available" && part.state !== "output-error"
+      const count = part.output?.tasks?.length
+      if (isPending) return "Listing tasks"
+      return count !== undefined ? `Listed ${count} tasks` : "Listed tasks"
+    },
+    subtitle: () => "",
     variant: "simple",
   },
 

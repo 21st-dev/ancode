@@ -144,16 +144,15 @@ export function AgentSendButton({
     }
     if (isStreaming && !hasContent)
       return (
-        <span className="flex items-center gap-1">
-          Stop
-          {stopHotkey.primary && <Kbd className="ms-0.5">{stopHotkey.primary}</Kbd>}
-          {stopHotkey.alt && (
-            <>
-              <span className="text-muted-foreground/60">or</span>
-              <Kbd className="-me-1">{stopHotkey.alt}</Kbd>
-            </>
+        <div className="flex flex-col items-start gap-1">
+          <span>Stop</span>
+          {stopHotkey.primary && (
+            <span className="flex items-center gap-1.5">
+              <Kbd>{stopHotkey.primary}</Kbd>
+              {stopHotkey.alt && <><span className="text-[10px] opacity-50">or</span><Kbd>{stopHotkey.alt}</Kbd></>}
+            </span>
           )}
-        </span>
+        </div>
       )
     if (isStreaming && hasContent)
       return (

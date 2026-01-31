@@ -2,9 +2,11 @@
 
 import { useCallback, useMemo, useState, useRef, useEffect } from "react"
 import { useAtom, useAtomValue } from "jotai"
-import { X, RotateCcw, Search, Settings2 } from "lucide-react"
+import { RotateCcw, Settings2 } from "lucide-react"
 import { cn } from "../../../lib/utils"
 import { CmdIcon, OptionIcon, ShiftIcon, ControlIcon } from "../../ui/icons"
+import { ResizableSidebar } from "../../ui/resizable-sidebar"
+import { settingsKeyboardSidebarWidthAtom } from "../../../features/agents/atoms"
 import {
   customHotkeysAtom,
   ctrlTabTargetAtom,
@@ -143,14 +145,14 @@ function ShortcutListItem({
       type="button"
       onClick={onClick}
       className={cn(
-        "w-full flex items-center justify-between px-3 py-2 rounded-md text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50",
+        "w-full flex items-center justify-between px-2 py-1.5 rounded-md text-left transition-colors duration-150 cursor-pointer",
         isSelected
-          ? "bg-secondary text-foreground"
-          : "hover:bg-secondary/50",
+          ? "bg-foreground/5 text-foreground"
+          : "text-muted-foreground hover:bg-foreground/5 hover:text-foreground",
         hasConflict && !isSelected && "bg-red-500/10"
       )}
     >
-      <span className="text-sm truncate">
+      <span className={cn("text-sm truncate", isSelected && "font-medium")}>
         {action.label}
       </span>
       <div className="flex items-center gap-0.5 ml-2 flex-shrink-0">
@@ -336,6 +338,21 @@ export function AgentsKeyboardTab() {
   const [isRecording, setIsRecording] = useState(false)
   const [searchQuery, setSearchQuery] = useState("")
   const [conflictMessage, setConflictMessage] = useState<string | null>(null)
+  const searchInputRef = useRef<HTMLInputElement>(null)
+
+  // Focus search on "/" hotkey
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if (e.key === "/" && !e.metaKey && !e.ctrlKey && !e.altKey) {
+        const tag = (e.target as HTMLElement)?.tagName
+        if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return
+        e.preventDefault()
+        searchInputRef.current?.focus()
+      }
+    }
+    document.addEventListener("keydown", handler)
+    return () => document.removeEventListener("keydown", handler)
+  }, [])
 
   // Get shortcuts by category, filtering out disabled features
   const shortcutsByCategory = useMemo(() => {
@@ -468,41 +485,49 @@ export function AgentsKeyboardTab() {
   }, [filteredShortcuts])
 
   return (
-    <div className="flex flex-col h-full">
-      {/* Two-column layout */}
-      <div className="flex flex-1 min-h-0 gap-3 p-3">
-        {/* Left panel - shortcuts list */}
-        <div className="w-[280px] flex flex-col flex-shrink-0">
+    <div className="flex h-full overflow-hidden">
+      {/* Left sidebar - shortcuts list */}
+      <ResizableSidebar
+        isOpen={true}
+        onClose={() => {}}
+        widthAtom={settingsKeyboardSidebarWidthAtom}
+        minWidth={200}
+        maxWidth={400}
+        side="left"
+        animationDuration={0}
+        initialWidth={240}
+        exitWidth={240}
+        disableClickToClose={true}
+      >
+        <div className="flex flex-col h-full bg-background border-r overflow-hidden" style={{ borderRightWidth: "0.5px" }}>
           {/* Search */}
-          <div className="pb-2 px-1 flex-shrink-0">
-            <div className="relative">
-              <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground pointer-events-none z-10" />
-              <input
-                type="text"
-                placeholder="Search shortcuts..."
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                className="w-full h-8 pl-8 pr-3 text-sm bg-background border border-input rounded-lg placeholder:text-muted-foreground/70 transition-shadow focus-visible:border-primary focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-primary/20"
-              />
-            </div>
+          <div className="px-2 pt-2 flex-shrink-0">
+            <input
+              ref={searchInputRef}
+              type="text"
+              placeholder="Search shortcuts..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="h-7 w-full rounded-lg text-sm bg-muted border border-input px-3 placeholder:text-muted-foreground/40 outline-none"
+            />
           </div>
 
-          {/* Shortcuts list - padding to prevent focus ring clipping */}
-          <div className="flex-1 min-h-0 overflow-y-auto p-1">
+          {/* Shortcuts list */}
+          <div className="flex-1 overflow-y-auto px-2 pt-2 pb-2">
             {totalShortcuts === 0 ? (
               <div className="text-center py-8 text-sm text-muted-foreground">
                 No shortcuts found
               </div>
             ) : (
-              <div className="space-y-4">
+              <div className="space-y-3">
                 {(["general", "workspaces", "agents"] as ShortcutCategory[]).map((category) => {
                   const actions = filteredShortcuts[category]
                   if (actions.length === 0) return null
                   return (
                     <div key={category}>
-                      <h4 className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider px-2 py-1">
+                      <p className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider px-2 mb-1">
                         {CATEGORY_LABELS[category]}
-                      </h4>
+                      </p>
                       <div className="space-y-0.5">
                         {actions.map((action) => (
                           <ShortcutListItem
@@ -528,7 +553,7 @@ export function AgentsKeyboardTab() {
 
           {/* Reset all button at bottom */}
           {hasCustomHotkeys && (
-            <div className="pt-2 flex-shrink-0">
+            <div className="pt-2 pb-2 px-2 flex-shrink-0">
               <button
                 type="button"
                 onClick={handleResetAll}
@@ -540,25 +565,25 @@ export function AgentsKeyboardTab() {
             </div>
           )}
         </div>
+      </ResizableSidebar>
 
-        {/* Right panel - shortcut details */}
-        <div className="flex-1 bg-secondary/30 rounded-xl overflow-hidden">
-          {selectedAction ? (
-            <ShortcutDetailPanel
-              action={selectedAction}
-              config={customHotkeys}
-              isRecording={isRecording}
-              onStartRecording={handleStartRecording}
-              onRecord={handleRecord}
-              onCancel={handleCancel}
-              onReset={handleReset}
-              ctrlTabTarget={ctrlTabTarget}
-              conflictMessage={conflictMessage}
-            />
-          ) : (
-            <EmptyDetailPanel />
-          )}
-        </div>
+      {/* Right panel - shortcut details */}
+      <div className="flex-1 min-w-0 h-full overflow-hidden">
+        {selectedAction ? (
+          <ShortcutDetailPanel
+            action={selectedAction}
+            config={customHotkeys}
+            isRecording={isRecording}
+            onStartRecording={handleStartRecording}
+            onRecord={handleRecord}
+            onCancel={handleCancel}
+            onReset={handleReset}
+            ctrlTabTarget={ctrlTabTarget}
+            conflictMessage={conflictMessage}
+          />
+        ) : (
+          <EmptyDetailPanel />
+        )}
       </div>
     </div>
   )

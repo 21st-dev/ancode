@@ -1307,14 +1307,34 @@ export const AgentsMentionsEditor = memo(
               triggerStartIndex.current = null
               onCloseTrigger()
             }
-            // Case 2: Direct insertion (e.g., drag & drop) - just insert at end
+            // Case 2: Direct insertion (e.g., from sidebar widget, drag & drop)
             else {
               const mentionNode = createMentionNode(option)
               const space = document.createTextNode(" ")
 
-              // Append to editor content
-              editorRef.current.appendChild(mentionNode)
-              editorRef.current.appendChild(space)
+              // Try to insert at current cursor position if it's inside the editor
+              const editorEl = editorRef.current
+              let inserted = false
+
+              if (range && editorEl.contains(range.startContainer)) {
+                range.collapse(false)
+                range.insertNode(space)
+                range.insertNode(mentionNode)
+                inserted = true
+              }
+
+              // Fallback: insert at end of the last text/inline content
+              if (!inserted) {
+                // Find the deepest last child to append inline (avoid new-line from div siblings)
+                let target: Node = editorEl
+                while (target.lastChild && target.lastChild.nodeType === Node.ELEMENT_NODE) {
+                  const el = target.lastChild as HTMLElement
+                  if (el.hasAttribute("data-mention-id") || el.tagName === "BR") break
+                  target = el
+                }
+                target.appendChild(mentionNode)
+                target.appendChild(space)
+              }
 
               // Move cursor after the space
               const newRange = document.createRange()

@@ -1,7 +1,7 @@
 "use client"
 
 import { memo, useState, useEffect, useMemo, useCallback, useRef } from "react"
-import { useSetAtom } from "jotai"
+import { useAtomValue, useSetAtom } from "jotai"
 import { useCodeTheme } from "../../../lib/hooks/use-code-theme"
 import { highlightCode } from "../../../lib/themes/shiki-theme-loader"
 import {
@@ -15,11 +15,12 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from "../../../components/ui/tooltip"
-import { getToolStatus } from "./agent-tool-registry"
+import { getDisplayPath, getToolStatus } from "./agent-tool-registry"
 import { AgentToolInterrupted } from "./agent-tool-interrupted"
 import { areToolPropsEqual } from "./agent-tool-utils"
 import { getFileIconByExtension } from "../mentions/agents-file-mention"
-import { agentsDiffSidebarOpenAtom, agentsFocusedDiffFileAtom } from "../atoms"
+import { useFileOpen } from "../mentions"
+import { agentsDiffSidebarOpenAtom, agentsFocusedDiffFileAtom, selectedProjectAtom } from "../atoms"
 import { cn } from "../../../lib/utils"
 
 interface AgentEditToolProps {
@@ -225,6 +226,9 @@ export const AgentEditTool = memo(function AgentEditTool({
   // Atoms for opening diff sidebar and focusing on file
   const setDiffSidebarOpen = useSetAtom(agentsDiffSidebarOpenAtom)
   const setFocusedDiffFile = useSetAtom(agentsFocusedDiffFileAtom)
+  const selectedProject = useAtomValue(selectedProjectAtom)
+  const projectPath = selectedProject?.path
+  const onOpenFile = useFileOpen()
 
   // Determine tool type
   const isWriteMode = part.type === "tool-Write"
@@ -248,40 +252,10 @@ export const AgentEditTool = memo(function AgentEditTool({
   // Extract filename from path
   const filename = filePath ? filePath.split("/").pop() || "file" : ""
 
-  // Get clean display path (remove sandbox prefix to show project-relative path)
+  // Get clean display path (remove sandbox/project prefix to show project-relative path)
   const displayPath = useMemo(() => {
-    if (!filePath) return ""
-    // Remove common sandbox prefixes
-    const prefixes = [
-      "/project/sandbox/repo/",
-      "/project/sandbox/",
-      "/project/",
-      "/workspace/",
-    ]
-    for (const prefix of prefixes) {
-      if (filePath.startsWith(prefix)) {
-        return filePath.slice(prefix.length)
-      }
-    }
-    // Handle worktree paths: /Users/.../.21st/worktrees/{chatId}/{subChatId}/relativePath
-    const worktreeMatch = filePath.match(/\.21st\/worktrees\/[^/]+\/[^/]+\/(.+)$/)
-    if (worktreeMatch) {
-      return worktreeMatch[1]
-    }
-    // If path starts with /, try to find a reasonable root
-    if (filePath.startsWith("/")) {
-      // Look for common project roots
-      const parts = filePath.split("/")
-      const rootIndicators = ["apps", "packages", "src", "lib", "components"]
-      const rootIndex = parts.findIndex((p: string) =>
-        rootIndicators.includes(p),
-      )
-      if (rootIndex > 0) {
-        return parts.slice(rootIndex).join("/")
-      }
-    }
-    return filePath
-  }, [filePath])
+    return getDisplayPath(filePath, projectPath)
+  }, [filePath, projectPath])
 
   // Handler to open diff sidebar and focus on this file
   const handleOpenInDiff = useCallback(() => {
@@ -298,11 +272,11 @@ export const AgentEditTool = memo(function AgentEditTool({
   }, [isPending, isInputStreaming])
 
   const handleFilenameClick = useCallback((e: React.MouseEvent) => {
-    if (displayPath) {
+    if (filePath && onOpenFile) {
       e.stopPropagation()
-      handleOpenInDiff()
+      onOpenFile(filePath)
     }
-  }, [displayPath, handleOpenInDiff])
+  }, [filePath, onOpenFile])
 
   const handleExpandButtonClick = useCallback((e: React.MouseEvent) => {
     e.stopPropagation()
@@ -563,29 +537,26 @@ export const AgentEditTool = memo(function AgentEditTool({
         </div>
 
         {/* Status and expand button */}
-        <div className="flex items-center gap-2 flex-shrink-0 ml-2">
-          {/* Diff stats or spinner */}
-          <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+        <div className="flex items-center gap-1.5 flex-shrink-0 ml-2">
+          {/* Diff stats - only show when not pending */}
+          {!isPending && !isInputStreaming && diffStats && (
+            <div className="flex items-center gap-1.5 text-xs">
+              <span className="text-green-600 dark:text-green-400">
+                +{diffStats.addedLines}
+              </span>
+              {diffStats.removedLines > 0 && (
+                <span className="text-red-600 dark:text-red-400">
+                  -{diffStats.removedLines}
+                </span>
+              )}
+            </div>
+          )}
+
+          {/* Expand/Collapse button or spinner */}
+          <div className="w-6 h-6 flex items-center justify-center">
             {isPending || isInputStreaming ? (
               <IconSpinner className="w-3 h-3" />
-            ) : diffStats ? (
-              <>
-                <span className="text-green-600 dark:text-green-400">
-                  +{diffStats.addedLines}
-                </span>
-                {diffStats.removedLines > 0 && (
-                  <span className="text-red-600 dark:text-red-400">
-                    -{diffStats.removedLines}
-                  </span>
-                )}
-              </>
-            ) : null}
-          </div>
-
-          {/* Expand/Collapse button - show when has visible content and not streaming */}
-          {/* Always render container for consistent spacing */}
-          <div className="w-6 h-6 flex items-center justify-center">
-            {hasVisibleContent && !isPending && !isInputStreaming && (
+            ) : hasVisibleContent ? (
               <button
                 onClick={handleExpandButtonClick}
                 className="p-1 rounded-md hover:bg-accent transition-[background-color,transform] duration-150 ease-out active:scale-95"
@@ -609,7 +580,7 @@ export const AgentEditTool = memo(function AgentEditTool({
                   />
                 </div>
               </button>
-            )}
+            ) : null}
           </div>
         </div>
       </div>

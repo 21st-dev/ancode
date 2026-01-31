@@ -53,6 +53,7 @@ export const ALL_SHORTCUT_ACTIONS: ShortcutAction[] = [
     label: "New workspace",
     category: "workspaces",
     defaultKeys: ["cmd", "N"],
+    altKeys: ["C"],
   },
   {
     id: "search-workspaces",
@@ -175,6 +176,12 @@ export const ALL_SHORTCUT_ACTIONS: ShortcutAction[] = [
     id: "create-pr",
     label: "Create PR",
     category: "agents",
+    defaultKeys: [],
+  },
+  {
+    id: "file-search",
+    label: "Go to file",
+    category: "agents",
     defaultKeys: ["cmd", "P"],
   },
   {
@@ -182,6 +189,22 @@ export const ALL_SHORTCUT_ACTIONS: ShortcutAction[] = [
     label: "Voice input (hold)",
     category: "agents",
     defaultKeys: ["ctrl", "opt"],
+  },
+
+  // ============================================
+  // WORKSPACES (additional)
+  // ============================================
+  {
+    id: "open-in-editor",
+    label: "Open in editor",
+    category: "workspaces",
+    defaultKeys: ["cmd", "O"],
+  },
+  {
+    id: "open-file-in-editor",
+    label: "Open file in editor",
+    category: "agents",
+    defaultKeys: ["cmd", "shift", "O"],
   },
 ]
 

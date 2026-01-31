@@ -30,7 +30,10 @@ export type ShortcutActionId =
   | "toggle-preview"
   | "open-diff"
   | "create-pr"
+  | "file-search"
   | "voice-input"
+  | "open-in-editor"
+  | "open-file-in-editor"
 
 /**
  * Category for organizing shortcuts in the UI

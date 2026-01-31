@@ -1,26 +1,17 @@
-import { useState, useEffect } from "react"
-import { ChevronRight } from "lucide-react"
-import { motion, AnimatePresence } from "motion/react"
+import { useEffect, useMemo, useRef, useState, useCallback } from "react"
+import { useAtomValue } from "jotai"
+import { selectedProjectAtom, settingsAgentsSidebarWidthAtom } from "../../../features/agents/atoms"
 import { trpc } from "../../../lib/trpc"
 import { cn } from "../../../lib/utils"
-import { AgentIcon } from "../../ui/icons"
-
-// Hook to detect narrow screen
-function useIsNarrowScreen(): boolean {
-  const [isNarrow, setIsNarrow] = useState(false)
-
-  useEffect(() => {
-    const checkWidth = () => {
-      setIsNarrow(window.innerWidth <= 768)
-    }
-
-    checkWidth()
-    window.addEventListener("resize", checkWidth)
-    return () => window.removeEventListener("resize", checkWidth)
-  }, [])
-
-  return isNarrow
-}
+import { Plus } from "lucide-react"
+import { CustomAgentIconFilled } from "../../ui/icons"
+import { Input } from "../../ui/input"
+import { Label } from "../../ui/label"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../../ui/select"
+import { Textarea } from "../../ui/textarea"
+import { Button } from "../../ui/button"
+import { ResizableSidebar } from "../../ui/resizable-sidebar"
+import { toast } from "sonner"
 
 interface FileAgent {
   name: string
@@ -33,250 +24,548 @@ interface FileAgent {
   path: string
 }
 
-export function AgentsCustomAgentsTab() {
-  const isNarrowScreen = useIsNarrowScreen()
-  const [expandedAgentName, setExpandedAgentName] = useState<string | null>(null)
+// --- Detail Panel (Editable) ---
+function AgentDetail({
+  agent,
+  onSave,
+  isSaving,
+}: {
+  agent: FileAgent
+  onSave: (data: { description: string; prompt: string; model?: "sonnet" | "opus" | "haiku" | "inherit" }) => void
+  isSaving: boolean
+}) {
+  const [description, setDescription] = useState(agent.description)
+  const [prompt, setPrompt] = useState(agent.prompt)
+  const [model, setModel] = useState<string>(agent.model || "inherit")
 
-  const { data: agents = [], isLoading } = trpc.agents.list.useQuery(undefined)
+  // Reset local state when agent changes
+  useEffect(() => {
+    setDescription(agent.description)
+    setPrompt(agent.prompt)
+    setModel(agent.model || "inherit")
+  }, [agent.name, agent.description, agent.prompt, agent.model])
 
-  const openInFinderMutation = trpc.external.openInFinder.useMutation()
+  const hasChanges =
+    description !== agent.description ||
+    prompt !== agent.prompt ||
+    model !== (agent.model || "inherit")
 
-  const userAgents = agents.filter((a) => a.source === "user")
-  const projectAgents = agents.filter((a) => a.source === "project")
+  const handleSave = useCallback(() => {
+    if (
+      description !== agent.description ||
+      prompt !== agent.prompt ||
+      model !== (agent.model || "inherit")
+    ) {
+      onSave({
+        description,
+        prompt,
+        model: model as FileAgent["model"],
+      })
+    }
+  }, [description, prompt, model, agent.description, agent.prompt, agent.model, onSave])
 
-  const handleExpandAgent = (agentName: string) => {
-    setExpandedAgentName(expandedAgentName === agentName ? null : agentName)
-  }
+  const handleBlur = useCallback(() => {
+    if (
+      description !== agent.description ||
+      prompt !== agent.prompt ||
+      model !== (agent.model || "inherit")
+    ) {
+      onSave({
+        description,
+        prompt,
+        model: model as FileAgent["model"],
+      })
+    }
+  }, [description, prompt, model, agent.description, agent.prompt, agent.model, onSave])
 
-  const handleOpenInFinder = (path: string) => {
-    openInFinderMutation.mutate(path)
-  }
+  const handleModelChange = useCallback((value: string) => {
+    setModel(value)
+    // Auto-save with new model value
+    if (
+      description !== agent.description ||
+      prompt !== agent.prompt ||
+      value !== (agent.model || "inherit")
+    ) {
+      onSave({
+        description,
+        prompt,
+        model: value as FileAgent["model"],
+      })
+    }
+  }, [description, prompt, agent.description, agent.prompt, agent.model, onSave])
 
   return (
-    <div className="p-6 space-y-6 overflow-y-auto max-h-[70vh]">
-      {/* Header - hidden on narrow screens */}
-      {!isNarrowScreen && (
-        <div className="flex flex-col space-y-1.5 text-center sm:text-left">
-          <div className="flex items-center gap-2">
-            <h3 className="text-sm font-semibold text-foreground">Custom Agents</h3>
-            <span className="px-1.5 py-0.5 text-[10px] font-medium rounded bg-muted text-muted-foreground">
-              Beta
-            </span>
+    <div className="h-full overflow-y-auto">
+      <div className="max-w-2xl mx-auto p-6 space-y-5">
+        {/* Header */}
+        <div className="flex items-center gap-3">
+          <div className="flex-1 min-w-0">
+            <h3 className="text-sm font-semibold text-foreground truncate">{agent.name}</h3>
+            <p className="text-xs text-muted-foreground mt-0.5">{agent.path}</p>
           </div>
-          <a
-            href="https://code.claude.com/docs/en/sub-agents"
-            target="_blank"
-            rel="noopener noreferrer"
-            className="text-xs text-muted-foreground hover:text-foreground underline transition-colors"
-          >
-            Documentation
-          </a>
+          {hasChanges && (
+            <Button size="sm" onClick={handleSave} disabled={isSaving}>
+              {isSaving ? "Saving..." : "Save"}
+            </Button>
+          )}
         </div>
-      )}
 
-      {/* Agents List */}
-      <div className="space-y-4">
-        {isLoading ? (
-          <div className="bg-background rounded-lg border border-border p-4 text-sm text-muted-foreground text-center">
-            Loading agents...
-          </div>
-        ) : agents.length === 0 ? (
-          <div className="bg-background rounded-lg border border-border p-6 text-center">
-            <AgentIcon className="h-8 w-8 text-muted-foreground/50 mx-auto mb-3" />
-            <p className="text-sm text-muted-foreground mb-2">
-              No custom agents found
-            </p>
-            <p className="text-xs text-muted-foreground">
-              Add .md files to <code className="px-1 py-0.5 bg-muted rounded">~/.claude/agents/</code>
-            </p>
-          </div>
-        ) : (
-          <>
-            {/* User Agents */}
-            {userAgents.length > 0 && (
-              <div className="space-y-2">
-                <div className="text-xs text-muted-foreground">
-                  ~/.claude/agents/
-                </div>
-                <div className="bg-background rounded-lg border border-border overflow-hidden">
-                  <div className="divide-y divide-border">
-                    {userAgents.map((agent) => (
-                      <AgentRow
-                        key={agent.name}
-                        agent={agent}
-                        isExpanded={expandedAgentName === agent.name}
-                        onToggle={() => handleExpandAgent(agent.name)}
-                        onOpenInFinder={() => handleOpenInFinder(agent.path)}
-                      />
-                    ))}
-                  </div>
-                </div>
-              </div>
-            )}
+        {/* Description */}
+        <div className="space-y-1.5">
+          <Label>Description</Label>
+          <Input
+            value={description}
+            onChange={(e) => setDescription(e.target.value)}
+            onBlur={handleBlur}
+            placeholder="Agent description..."
+          />
+        </div>
 
-            {/* Project Agents */}
-            {projectAgents.length > 0 && (
-              <div className="space-y-2">
-                <div className="text-xs text-muted-foreground">
-                  .claude/agents/
-                </div>
-                <div className="bg-background rounded-lg border border-border overflow-hidden">
-                  <div className="divide-y divide-border">
-                    {projectAgents.map((agent) => (
-                      <AgentRow
-                        key={agent.name}
-                        agent={agent}
-                        isExpanded={expandedAgentName === agent.name}
-                        onToggle={() => handleExpandAgent(agent.name)}
-                        onOpenInFinder={() => handleOpenInFinder(agent.path)}
-                      />
-                    ))}
-                  </div>
-                </div>
-              </div>
-            )}
-          </>
+        {/* Model */}
+        <div className="space-y-1.5">
+          <Label>Model</Label>
+          <Select value={model} onValueChange={handleModelChange}>
+            <SelectTrigger>
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="inherit">Inherit from parent</SelectItem>
+              <SelectItem value="sonnet">Sonnet</SelectItem>
+              <SelectItem value="opus">Opus</SelectItem>
+              <SelectItem value="haiku">Haiku</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+
+        {/* Tools (read-only) */}
+        {agent.tools && agent.tools.length > 0 && (
+          <div className="space-y-1.5">
+            <Label>Allowed Tools</Label>
+            <div className="flex flex-wrap gap-1">
+              {agent.tools.map((tool) => (
+                <span
+                  key={tool}
+                  className="px-1.5 py-0.5 text-[10px] font-medium rounded bg-muted text-muted-foreground font-mono"
+                >
+                  {tool}
+                </span>
+              ))}
+            </div>
+          </div>
         )}
-      </div>
 
-      {/* Info Section */}
-      <div className="pt-4 border-t border-border space-y-3">
-        <div>
-          <h4 className="text-xs font-medium text-foreground mb-1.5">
-            How Custom Agents Work
-          </h4>
-          <p className="text-xs text-muted-foreground">
-            Agents are specialized sub-agents that Claude can invoke via the Task tool. They have their own system prompt, tools, and model settings.
-          </p>
-        </div>
-        <div>
-          <h4 className="text-xs font-medium text-foreground mb-1.5">
-            Using Agents
-          </h4>
-          <p className="text-xs text-muted-foreground">
-            Ask Claude to use an agent directly (e.g., "use the code-reviewer agent") or Claude will automatically invoke them when appropriate.
-          </p>
-        </div>
-        <div>
-          <h4 className="text-xs font-medium text-foreground mb-1.5">
-            File Format
-          </h4>
-          <p className="text-xs text-muted-foreground">
-            Agents are Markdown files with YAML frontmatter containing <code className="px-1 py-0.5 bg-muted rounded">name</code>, <code className="px-1 py-0.5 bg-muted rounded">description</code>, <code className="px-1 py-0.5 bg-muted rounded">tools</code>, and <code className="px-1 py-0.5 bg-muted rounded">model</code>. The body is the system prompt.
-          </p>
+        {/* Disallowed Tools (read-only) */}
+        {agent.disallowedTools && agent.disallowedTools.length > 0 && (
+          <div className="space-y-1.5">
+            <Label>Disallowed Tools</Label>
+            <div className="flex flex-wrap gap-1">
+              {agent.disallowedTools.map((tool) => (
+                <span
+                  key={tool}
+                  className="px-1.5 py-0.5 text-[10px] font-medium rounded bg-red-500/10 text-red-500 font-mono"
+                >
+                  {tool}
+                </span>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* System Prompt */}
+        <div className="space-y-1.5">
+          <Label>System Prompt</Label>
+          <Textarea
+            value={prompt}
+            onChange={(e) => setPrompt(e.target.value)}
+            onBlur={handleBlur}
+            rows={16}
+            className="font-mono resize-y"
+            placeholder="System prompt for this agent..."
+          />
         </div>
       </div>
-
     </div>
   )
 }
 
-function AgentRow({
-  agent,
-  isExpanded,
-  onToggle,
-  onOpenInFinder,
+// --- Create Form ---
+function CreateAgentForm({
+  onCreated,
+  onCancel,
+  isSaving,
+  hasProject,
 }: {
-  agent: FileAgent
-  isExpanded: boolean
-  onToggle: () => void
-  onOpenInFinder: () => void
+  onCreated: (data: { name: string; description: string; prompt: string; model?: string; source: "user" | "project" }) => void
+  onCancel: () => void
+  isSaving: boolean
+  hasProject: boolean
 }) {
+  const [name, setName] = useState("")
+  const [description, setDescription] = useState("")
+  const [prompt, setPrompt] = useState("")
+  const [model, setModel] = useState("inherit")
+  const [source, setSource] = useState<"user" | "project">("user")
+
+  const canSave = name.trim().length > 0
+
   return (
-    <div>
-      <button
-        onClick={onToggle}
-        className="w-full flex items-center gap-3 p-4 text-left hover:bg-muted/30 transition-colors"
-      >
-        <ChevronRight
-          className={cn(
-            "h-4 w-4 text-muted-foreground transition-transform flex-shrink-0",
-            isExpanded && "rotate-90",
-          )}
-        />
-        <div className="flex flex-col space-y-0.5 min-w-0 flex-1">
-          <span className="text-sm font-medium text-foreground truncate">
-            {agent.name}
-          </span>
-          {agent.description && (
-            <span className="text-xs text-muted-foreground truncate">
-              {agent.description}
-            </span>
-          )}
+    <div className="h-full overflow-y-auto">
+      <div className="max-w-2xl mx-auto p-6 space-y-5">
+        <div className="flex items-center justify-between">
+          <h3 className="text-sm font-semibold text-foreground">New Agent</h3>
+          <div className="flex items-center gap-2">
+            <Button variant="ghost" size="sm" onClick={onCancel}>Cancel</Button>
+            <Button size="sm" onClick={() => onCreated({ name, description, prompt, model, source })} disabled={!canSave || isSaving}>
+              {isSaving ? "Creating..." : "Create"}
+            </Button>
+          </div>
         </div>
-        {agent.model && agent.model !== "inherit" && (
-          <span className="px-1.5 py-0.5 text-[10px] font-medium rounded bg-muted text-muted-foreground flex-shrink-0">
-            {agent.model}
-          </span>
+
+        <div className="space-y-1.5">
+          <Label>Name</Label>
+          <Input
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            placeholder="my-agent"
+            autoFocus
+          />
+          <p className="text-[11px] text-muted-foreground">Lowercase letters, numbers, and hyphens</p>
+        </div>
+
+        <div className="space-y-1.5">
+          <Label>Description</Label>
+          <Input
+            value={description}
+            onChange={(e) => setDescription(e.target.value)}
+            placeholder="What this agent does..."
+          />
+        </div>
+
+        <div className="space-y-1.5">
+          <Label>Model</Label>
+          <Select value={model} onValueChange={setModel}>
+            <SelectTrigger>
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="inherit">Inherit from parent</SelectItem>
+              <SelectItem value="sonnet">Sonnet</SelectItem>
+              <SelectItem value="opus">Opus</SelectItem>
+              <SelectItem value="haiku">Haiku</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+
+        {hasProject && (
+          <div className="space-y-1.5">
+            <Label>Scope</Label>
+            <Select value={source} onValueChange={(v) => setSource(v as "user" | "project")}>
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="user">User (~/.claude/agents/)</SelectItem>
+                <SelectItem value="project">Project (.claude/agents/)</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
         )}
-      </button>
 
-      <AnimatePresence initial={false}>
-        {isExpanded && (
-          <motion.div
-            initial={{ height: 0, opacity: 0 }}
-            animate={{ height: "auto", opacity: 1 }}
-            exit={{ height: 0, opacity: 0 }}
-            transition={{
-              height: { type: "spring", stiffness: 300, damping: 30 },
-              opacity: { duration: 0.2 },
-            }}
-            className="overflow-hidden"
-          >
-            <div className="px-4 pb-4 pt-0 border-t border-border bg-muted/20">
-              <div className="pt-3 space-y-3">
-                {/* Path - clickable to open in Finder */}
-                <div>
-                  <span className="text-xs font-medium text-foreground">Path</span>
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation()
-                      onOpenInFinder()
-                    }}
-                    className="block text-xs text-muted-foreground font-mono mt-0.5 break-all text-left hover:text-foreground hover:underline transition-colors cursor-pointer"
-                  >
-                    {agent.path}
-                  </button>
-                </div>
+        <div className="space-y-1.5">
+          <Label>System Prompt</Label>
+          <Textarea
+            value={prompt}
+            onChange={(e) => setPrompt(e.target.value)}
+            rows={12}
+            className="font-mono resize-y"
+            placeholder="You are a specialized agent that..."
+          />
+        </div>
+      </div>
+    </div>
+  )
+}
 
-                {/* Tools */}
-                {agent.tools && agent.tools.length > 0 && (
+// --- Main Component ---
+export function AgentsCustomAgentsTab() {
+  const [selectedAgentName, setSelectedAgentName] = useState<string | null>(null)
+  const [searchQuery, setSearchQuery] = useState("")
+  const [showAddForm, setShowAddForm] = useState(false)
+  const searchInputRef = useRef<HTMLInputElement>(null)
+
+  // Focus search on "/" hotkey
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if (e.key === "/" && !e.metaKey && !e.ctrlKey && !e.altKey) {
+        const tag = (e.target as HTMLElement)?.tagName
+        if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return
+        e.preventDefault()
+        searchInputRef.current?.focus()
+      }
+    }
+    document.addEventListener("keydown", handler)
+    return () => document.removeEventListener("keydown", handler)
+  }, [])
+  const selectedProject = useAtomValue(selectedProjectAtom)
+
+  const { data: agents = [], isLoading, refetch } = trpc.agents.list.useQuery(
+    selectedProject?.path ? { cwd: selectedProject.path } : undefined,
+  )
+
+  const updateMutation = trpc.agents.update.useMutation()
+  const createMutation = trpc.agents.create.useMutation()
+
+  const handleCreate = useCallback(async (data: {
+    name: string; description: string; prompt: string; model?: string; source: "user" | "project"
+  }) => {
+    try {
+      const result = await createMutation.mutateAsync({
+        name: data.name,
+        description: data.description,
+        prompt: data.prompt,
+        model: (data.model && data.model !== "inherit" ? data.model : undefined) as FileAgent["model"],
+        source: data.source,
+        cwd: selectedProject?.path,
+      })
+      toast.success("Agent created", { description: result.name })
+      setShowAddForm(false)
+      await refetch()
+      setSelectedAgentName(result.name)
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Failed to create"
+      toast.error("Failed to create", { description: message })
+    }
+  }, [createMutation, selectedProject?.path, refetch])
+
+  const filteredAgents = useMemo(() => {
+    if (!searchQuery.trim()) return agents
+    const q = searchQuery.toLowerCase()
+    return agents.filter((a) =>
+      a.name.toLowerCase().includes(q) || a.description.toLowerCase().includes(q)
+    )
+  }, [agents, searchQuery])
+
+  const userAgents = filteredAgents.filter((a) => a.source === "user")
+  const projectAgents = filteredAgents.filter((a) => a.source === "project")
+
+  const selectedAgent = agents.find((a) => a.name === selectedAgentName) || null
+
+  // Auto-select first agent when data loads
+  useEffect(() => {
+    if (selectedAgentName || isLoading || agents.length === 0) return
+    setSelectedAgentName(agents[0]!.name)
+  }, [agents, selectedAgentName, isLoading])
+
+  const handleSave = useCallback(async (
+    agent: FileAgent,
+    data: { description: string; prompt: string; model?: FileAgent["model"] },
+  ) => {
+    try {
+      await updateMutation.mutateAsync({
+        originalName: agent.name,
+        name: agent.name,
+        description: data.description,
+        prompt: data.prompt,
+        model: data.model,
+        tools: agent.tools,
+        disallowedTools: agent.disallowedTools,
+        source: agent.source,
+        cwd: selectedProject?.path,
+      })
+      toast.success("Agent saved", { description: agent.name })
+      await refetch()
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Failed to save"
+      toast.error("Failed to save", { description: message })
+    }
+  }, [updateMutation, selectedProject?.path, refetch])
+
+  return (
+    <div className="flex h-full overflow-hidden">
+      {/* Left sidebar - agent list */}
+      <ResizableSidebar
+        isOpen={true}
+        onClose={() => {}}
+        widthAtom={settingsAgentsSidebarWidthAtom}
+        minWidth={200}
+        maxWidth={400}
+        side="left"
+        animationDuration={0}
+        initialWidth={240}
+        exitWidth={240}
+        disableClickToClose={true}
+      >
+        <div className="flex flex-col h-full bg-background border-r overflow-hidden" style={{ borderRightWidth: "0.5px" }}>
+          {/* Search + Add */}
+          <div className="px-2 pt-2 flex-shrink-0 flex items-center gap-1.5">
+            <input
+              ref={searchInputRef}
+              placeholder="Search agents..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="h-7 w-full rounded-lg text-sm bg-muted border border-input px-3 placeholder:text-muted-foreground/40 outline-none"
+            />
+            <button
+              onClick={() => { setShowAddForm(true); setSelectedAgentName(null) }}
+              className="h-7 w-7 shrink-0 flex items-center justify-center rounded-lg text-muted-foreground hover:text-foreground hover:bg-foreground/5 transition-colors cursor-pointer"
+              title="Create new agent"
+            >
+              <Plus className="h-4 w-4" />
+            </button>
+          </div>
+          {/* Agent list */}
+          <div className="flex-1 overflow-y-auto px-2 pt-2 pb-2">
+            {isLoading ? (
+              <div className="flex items-center justify-center h-full">
+                <p className="text-xs text-muted-foreground">Loading...</p>
+              </div>
+            ) : agents.length === 0 ? (
+              <div className="flex flex-col items-center justify-center py-12 text-center px-4">
+                <CustomAgentIconFilled className="h-8 w-8 text-border mb-3" />
+                <p className="text-sm text-muted-foreground mb-1">No agents</p>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="mt-1"
+                  onClick={() => setShowAddForm(true)}
+                >
+                  <Plus className="h-3.5 w-3.5 mr-1.5" />
+                  Create agent
+                </Button>
+              </div>
+            ) : filteredAgents.length === 0 ? (
+              <div className="flex items-center justify-center py-8">
+                <p className="text-xs text-muted-foreground">No results found</p>
+              </div>
+            ) : (
+              <div className="space-y-3">
+                {/* User Agents */}
+                {userAgents.length > 0 && (
                   <div>
-                    <span className="text-xs font-medium text-foreground">Allowed Tools</span>
-                    <div className="flex flex-wrap gap-1 mt-1">
-                      {agent.tools.map((tool) => (
-                        <span
-                          key={tool}
-                          className="px-1.5 py-0.5 text-[10px] font-medium rounded bg-muted text-muted-foreground"
-                        >
-                          {tool}
-                        </span>
-                      ))}
+                    <p className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider px-2 mb-1">
+                      User
+                    </p>
+                    <div className="space-y-0.5">
+                      {userAgents.map((agent) => {
+                        const isSelected = selectedAgentName === agent.name
+                        return (
+                          <button
+                            key={agent.name}
+                            onClick={() => setSelectedAgentName(agent.name)}
+                            className={cn(
+                              "w-full text-left py-1.5 px-2 rounded-md transition-colors duration-150 cursor-pointer",
+                              isSelected
+                                ? "bg-foreground/5 text-foreground"
+                                : "text-muted-foreground hover:bg-foreground/5 hover:text-foreground"
+                            )}
+                          >
+                            <div className="flex items-center gap-2">
+                              <span className={cn("text-sm truncate flex-1", isSelected && "font-medium")}>
+                                {agent.name}
+                              </span>
+                              {agent.model && agent.model !== "inherit" && (
+                                <span className="text-[10px] text-muted-foreground shrink-0">
+                                  {agent.model}
+                                </span>
+                              )}
+                            </div>
+                            {agent.description && (
+                              <div className="text-[11px] text-muted-foreground truncate mt-0.5">
+                                {agent.description}
+                              </div>
+                            )}
+                          </button>
+                        )
+                      })}
                     </div>
                   </div>
                 )}
 
-                {/* Disallowed Tools */}
-                {agent.disallowedTools && agent.disallowedTools.length > 0 && (
+                {/* Project Agents */}
+                {projectAgents.length > 0 && (
                   <div>
-                    <span className="text-xs font-medium text-foreground">Disallowed Tools</span>
-                    <div className="flex flex-wrap gap-1 mt-1">
-                      {agent.disallowedTools.map((tool) => (
-                        <span
-                          key={tool}
-                          className="px-1.5 py-0.5 text-[10px] font-medium rounded bg-muted text-muted-foreground"
-                        >
-                          {tool}
-                        </span>
-                      ))}
+                    <p className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider px-2 mb-1">
+                      Project
+                    </p>
+                    <div className="space-y-0.5">
+                      {projectAgents.map((agent) => {
+                        const isSelected = selectedAgentName === agent.name
+                        return (
+                          <button
+                            key={agent.name}
+                            onClick={() => setSelectedAgentName(agent.name)}
+                            className={cn(
+                              "w-full text-left py-1.5 px-2 rounded-md transition-colors duration-150 cursor-pointer",
+                              isSelected
+                                ? "bg-foreground/5 text-foreground"
+                                : "text-muted-foreground hover:bg-foreground/5 hover:text-foreground"
+                            )}
+                          >
+                            <div className="flex items-center gap-2">
+                              <span className={cn("text-sm truncate flex-1", isSelected && "font-medium")}>
+                                {agent.name}
+                              </span>
+                              {agent.model && agent.model !== "inherit" && (
+                                <span className="text-[10px] text-muted-foreground shrink-0">
+                                  {agent.model}
+                                </span>
+                              )}
+                            </div>
+                            {agent.description && (
+                              <div className="text-[11px] text-muted-foreground truncate mt-0.5">
+                                {agent.description}
+                              </div>
+                            )}
+                          </button>
+                        )
+                      })}
                     </div>
                   </div>
                 )}
               </div>
-            </div>
-          </motion.div>
+            )}
+
+          </div>
+        </div>
+      </ResizableSidebar>
+
+      {/* Right content - detail panel */}
+      <div className="flex-1 min-w-0 h-full overflow-hidden">
+        {showAddForm ? (
+          <CreateAgentForm
+            onCreated={handleCreate}
+            onCancel={() => setShowAddForm(false)}
+            isSaving={createMutation.isPending}
+            hasProject={!!selectedProject?.path}
+          />
+        ) : selectedAgent ? (
+          <AgentDetail
+            agent={selectedAgent}
+            onSave={(data) => handleSave(selectedAgent, data)}
+            isSaving={updateMutation.isPending}
+          />
+        ) : (
+          <div className="flex flex-col items-center justify-center h-full text-center px-4">
+            <CustomAgentIconFilled className="h-12 w-12 text-border mb-4" />
+            <p className="text-sm text-muted-foreground">
+              {agents.length > 0
+                ? "Select an agent to view details"
+                : "No custom agents found"}
+            </p>
+            {agents.length === 0 && (
+              <Button
+                variant="outline"
+                size="sm"
+                className="mt-3"
+                onClick={() => setShowAddForm(true)}
+              >
+                <Plus className="h-3.5 w-3.5 mr-1.5" />
+                Create your first agent
+              </Button>
+            )}
+          </div>
         )}
-      </AnimatePresence>
+      </div>
     </div>
   )
 }

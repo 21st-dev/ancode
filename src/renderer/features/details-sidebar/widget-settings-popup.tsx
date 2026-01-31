@@ -10,7 +10,7 @@ import {
   PopoverTrigger,
 } from "@/components/ui/popover"
 import { Checkbox } from "@/components/ui/checkbox"
-import { PlanIcon, DiffIcon } from "@/components/ui/icons"
+import { PlanIcon, DiffIcon, OriginalMCPIcon } from "@/components/ui/icons"
 import { cn } from "@/lib/utils"
 import {
   WIDGET_REGISTRY,
@@ -38,6 +38,8 @@ function getWidgetIcon(widgetId: WidgetId) {
       return TerminalSquare
     case "diff":
       return DiffIcon
+    case "mcp":
+      return OriginalMCPIcon
     default:
       return Box
   }
@@ -58,6 +60,7 @@ export function WidgetSettingsPopup({ workspaceId, isRemoteChat = false }: Widge
   // Drag state
   const [draggedWidget, setDraggedWidget] = useState<WidgetId | null>(null)
   const [dragOverWidget, setDragOverWidget] = useState<WidgetId | null>(null)
+  const [draggableWidget, setDraggableWidget] = useState<WidgetId | null>(null)
 
   const toggleWidget = useCallback(
     (widgetId: WidgetId) => {
@@ -179,24 +182,30 @@ export function WidgetSettingsPopup({ workspaceId, isRemoteChat = false }: Widge
             return (
               <div
                 key={widget.id}
-                draggable
+                draggable={draggableWidget === widget.id}
                 onDragStart={(e) => handleDragStart(e, widget.id)}
                 onDragOver={(e) => handleDragOver(e, widget.id)}
                 onDragLeave={handleDragLeave}
                 onDrop={(e) => handleDrop(e, widget.id)}
-                onDragEnd={handleDragEnd}
+                onDragEnd={() => { handleDragEnd(); setDraggableWidget(null) }}
+                onClick={() => toggleWidget(widget.id)}
                 className={cn(
-                  "flex items-center gap-2 px-2 py-1.5 rounded-md hover:bg-muted cursor-grab active:cursor-grabbing transition-colors",
+                  "flex items-center gap-2 px-2 py-1.5 rounded-md hover:bg-muted transition-colors cursor-pointer",
                   isDragging && "opacity-50",
                   isDragOver && "bg-muted/80 ring-1 ring-primary/50",
                 )}
               >
-                <GripVertical className="h-3.5 w-3.5 text-muted-foreground/50 flex-shrink-0" />
+                <GripVertical
+                  className="h-3.5 w-3.5 text-muted-foreground/50 flex-shrink-0 cursor-grab active:cursor-grabbing"
+                  onMouseDown={() => setDraggableWidget(widget.id)}
+                  onMouseUp={() => setDraggableWidget(null)}
+                  onClick={(e) => e.stopPropagation()}
+                />
                 <Checkbox
                   checked={isVisible}
                   onCheckedChange={() => toggleWidget(widget.id)}
                   onClick={(e) => e.stopPropagation()}
-                  className="h-4 w-4"
+                  className="h-4 w-4 pointer-events-none"
                 />
                 <Icon className="h-4 w-4 text-muted-foreground flex-shrink-0" />
                 <span className="text-sm flex-1">{widget.label}</span>

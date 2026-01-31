@@ -18,8 +18,11 @@ import {
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "../../components/ui/tabs";
 import { toast } from "sonner";
 import { useEffect, useState, useCallback, useRef, useMemo, memo } from "react";
-import { useAtom } from "jotai";
+import { useAtom, useAtomValue, useSetAtom } from "jotai";
 import { trpc } from "../../lib/trpc";
+import { preferredEditorAtom } from "../../lib/atoms";
+import { APP_META } from "../../../shared/external-apps";
+import { fileViewerOpenAtomFamily, diffViewDisplayModeAtom, diffSidebarOpenAtomFamily } from "../agents/atoms";
 import { useChangesStore } from "../../lib/stores/changes-store";
 import { usePRStatus } from "../../hooks/usePRStatus";
 import { useFileChangeListener } from "../../lib/hooks/use-file-change-listener";
@@ -52,6 +55,9 @@ const ChangesFileItemWithContext = memo(function ChangesFileItemWithContext({
 	onCopyPath,
 	onCopyRelativePath,
 	onRevealInFinder,
+	onOpenInFilePreview,
+	onOpenInEditor,
+	editorLabel,
 	onToggleViewed,
 	onDiscard,
 	onDiscardSelected,
@@ -76,6 +82,9 @@ const ChangesFileItemWithContext = memo(function ChangesFileItemWithContext({
 	onCopyPath: () => void;
 	onCopyRelativePath: () => void;
 	onRevealInFinder: () => void;
+	onOpenInFilePreview: () => void;
+	onOpenInEditor: () => void;
+	editorLabel: string;
 	onToggleViewed: () => void;
 	onDiscard: () => void;
 	onDiscardSelected: () => void;
@@ -176,6 +185,13 @@ const ChangesFileItemWithContext = memo(function ChangesFileItemWithContext({
 						<ContextMenuSeparator />
 						<ContextMenuItem onClick={onRevealInFinder}>
 							Reveal in Finder
+						</ContextMenuItem>
+						<ContextMenuSeparator />
+						<ContextMenuItem onClick={onOpenInFilePreview}>
+							Open in File Preview
+						</ContextMenuItem>
+						<ContextMenuItem onClick={onOpenInEditor}>
+							Open in {editorLabel}
 						</ContextMenuItem>
 						<ContextMenuSeparator />
 						<ContextMenuItem
@@ -298,6 +314,26 @@ export function ChangesView({
 	// External actions
 	const openInFinderMutation = trpc.external.openInFinder.useMutation();
 	const openInEditorMutation = trpc.external.openFileInEditor.useMutation();
+	const openInAppMutation = trpc.external.openInApp.useMutation();
+
+	// Preferred editor
+	const preferredEditor = useAtomValue(preferredEditorAtom);
+	const editorMeta = APP_META[preferredEditor];
+
+	// File viewer (file preview sidebar)
+	const fileViewerAtom = useMemo(
+		() => fileViewerOpenAtomFamily(chatId || ""),
+		[chatId],
+	);
+	const setFileViewerPath = useSetAtom(fileViewerAtom);
+
+	// Diff sidebar state (to close dialog/fullscreen when opening file preview)
+	const diffDisplayMode = useAtomValue(diffViewDisplayModeAtom);
+	const diffSidebarAtom = useMemo(
+		() => diffSidebarOpenAtomFamily(chatId || ""),
+		[chatId],
+	);
+	const setDiffSidebarOpen = useSetAtom(diffSidebarAtom);
 
 	// Discard changes - single file
 	const discardChangesMutation = trpc.changes.discardChanges.useMutation({
@@ -784,6 +820,19 @@ export function ChangesView({
 		openInEditorMutation.mutate({ path: absolutePath, cwd: worktreePath });
 	};
 
+	const handleOpenInPreferredEditor = (filePath: string) => {
+		const absolutePath = `${worktreePath}/${filePath}`;
+		openInAppMutation.mutate({ path: absolutePath, app: preferredEditor });
+	};
+
+	const handleOpenInFilePreview = (filePath: string) => {
+		const absolutePath = `${worktreePath}/${filePath}`;
+		setFileViewerPath(absolutePath);
+		if (diffDisplayMode !== "side-peek") {
+			setDiffSidebarOpen(false);
+		}
+	};
+
 	return (
 		<>
 			<div className="flex flex-col h-full">
@@ -878,6 +927,9 @@ export function ChangesView({
 										onCopyPath={() => handleCopyPath(file.path)}
 										onCopyRelativePath={() => handleCopyRelativePath(file.path)}
 										onRevealInFinder={() => handleRevealInFinder(file.path)}
+										onOpenInFilePreview={() => handleOpenInFilePreview(file.path)}
+										onOpenInEditor={() => handleOpenInPreferredEditor(file.path)}
+										editorLabel={editorMeta.label}
 										onToggleViewed={() => toggleFileViewed(file.path)}
 										onDiscard={() => setDiscardFile(file)}
 										onDiscardSelected={handleDiscardSelected}

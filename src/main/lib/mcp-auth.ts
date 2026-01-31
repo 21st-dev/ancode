@@ -19,10 +19,15 @@ import { bringToFront } from './window';
  * @param serverUrl The MCP server URL
  * @param accessToken Optional access token (not needed for public MCPs)
  */
+export interface McpToolInfo {
+  name: string;
+  description?: string;
+}
+
 export async function fetchMcpTools(
   serverUrl: string,
   headers?: Record<string, string>
-): Promise<string[]> {
+): Promise<McpToolInfo[]> {
   let client: Client | null = null;
   let transport: StreamableHTTPClientTransport | null = null;
 
@@ -47,7 +52,7 @@ export async function fetchMcpTools(
     const tools = result.tools || [];
 
     console.log(`[MCP] Fetched ${tools.length} tools via SDK`);
-    return tools.map(t => t.name);
+    return tools.map(t => ({ name: t.name, description: t.description }));
   } catch (error) {
     console.error('[MCP] Failed to fetch tools:', error);
     return [];
@@ -85,7 +90,7 @@ export async function fetchMcpToolsStdio(config: {
   command: string;
   args?: string[];
   env?: Record<string, string>;
-}): Promise<string[]> {
+}): Promise<McpToolInfo[]> {
   let transport: StdioClientTransport | null = null;
 
   try {
@@ -118,7 +123,7 @@ export async function fetchMcpToolsStdio(config: {
     const tools = result.tools || [];
 
     console.log(`[MCP] Fetched ${tools.length} tools via stdio`);
-    return tools.map(t => t.name);
+    return tools.map(t => ({ name: t.name, description: t.description }));
   } catch (error) {
     console.error('[MCP] Failed to fetch tools via stdio:', error);
     return [];

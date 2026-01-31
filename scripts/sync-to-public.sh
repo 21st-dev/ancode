@@ -78,6 +78,9 @@ test-electron.js
 # Exclude internal release docs (contains credentials, CDN URLs)
 RELEASE.md
 scripts/upload-release-wrangler.sh
+
+# Exclude wrangler local state (large R2 blobs)
+.wrangler
 EOF
 
 # Commit and push

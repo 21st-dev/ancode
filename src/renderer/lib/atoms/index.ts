@@ -1,5 +1,6 @@
 import { atom } from "jotai"
 import { atomWithStorage } from "jotai/utils"
+import { desktopViewAtom as _desktopViewAtom } from "../../features/agents/atoms"
 
 // ============================================
 // RE-EXPORT FROM FEATURES/AGENTS/ATOMS (source of truth)
@@ -34,8 +35,6 @@ export {
   mobileDeviceAtomFamily,
   agentsPreviewSidebarWidthAtom,
   agentsPreviewSidebarOpenAtom,
-  newPreviewSidebarOpenAtom,
-  newPreviewSidebarWidthAtom,
 
   // Diff atoms
   agentsDiffSidebarWidthAtom,
@@ -73,6 +72,17 @@ export {
   // Mode utilities
   AGENT_MODES,
   getNextMode,
+
+  // Desktop view navigation (Automations / Inbox)
+  desktopViewAtom,
+  automationDetailIdAtom,
+  automationTemplateParamsAtom,
+  inboxSelectedChatIdAtom,
+  agentsInboxSidebarWidthAtom,
+  inboxMobileViewModeAtom,
+  type DesktopView,
+  type AutomationTemplateParams,
+  type InboxMobileViewMode,
 } from "../../features/agents/atoms"
 
 // ============================================
@@ -180,13 +190,18 @@ export type SettingsTab =
   | "agents"
   | "mcp"
   | "worktrees"
+  | "projects"
   | "debug"
   | "beta"
   | "keyboard"
-  | "dev-accounts"
-  | `project-${string}` // Dynamic project tabs
-export const agentsSettingsDialogActiveTabAtom = atom<SettingsTab>("profile")
-export const agentsSettingsDialogOpenAtom = atom<boolean>(false)
+export const agentsSettingsDialogActiveTabAtom = atom<SettingsTab>("preferences")
+// Derived atom: maps settings open/close to desktopView navigation
+export const agentsSettingsDialogOpenAtom = atom(
+  (get) => get(_desktopViewAtom) === "settings",
+  (_get, set, open: boolean) => {
+    set(_desktopViewAtom, open ? "settings" : null)
+  }
+)
 
 export type CustomClaudeConfig = {
   model: string
@@ -419,11 +434,20 @@ export const betaKanbanEnabledAtom = atomWithStorage<boolean>(
   { getOnInit: true },
 )
 
-// Beta: Enable Preview sidebar
-// When enabled, shows Preview button in chat header to open a new preview sidebar
-export const betaPreviewSidebarEnabledAtom = atomWithStorage<boolean>(
-  "preferences:beta-preview-sidebar-enabled",
+// Beta: Enable Automations & Inbox
+// When enabled, shows Automations and Inbox navigation in sidebar
+export const betaAutomationsEnabledAtom = atomWithStorage<boolean>(
+  "preferences:beta-automations-enabled",
   false, // Default OFF
+  undefined,
+  { getOnInit: true },
+)
+
+// Beta: Enable Tasks functionality in Claude Code SDK
+// When enabled (default), the SDK exposes task-related tools (TodoWrite, Task agents)
+export const enableTasksAtom = atomWithStorage<boolean>(
+  "preferences:enable-tasks",
+  true, // Default ON
   undefined,
   { getOnInit: true },
 )
@@ -623,12 +647,6 @@ export const agentsLoginModalOpenAtom = atom<boolean>(false)
 // Help popover
 export const agentsHelpPopoverOpenAtom = atom<boolean>(false)
 
-// Running servers popover (desktop only)
-export const runningServersPopoverOpenAtom = atom<boolean>(false)
-
-// MCP servers popover (desktop only)
-export const mcpServersPopoverOpenAtom = atom<boolean>(false)
-
 // Quick switch dialog - Agents
 export const agentsQuickSwitchOpenAtom = atom<boolean>(false)
 export const agentsQuickSwitchSelectedIndexAtom = atom<number>(0)
@@ -731,12 +749,20 @@ export const apiKeyOnboardingCompletedAtom = atomWithStorage<boolean>(
 
 export type MCPServerStatus = "connected" | "failed" | "pending" | "needs-auth"
 
+export type MCPServerIcon = {
+  src: string
+  mimeType?: string
+  sizes?: string[]
+  theme?: "light" | "dark"
+}
+
 export type MCPServer = {
   name: string
   status: MCPServerStatus
   serverInfo?: {
     name: string
     version: string
+    icons?: MCPServerIcon[]
   }
   error?: string
 }
@@ -780,3 +806,16 @@ export const chatSourceModeAtom = atomWithStorage<ChatSourceMode>(
 // DevTools unlock state (hidden feature - click Beta tab 5 times to enable)
 // Persisted per-session only (not in localStorage for security)
 export const devToolsUnlockedAtom = atom<boolean>(false)
+
+// ============================================
+// PREFERRED EDITOR
+// ============================================
+
+import type { ExternalApp } from "../../../shared/external-apps"
+
+export const preferredEditorAtom = atomWithStorage<ExternalApp>(
+  "preferences:preferred-editor",
+  "cursor",
+  undefined,
+  { getOnInit: true },
+)

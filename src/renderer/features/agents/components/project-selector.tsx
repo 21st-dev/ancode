@@ -1,7 +1,5 @@
-import { useState, useMemo, useCallback } from "react"
-import { useAtom, useAtomValue } from "jotai"
-import { FolderOpen } from "lucide-react"
-import { showOfflineModeFeaturesAtom } from "../../../lib/atoms"
+import { useState, useMemo } from "react"
+import { useAtom } from "jotai"
 import {
   Popover,
   PopoverContent,
@@ -24,52 +22,9 @@ import {
 import { Input } from "../../../components/ui/input"
 import { Button } from "../../../components/ui/button"
 import { IconChevronDown, CheckIcon, FolderPlusIcon, GitHubIcon } from "../../../components/ui/icons"
+import { ProjectIcon } from "../../../components/ui/project-icon"
 import { trpc } from "../../../lib/trpc"
 import { selectedProjectAtom } from "../atoms"
-
-// Helper component to render project icon (avatar or folder)
-function ProjectIcon({
-  gitOwner,
-  gitProvider,
-  className = "h-4 w-4",
-  isOffline = false,
-}: {
-  gitOwner?: string | null
-  gitProvider?: string | null
-  className?: string
-  isOffline?: boolean
-}) {
-  const [isLoaded, setIsLoaded] = useState(false)
-  const [hasError, setHasError] = useState(false)
-
-  const handleLoad = useCallback(() => setIsLoaded(true), [])
-  const handleError = useCallback(() => setHasError(true), [])
-
-  // In offline mode or on error, don't try to load remote images
-  if (isOffline || hasError || !gitOwner || gitProvider !== "github") {
-    return (
-      <FolderOpen
-        className={`${className} text-muted-foreground flex-shrink-0`}
-      />
-    )
-  }
-
-  return (
-    <div className={`${className} relative flex-shrink-0`}>
-      {/* Placeholder background while loading */}
-      {!isLoaded && (
-        <div className="absolute inset-0 rounded-sm bg-muted" />
-      )}
-      <img
-        src={`https://github.com/${gitOwner}.png?size=64`}
-        alt={gitOwner}
-        className={`${className} rounded-sm flex-shrink-0 ${isLoaded ? 'opacity-100' : 'opacity-0'}`}
-        onLoad={handleLoad}
-        onError={handleError}
-      />
-    </div>
-  )
-}
 
 export function ProjectSelector() {
   const [selectedProject, setSelectedProject] = useAtom(selectedProjectAtom)
@@ -77,13 +32,6 @@ export function ProjectSelector() {
   const [searchQuery, setSearchQuery] = useState("")
   const [githubDialogOpen, setGithubDialogOpen] = useState(false)
   const [githubUrl, setGithubUrl] = useState("")
-
-  // Check if offline mode is enabled and if we're actually offline
-  const showOfflineFeatures = useAtomValue(showOfflineModeFeaturesAtom)
-  const { data: ollamaStatus } = trpc.ollama.getStatus.useQuery(undefined, {
-    enabled: showOfflineFeatures,
-  })
-  const isOffline = showOfflineFeatures && ollamaStatus ? !ollamaStatus.internet.online : false
 
   // Fetch projects from DB
   const { data: projects, isLoading: isLoadingProjects } = trpc.projects.list.useQuery()
@@ -200,16 +148,20 @@ export function ProjectSelector() {
     }
   }
 
-  // Validate selected project still exists
+  // Validate selected project still exists and use latest DB data (e.g. renamed project)
   // While loading, trust localStorage value to prevent showing "Select repo" on app restart
   const validSelection = useMemo(() => {
     if (!selectedProject) return null
     // While loading, trust localStorage value
     if (isLoadingProjects) return selectedProject
-    // After loading, validate against DB
+    // After loading, validate against DB and use fresh data
     if (!projects) return null
-    const exists = projects.some((p) => p.id === selectedProject.id)
-    return exists ? selectedProject : null
+    const dbProject = projects.find((p) => p.id === selectedProject.id)
+    if (!dbProject) return null
+    return {
+      ...selectedProject,
+      name: dbProject.name,
+    }
   }, [selectedProject, projects, isLoadingProjects])
 
   // If no projects exist and none selected - show direct "Add repository" button
@@ -241,9 +193,8 @@ export function ProjectSelector() {
           type="button"
         >
           <ProjectIcon
-            gitOwner={validSelection?.gitOwner}
-            gitProvider={validSelection?.gitProvider}
-            isOffline={isOffline}
+            project={validSelection}
+            className="h-4 w-4"
           />
           <span className="truncate max-w-[120px]">
             {validSelection?.name || "Select repo"}
@@ -275,9 +226,8 @@ export function ProjectSelector() {
                       className="gap-2"
                     >
                       <ProjectIcon
-                        gitOwner={project.gitOwner}
-                        gitProvider={project.gitProvider}
-                        isOffline={isOffline}
+                        project={project}
+                        className="h-4 w-4"
                       />
                       <span className="truncate flex-1">{project.name}</span>
                       {isSelected && (

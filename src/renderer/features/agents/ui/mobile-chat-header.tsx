@@ -40,6 +40,7 @@ interface MobileChatHeaderProps {
   diffStats?: DiffStats
   onOpenTerminal?: () => void
   canOpenTerminal?: boolean
+  isTerminalOpen?: boolean
   isArchived?: boolean
   onRestore?: () => void
   onOpenLocally?: () => void
@@ -56,6 +57,7 @@ export function MobileChatHeader({
   diffStats,
   onOpenTerminal,
   canOpenTerminal = false,
+  isTerminalOpen = false,
   isArchived = false,
   onRestore,
   onOpenLocally,
@@ -237,8 +239,8 @@ export function MobileChatHeader({
           <Plus className="h-4 w-4" />
         </Button>
 
-        {/* Terminal button */}
-        {onOpenTerminal && canOpenTerminal && (
+        {/* Terminal button - hidden when terminal is already open */}
+        {onOpenTerminal && canOpenTerminal && !isTerminalOpen && (
           <Button
             variant="ghost"
             size="icon"

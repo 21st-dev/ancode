@@ -1,11 +1,11 @@
 import { observable } from "@trpc/server/observable"
 import { eq } from "drizzle-orm"
 import { app, BrowserWindow, safeStorage } from "electron"
-import { readFileSync } from "fs"
 import * as fs from "fs/promises"
 import * as os from "os"
-import path, { join } from "path"
+import path from "path"
 import { z } from "zod"
+import { setConnectionMethod } from "../../analytics"
 import {
   buildClaudeEnv,
   checkOfflineFallback,
@@ -15,12 +15,11 @@ import {
   logRawClaudeMessage,
   type UIMessageChunk,
 } from "../../claude"
-import { getProjectMcpServers, GLOBAL_MCP_PATH, readClaudeConfig, resolveProjectPathFromWorktree, type McpServerConfig } from "../../claude-config"
+import { getProjectMcpServers, GLOBAL_MCP_PATH, readClaudeConfig, resolveProjectPathFromWorktree, updateClaudeConfigAtomic, type McpServerConfig } from "../../claude-config"
 import { chats, claudeCodeCredentials, getDatabase, subChats } from "../../db"
 import { createRollbackStash } from "../../git/stash"
-import { ensureMcpTokensFresh, fetchMcpTools, fetchMcpToolsStdio, getMcpAuthStatus, startMcpOAuth } from "../../mcp-auth"
+import { ensureMcpTokensFresh, fetchMcpTools, fetchMcpToolsStdio, getMcpAuthStatus, startMcpOAuth, type McpToolInfo } from "../../mcp-auth"
 import { fetchOAuthMetadata, getMcpBaseUrl } from "../../oauth"
-import { setConnectionMethod } from "../../analytics"
 import { publicProcedure, router } from "../index"
 import { buildAgentsOption } from "./agent-utils"
 
@@ -266,8 +265,8 @@ const MCP_FETCH_TIMEOUT_MS = 10_000
  * Fetch tools from an MCP server (HTTP or stdio transport)
  * Times out after 10 seconds to prevent slow MCPs from blocking the cache update
  */
-async function fetchToolsForServer(serverConfig: McpServerConfig): Promise<string[]> {
-  const timeoutPromise = new Promise<string[]>((_, reject) =>
+async function fetchToolsForServer(serverConfig: McpServerConfig): Promise<McpToolInfo[]> {
+  const timeoutPromise = new Promise<McpToolInfo[]>((_, reject) =>
     setTimeout(() => reject(new Error('Timeout')), MCP_FETCH_TIMEOUT_MS)
   )
 
@@ -327,7 +326,7 @@ export async function getAllMcpConfigHandler() {
           let status = getServerStatusFromConfig(serverConfig)
           const headers = serverConfig.headers as Record<string, string> | undefined
 
-          let tools: string[] = []
+          let tools: McpToolInfo[] = []
           let needsAuth = false
 
           try {
@@ -356,6 +355,9 @@ export async function getAllMcpConfigHandler() {
 
             if (needsAuth && !headers?.Authorization) {
               status = "needs-auth"
+            } else {
+              // No tools and doesn't need auth - server failed to connect or has no tools
+              status = "failed"
             }
           }
 
@@ -371,7 +373,7 @@ export async function getAllMcpConfigHandler() {
       groupName: string
       projectPath: string | null
       promise: Promise<{
-        mcpServers: Array<{ name: string; status: string; tools: string[]; needsAuth: boolean; config: Record<string, unknown> }>
+        mcpServers: Array<{ name: string; status: string; tools: McpToolInfo[]; needsAuth: boolean; config: Record<string, unknown> }>
         duration: number
       }>
     }> = []
@@ -478,6 +480,7 @@ export const claudeRouter = router({
         images: z.array(imageAttachmentSchema).optional(), // Image attachments
         historyEnabled: z.boolean().optional(),
         offlineModeEnabled: z.boolean().optional(), // Whether offline mode (Ollama) is enabled in settings
+        enableTasks: z.boolean().optional(), // Enable task management tools (TodoWrite, Task agents)
       }),
     )
     .subscription(({ input }) => {
@@ -739,16 +742,15 @@ export const claudeRouter = router({
             }
 
             // Build full environment for Claude SDK (includes HOME, PATH, etc.)
-            const claudeEnv = buildClaudeEnv(
-              finalCustomConfig
-                ? {
-                    customEnv: {
-                      ANTHROPIC_AUTH_TOKEN: finalCustomConfig.token,
-                      ANTHROPIC_BASE_URL: finalCustomConfig.baseUrl,
-                    },
-                  }
-                : undefined,
-            )
+            const claudeEnv = buildClaudeEnv({
+              ...(finalCustomConfig && {
+                customEnv: {
+                  ANTHROPIC_AUTH_TOKEN: finalCustomConfig.token,
+                  ANTHROPIC_BASE_URL: finalCustomConfig.baseUrl,
+                },
+              }),
+              enableTasks: input.enableTasks ?? true,
+            })
 
             // Debug logging in dev
             if (process.env.NODE_ENV !== "production") {
@@ -980,6 +982,20 @@ export const claudeRouter = router({
               })
             }
 
+            // Read AGENTS.md from project root if it exists
+            let agentsMdContent: string | undefined
+            try {
+              const agentsMdPath = path.join(input.cwd, "AGENTS.md")
+              agentsMdContent = await fs.readFile(agentsMdPath, "utf-8")
+              if (agentsMdContent.trim()) {
+                console.log(`[claude] Found AGENTS.md at ${agentsMdPath} (${agentsMdContent.length} chars)`)
+              } else {
+                agentsMdContent = undefined
+              }
+            } catch {
+              // AGENTS.md doesn't exist or can't be read - that's fine
+            }
+
             // For Ollama: embed context AND history directly in prompt
             // Ollama doesn't have server-side sessions, so we must include full history
             let finalQueryPrompt: string | AsyncIterable<any> = prompt
@@ -1077,7 +1093,11 @@ IMPORTANT: When using tools, use these EXACT parameter names:
 
 When asked about the project, use Glob to find files and Read to examine them.
 Be concise and helpful.
-[/CONTEXT]
+[/CONTEXT]${agentsMdContent ? `
+
+[AGENTS.MD]
+${agentsMdContent}
+[/AGENTS.MD]` : ''}
 
 ${historyText}[CURRENT REQUEST]
 ${prompt}
@@ -1087,10 +1107,17 @@ ${prompt}
             }
 
             // System prompt config - use preset for both Claude and Ollama
-            const systemPromptConfig = {
-              type: "preset" as const,
-              preset: "claude_code" as const,
-            }
+            // If AGENTS.md exists, append its content to the system prompt
+            const systemPromptConfig = agentsMdContent
+              ? {
+                  type: "preset" as const,
+                  preset: "claude_code" as const,
+                  append: `\n\n# AGENTS.md\nThe following are the project's AGENTS.md instructions:\n\n${agentsMdContent}`,
+                }
+              : {
+                  type: "preset" as const,
+                  preset: "claude_code" as const,
+                }
 
             const queryOptions = {
               prompt: finalQueryPrompt,
@@ -1504,7 +1531,7 @@ ${prompt}
 
                 // When result arrives, assign the last assistant UUID to metadata
                 // It will be emitted as part of the merged message-metadata chunk below
-                if (msgAny.type === "result" && historyEnabled && lastAssistantUuid) {
+                if (msgAny.type === "result" && historyEnabled && lastAssistantUuid && !abortController.signal.aborted) {
                   metadata.sdkMessageUuid = lastAssistantUuid
                 }
 
@@ -1832,6 +1859,8 @@ ${prompt}
               parts.push({ type: "text", text: currentText })
             }
 
+            const savedSessionId = metadata.sessionId
+
             if (parts.length > 0) {
               const assistantMessage = {
                 id: crypto.randomUUID(),
@@ -1845,7 +1874,7 @@ ${prompt}
               db.update(subChats)
                 .set({
                   messages: JSON.stringify(finalMessages),
-                  sessionId: metadata.sessionId,
+                  sessionId: savedSessionId,
                   streamId: null,
                   updatedAt: new Date(),
                 })
@@ -1855,7 +1884,7 @@ ${prompt}
               // No assistant response - just clear streamId
               db.update(subChats)
                 .set({
-                  sessionId: metadata.sessionId,
+                  sessionId: savedSessionId,
                   streamId: null,
                   updatedAt: new Date(),
                 })
@@ -1896,14 +1925,13 @@ ${prompt}
           activeSessions.delete(input.subChatId)
           clearPendingApprovals("Session ended.", input.subChatId)
 
-          // Save sessionId on abort so conversation can be resumed
-          // Clear streamId since we're no longer streaming
+          // Clear streamId since we're no longer streaming.
+          // sessionId is NOT saved here — the save block in the async function
+          // handles it (saves on normal completion, clears on abort). This avoids
+          // a redundant DB write that the cancel mutation would then overwrite.
           const db = getDatabase()
           db.update(subChats)
-            .set({
-              streamId: null,
-              ...(currentSessionId && { sessionId: currentSessionId })
-            })
+            .set({ streamId: null })
             .where(eq(subChats.id, input.subChatId))
             .run()
         }
@@ -1964,9 +1992,10 @@ ${prompt}
         controller.abort()
         activeSessions.delete(input.subChatId)
         clearPendingApprovals("Session cancelled.", input.subChatId)
-        return { cancelled: true }
       }
-      return { cancelled: false }
+
+
+      return { cancelled: !!controller }
     }),
 
   /**
@@ -2021,5 +2050,68 @@ ${prompt}
     }))
     .query(async ({ input }) => {
       return getMcpAuthStatus(input.serverName, input.projectPath)
+    }),
+
+  addMcpServer: publicProcedure
+    .input(z.object({
+      name: z.string(),
+      type: z.enum(["stdio", "http"]),
+      command: z.string().optional(),
+      args: z.array(z.string()).optional(),
+      url: z.string().optional(),
+      scope: z.enum(["global", "project"]),
+      cwd: z.string().optional(),
+    }))
+    .mutation(async ({ input }) => {
+      const serverName = input.name.trim()
+      if (!serverName) {
+        throw new Error("Server name is required")
+      }
+      if (input.type === "stdio" && !input.command?.trim()) {
+        throw new Error("Command is required for stdio servers")
+      }
+      if (input.type === "http" && !input.url?.trim()) {
+        throw new Error("URL is required for HTTP servers")
+      }
+      if (input.scope === "project" && !input.cwd) {
+        throw new Error("Project path (cwd) required for project-scoped servers")
+      }
+
+      const serverConfig: McpServerConfig = {}
+      if (input.type === "stdio") {
+        serverConfig.command = input.command!.trim()
+        if (input.args && input.args.length > 0) {
+          serverConfig.args = input.args
+        }
+      } else {
+        serverConfig.url = input.url!.trim()
+      }
+
+      // Check existence before atomic update to avoid throwing inside the mutex
+      const existingConfig = await readClaudeConfig()
+      if (input.scope === "project" && input.cwd) {
+        if (existingConfig.projects?.[input.cwd]?.mcpServers?.[serverName]) {
+          throw new Error(`Server "${serverName}" already exists in this project`)
+        }
+      } else {
+        if (existingConfig.mcpServers?.[serverName]) {
+          throw new Error(`Server "${serverName}" already exists`)
+        }
+      }
+
+      await updateClaudeConfigAtomic((config) => {
+        if (input.scope === "project" && input.cwd) {
+          config.projects = config.projects || {}
+          config.projects[input.cwd] = config.projects[input.cwd] || {}
+          config.projects[input.cwd].mcpServers = config.projects[input.cwd].mcpServers || {}
+          config.projects[input.cwd].mcpServers![serverName] = serverConfig
+        } else {
+          config.mcpServers = config.mcpServers || {}
+          config.mcpServers[serverName] = serverConfig
+        }
+        return config
+      })
+
+      return { success: true, name: input.name }
     }),
 })

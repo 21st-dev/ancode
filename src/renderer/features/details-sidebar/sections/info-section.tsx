@@ -1,17 +1,24 @@
 "use client"
 
-import { memo, useState, useCallback } from "react"
+import { memo, useState, useCallback, useEffect } from "react"
+import { useAtomValue } from "jotai"
 import {
   GitBranchFilledIcon,
   FolderFilledIcon,
   GitPullRequestFilledIcon,
+  ExternalLinkIcon,
 } from "@/components/ui/icons"
+import { Kbd } from "@/components/ui/kbd"
 import {
   Tooltip,
   TooltipContent,
   TooltipTrigger,
 } from "@/components/ui/tooltip"
 import { trpc } from "@/lib/trpc"
+import { preferredEditorAtom } from "@/lib/atoms"
+import { useResolvedHotkeyDisplay } from "@/lib/hotkeys"
+import { APP_META } from "../../../../shared/external-apps"
+import { EDITOR_ICONS } from "@/lib/editor-icons"
 
 interface InfoSectionProps {
   chatId: string
@@ -58,12 +65,17 @@ function PropertyRow({
 
   const isClickable = onClick || copyable
 
-  const valueSpan = (
-    <span
-      className={`text-xs text-foreground ${isClickable ? "cursor-pointer hover:underline" : ""}`}
+  const valueEl = isClickable ? (
+    <button
+      type="button"
+      className="text-xs text-foreground cursor-pointer rounded px-1.5 py-0.5 -ml-1.5 truncate hover:bg-accent hover:text-accent-foreground transition-colors"
       title={!tooltip ? title : undefined}
       onClick={handleClick}
     >
+      {value}
+    </button>
+  ) : (
+    <span className="text-xs text-foreground truncate" title={!tooltip ? title : undefined}>
       {value}
     </span>
   )
@@ -80,23 +92,23 @@ function PropertyRow({
         {copyable ? (
           <Tooltip key={showCopied ? "copied" : "default"} open={showCopied || undefined}>
             <TooltipTrigger asChild>
-              {valueSpan}
+              {valueEl}
             </TooltipTrigger>
             <TooltipContent side="top" className="text-xs">
               {showCopied ? "Copied" : "Click to copy"}
             </TooltipContent>
           </Tooltip>
         ) : tooltip ? (
-          <Tooltip>
+          <Tooltip delayDuration={500}>
             <TooltipTrigger asChild>
-              {valueSpan}
+              {valueEl}
             </TooltipTrigger>
             <TooltipContent side="top" className="text-xs">
               {tooltip}
             </TooltipContent>
           </Tooltip>
         ) : (
-          valueSpan
+          valueEl
         )}
       </div>
     </div>
@@ -117,8 +129,13 @@ export const InfoSection = memo(function InfoSection({
   // Extract folder name from path
   const folderName = worktreePath?.split("/").pop() || "Unknown"
 
-  // Mutation to open folder in Finder
+  // Preferred editor from settings
+  const preferredEditor = useAtomValue(preferredEditorAtom)
+  const editorMeta = APP_META[preferredEditor]
+
+  // Mutations
   const openInFinderMutation = trpc.external.openInFinder.useMutation()
+  const openInAppMutation = trpc.external.openInApp.useMutation()
 
   // Check if this is a remote sandbox chat (no local worktree)
   const isRemoteChat = !worktreePath && !!remoteInfo
@@ -153,6 +170,23 @@ export const InfoSection = memo(function InfoSection({
       openInFinderMutation.mutate(worktreePath)
     }
   }
+
+  const isWorktree = !!worktreePath && worktreePath.includes(".21st/worktrees")
+  const openInEditorHotkey = useResolvedHotkeyDisplay("open-in-editor")
+
+  const handleOpenInEditor = useCallback(() => {
+    if (worktreePath) {
+      openInAppMutation.mutate({ path: worktreePath, app: preferredEditor })
+    }
+  }, [worktreePath, preferredEditor, openInAppMutation])
+
+  // Listen for ⌘O hotkey event
+  useEffect(() => {
+    if (!isWorktree) return
+    const handler = () => handleOpenInEditor()
+    window.addEventListener("open-in-editor", handler)
+    return () => window.removeEventListener("open-in-editor", handler)
+  }, [isWorktree, handleOpenInEditor])
 
   const handleOpenPr = () => {
     if (pr?.url) {
@@ -252,6 +286,39 @@ export const InfoSection = memo(function InfoSection({
           onClick={handleOpenFolder}
           tooltip="Open in Finder"
         />
+      )}
+      {/* Open in Editor - only for actual git worktrees (under ~/.21st/worktrees/) */}
+      {isWorktree && (
+        <div className="flex items-center min-h-[28px]">
+          <div className="flex items-center gap-1.5 w-[100px] flex-shrink-0">
+            <ExternalLinkIcon className="h-3.5 w-3.5 text-muted-foreground flex-shrink-0" />
+            <span className="text-xs text-muted-foreground truncate">Open in</span>
+          </div>
+          <div className="flex-1 min-w-0 pl-2">
+            <Tooltip delayDuration={500}>
+              <TooltipTrigger asChild>
+                <button
+                  type="button"
+                  onClick={handleOpenInEditor}
+                  className="flex items-center gap-1.5 text-xs text-foreground cursor-pointer rounded px-1.5 py-0.5 -ml-1.5 hover:bg-accent hover:text-accent-foreground transition-colors"
+                >
+                  {EDITOR_ICONS[preferredEditor] && (
+                    <img
+                      src={EDITOR_ICONS[preferredEditor]}
+                      alt=""
+                      className="h-3.5 w-3.5 flex-shrink-0"
+                    />
+                  )}
+                  {editorMeta.label}
+                </button>
+              </TooltipTrigger>
+              <TooltipContent>
+                Open in {editorMeta.label}
+                {openInEditorHotkey && <Kbd className="normal-case font-sans">{openInEditorHotkey}</Kbd>}
+              </TooltipContent>
+            </Tooltip>
+          </div>
+        </div>
       )}
     </div>
   )

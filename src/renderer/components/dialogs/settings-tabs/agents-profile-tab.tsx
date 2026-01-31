@@ -1,5 +1,4 @@
-import { useState, useEffect } from "react"
-import { Button } from "../../ui/button"
+import { useState, useEffect, useCallback, useRef } from "react"
 import { Input } from "../../ui/input"
 import { Label } from "../../ui/label"
 import { IconSpinner } from "../../../icons"
@@ -33,9 +32,9 @@ interface DesktopUser {
 export function AgentsProfileTab() {
   const [user, setUser] = useState<DesktopUser | null>(null)
   const [fullName, setFullName] = useState("")
-  const [isSaving, setIsSaving] = useState(false)
   const [isLoading, setIsLoading] = useState(true)
   const isNarrowScreen = useIsNarrowScreen()
+  const savedNameRef = useRef("")
 
   // Fetch real user data from desktop API
   useEffect(() => {
@@ -44,33 +43,32 @@ export function AgentsProfileTab() {
         const userData = await window.desktopApi.getUser()
         setUser(userData)
         setFullName(userData?.name || "")
+        savedNameRef.current = userData?.name || ""
       }
       setIsLoading(false)
     }
     fetchUser()
   }, [])
 
-  const handleSave = async () => {
-    setIsSaving(true)
+  const handleBlurSave = useCallback(async () => {
+    const trimmed = fullName.trim()
+    if (trimmed === savedNameRef.current) return
     try {
       if (window.desktopApi?.updateUser) {
-        const updatedUser = await window.desktopApi.updateUser({ name: fullName })
+        const updatedUser = await window.desktopApi.updateUser({ name: trimmed })
         if (updatedUser) {
           setUser(updatedUser)
-          toast.success("Profile updated successfully")
+          savedNameRef.current = updatedUser.name || ""
+          setFullName(updatedUser.name || "")
         }
-      } else {
-        throw new Error("Desktop API not available")
       }
     } catch (error) {
       console.error("Error updating profile:", error)
       toast.error(
         error instanceof Error ? error.message : "Failed to update profile"
       )
-    } finally {
-      setIsSaving(false)
     }
-  }
+  }, [fullName])
 
   if (isLoading) {
     return (
@@ -91,59 +89,42 @@ export function AgentsProfileTab() {
           </div>
         )}
         <div className="bg-background rounded-lg border border-border overflow-hidden">
-          <div className="p-4 space-y-6">
-            {/* Full Name Field */}
-            <div className="flex items-center justify-between">
-              <div className="flex-1">
-                <Label className="text-sm font-medium">Full Name</Label>
-                <p className="text-sm text-muted-foreground">
-                  This is your display name
-                </p>
-              </div>
-              <div className="flex-shrink-0 w-80">
-                <Input
-                  value={fullName}
-                  onChange={(e) => setFullName(e.target.value)}
-                  className="w-full"
-                  placeholder="Enter your name"
-                />
-              </div>
+          {/* Full Name Field */}
+          <div className="flex items-center justify-between p-4">
+            <div className="flex-1">
+              <Label className="text-sm font-medium">Full Name</Label>
+              <p className="text-sm text-muted-foreground">
+                This is your display name
+              </p>
             </div>
-
-            {/* Email Field (read-only) */}
-            <div className="flex items-center justify-between">
-              <div className="flex-1">
-                <Label className="text-sm font-medium">Email</Label>
-                <p className="text-sm text-muted-foreground">
-                  Your account email
-                </p>
-              </div>
-              <div className="flex-shrink-0 w-80">
-                <Input
-                  value={user?.email || ""}
-                  disabled
-                  className="w-full opacity-60"
-                />
-              </div>
+            <div className="flex-shrink-0 w-80">
+              <Input
+                value={fullName}
+                onChange={(e) => setFullName(e.target.value)}
+                onBlur={handleBlurSave}
+                className="w-full"
+                placeholder="Enter your name"
+              />
             </div>
           </div>
 
-          {/* Save Button Footer */}
-          <div className="bg-muted p-3 rounded-b-lg flex justify-end gap-3 border-t">
-            <Button
-              onClick={handleSave}
-              disabled={isSaving}
-              size="sm"
-              className="text-xs"
-            >
-              <div className="flex items-center justify-center gap-2">
-                {isSaving && (
-                  <IconSpinner className="h-3.5 w-3.5 text-current" />
-                )}
-                Save
-              </div>
-            </Button>
+          {/* Email Field (read-only) */}
+          <div className="flex items-center justify-between p-4 border-t border-border">
+            <div className="flex-1">
+              <Label className="text-sm font-medium">Email</Label>
+              <p className="text-sm text-muted-foreground">
+                Your account email
+              </p>
+            </div>
+            <div className="flex-shrink-0 w-80">
+              <Input
+                value={user?.email || ""}
+                disabled
+                className="w-full opacity-60"
+              />
+            </div>
           </div>
+
         </div>
       </div>
 

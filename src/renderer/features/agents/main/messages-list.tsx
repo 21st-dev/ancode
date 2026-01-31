@@ -1,15 +1,17 @@
 "use client"
 
-import { memo, useMemo, useRef, createContext, useContext, useSyncExternalStore, useCallback, useLayoutEffect } from "react"
 import { useAtomValue } from "jotai"
-import { AssistantMessageItem } from "./assistant-message-item"
+import { createContext, memo, useCallback, useContext, useLayoutEffect, useMemo, useRef, useSyncExternalStore } from "react"
+import { showMessageJsonAtom } from "../atoms"
+import { extractTextMentions, TextMentionBlocks } from "../mentions/render-file-mentions"
 import {
-  messageAtomFamily,
+  chatStatusAtom,
   isLastMessageAtomFamily,
   isStreamingAtom,
-  chatStatusAtom,
+  messageAtomFamily,
 } from "../stores/message-store"
-import { extractTextMentions, TextMentionBlocks } from "../mentions/render-file-mentions"
+import { MessageJsonDisplay } from "../ui/message-json-display"
+import { AssistantMessageItem } from "./assistant-message-item"
 
 // ============================================================================
 // MESSAGE STORE - External store for fine-grained subscriptions
@@ -972,6 +974,8 @@ export const SimpleIsolatedGroup = memo(function SimpleIsolatedGroup({
   // Subscribe to this specific user message and its assistant IDs
   const { userMsg, assistantMsgIds, isLastGroup } = useUserMessageWithAssistants(userMsgId)
   const { isStreaming } = useStreamingStatus()
+  const showMessageJson = useAtomValue(showMessageJsonAtom)
+  const isDev = import.meta.env.DEV
 
   if (!userMsg) return null
 
@@ -1088,6 +1092,13 @@ export const SimpleIsolatedGroup = memo(function SimpleIsolatedGroup({
           </div>
         )}
       </div>
+
+      {/* User message JSON display (dev only) */}
+      {isDev && showMessageJson && (
+        <div className="pointer-events-auto mt-1 mb-2">
+          <MessageJsonDisplay message={userMsg} label="User" />
+        </div>
+      )}
 
       {/* Assistant messages */}
       {assistantMsgIds.length > 0 && (

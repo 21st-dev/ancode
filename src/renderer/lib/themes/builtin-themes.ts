@@ -392,6 +392,327 @@ const VESPER_DARK: VSCodeFullTheme = {
     "terminal.ansiBrightCyan": "#99FFE4",
     "terminal.ansiBrightWhite": "#FFFFFF",
   },
+  tokenColors: [
+    {
+      name: "Comment",
+      scope: ["comment", "punctuation.definition.comment"],
+      settings: { foreground: "#8b8b8b94" },
+    },
+    {
+      name: "Variables",
+      scope: ["variable", "string constant.other.placeholder", "entity.name.tag"],
+      settings: { foreground: "#FFF" },
+    },
+    {
+      name: "Colors",
+      scope: ["constant.other.color"],
+      settings: { foreground: "#FFF" },
+    },
+    {
+      name: "Invalid",
+      scope: ["invalid", "invalid.illegal"],
+      settings: { foreground: "#FF8080" },
+    },
+    {
+      name: "Keyword, Storage",
+      scope: ["keyword", "storage.type", "storage.modifier"],
+      settings: { foreground: "#A0A0A0" },
+    },
+    {
+      name: "Operator, Misc",
+      scope: [
+        "keyword.control",
+        "constant.other.color",
+        "punctuation.definition.tag",
+        "punctuation.separator.inheritance.php",
+        "punctuation.definition.tag.html",
+        "punctuation.definition.tag.begin.html",
+        "punctuation.definition.tag.end.html",
+        "punctuation.section.embedded",
+        "keyword.other.template",
+        "keyword.other.substitution",
+      ],
+      settings: { foreground: "#A0A0A0" },
+    },
+    {
+      name: "Tag",
+      scope: ["entity.name.tag", "meta.tag.sgml", "markup.deleted.git_gutter"],
+      settings: { foreground: "#FFC799" },
+    },
+    {
+      name: "Function, Special Method",
+      scope: [
+        "entity.name.function",
+        "variable.function",
+        "support.function",
+        "keyword.other.special-method",
+      ],
+      settings: { foreground: "#FFC799" },
+    },
+    {
+      name: "Block Level Variables",
+      scope: ["meta.block variable.other"],
+      settings: { foreground: "#FFF" },
+    },
+    {
+      name: "Other Variable, String Link",
+      scope: ["support.other.variable", "string.other.link"],
+      settings: { foreground: "#FFF" },
+    },
+    {
+      name: "Number, Constant, Function Argument, Tag Attribute, Embedded",
+      scope: [
+        "constant.numeric",
+        "support.constant",
+        "constant.character",
+        "constant.escape",
+        "keyword.other.unit",
+        "keyword.other",
+        "constant.language.boolean",
+      ],
+      settings: { foreground: "#FFC799" },
+    },
+    {
+      name: "String, Symbols, Inherited Class",
+      scope: [
+        "string",
+        "constant.other.symbol",
+        "constant.other.key",
+        "meta.group.braces.curly constant.other.object.key.js string.unquoted.label.js",
+      ],
+      settings: { foreground: "#99FFE4" },
+    },
+    {
+      name: "Class, Support",
+      scope: [
+        "entity.name",
+        "support.type",
+        "support.class",
+        "support.other.namespace.use.php",
+        "meta.use.php",
+        "support.other.namespace.php",
+        "markup.changed.git_gutter",
+        "support.type.sys-types",
+      ],
+      settings: { foreground: "#FFC799" },
+    },
+    {
+      name: "CSS Class and Support",
+      scope: [
+        "source.css support.type.property-name",
+        "source.sass support.type.property-name",
+        "source.scss support.type.property-name",
+        "source.less support.type.property-name",
+        "source.stylus support.type.property-name",
+        "source.postcss support.type.property-name",
+        "support.type.vendored.property-name.css",
+        "source.css.scss entity.name.tag",
+        "variable.parameter.keyframe-list.css",
+        "meta.property-name.css",
+        "variable.parameter.url.scss",
+        "meta.property-value.scss",
+        "meta.property-value.css",
+      ],
+      settings: { foreground: "#FFF" },
+    },
+    {
+      name: "Sub-methods",
+      scope: [
+        "entity.name.module.js",
+        "variable.import.parameter.js",
+        "variable.other.class.js",
+      ],
+      settings: { foreground: "#FF8080" },
+    },
+    {
+      name: "Language methods",
+      scope: ["variable.language"],
+      settings: { foreground: "#A0A0A0" },
+    },
+    {
+      name: "entity.name.method.js",
+      scope: ["entity.name.method.js"],
+      settings: { foreground: "#FFF" },
+    },
+    {
+      name: "meta.method.js",
+      scope: [
+        "meta.class-method.js entity.name.function.js",
+        "variable.function.constructor",
+      ],
+      settings: { foreground: "#FFF" },
+    },
+    {
+      name: "Attributes",
+      scope: [
+        "entity.other.attribute-name",
+        "meta.property-list.scss",
+        "meta.attribute-selector.scss",
+        "meta.property-value.css",
+        "entity.other.keyframe-offset.css",
+        "meta.selector.css",
+        "entity.name.tag.reference.scss",
+        "entity.name.tag.nesting.css",
+        "punctuation.separator.key-value.css",
+      ],
+      settings: { foreground: "#A0A0A0" },
+    },
+    {
+      name: "HTML Attributes",
+      scope: [
+        "text.html.basic entity.other.attribute-name.html",
+        "text.html.basic entity.other.attribute-name",
+      ],
+      settings: { foreground: "#FFC799" },
+    },
+    {
+      name: "CSS Classes",
+      scope: [
+        "entity.other.attribute-name.class",
+        "entity.other.attribute-name.id",
+        "meta.attribute-selector.scss",
+        "variable.parameter.misc.css",
+      ],
+      settings: { foreground: "#FFC799" },
+    },
+    {
+      name: "CSS ID's",
+      scope: ["source.sass keyword.control", "meta.attribute-selector.scss"],
+      settings: { foreground: "#99FFE4" },
+    },
+    {
+      name: "Inserted",
+      scope: ["markup.inserted"],
+      settings: { foreground: "#99FFE4" },
+    },
+    {
+      name: "Deleted",
+      scope: ["markup.deleted"],
+      settings: { foreground: "#FF8080" },
+    },
+    {
+      name: "Changed",
+      scope: ["markup.changed"],
+      settings: { foreground: "#A0A0A0" },
+    },
+    {
+      name: "Regular Expressions",
+      scope: ["string.regexp"],
+      settings: { foreground: "#A0A0A0" },
+    },
+    {
+      name: "Escape Characters",
+      scope: ["constant.character.escape"],
+      settings: { foreground: "#A0A0A0" },
+    },
+    {
+      name: "URL",
+      scope: ["*url*", "*link*", "*uri*"],
+      settings: { fontStyle: "underline" },
+    },
+    {
+      name: "Decorators",
+      scope: [
+        "tag.decorator.js entity.name.tag.js",
+        "tag.decorator.js punctuation.definition.tag.js",
+      ],
+      settings: { foreground: "#FFF" },
+    },
+    {
+      name: "ES7 Bind Operator",
+      scope: ["source.js constant.other.object.key.js string.unquoted.label.js"],
+      settings: { fontStyle: "italic", foreground: "#FF8080" },
+    },
+    {
+      name: "JSON Key - Level 0",
+      scope: ["source.json meta.structure.dictionary.json support.type.property-name.json"],
+      settings: { foreground: "#FFC799" },
+    },
+    {
+      name: "JSON Key - Level 1",
+      scope: ["source.json meta.structure.dictionary.json meta.structure.dictionary.value.json meta.structure.dictionary.json support.type.property-name.json"],
+      settings: { foreground: "#FFC799" },
+    },
+    {
+      name: "Markdown - Plain",
+      scope: ["text.html.markdown", "punctuation.definition.list_item.markdown"],
+      settings: { foreground: "#FFF" },
+    },
+    {
+      name: "Markdown - Markup Raw Inline",
+      scope: ["text.html.markdown markup.inline.raw.markdown"],
+      settings: { foreground: "#A0A0A0" },
+    },
+    {
+      name: "Markdown - Heading",
+      scope: [
+        "markdown.heading",
+        "markup.heading | markup.heading entity.name",
+        "markup.heading.markdown punctuation.definition.heading.markdown",
+        "markup.heading",
+      ],
+      settings: { foreground: "#FFC799" },
+    },
+    {
+      name: "Markup - Italic",
+      scope: ["markup.italic"],
+      settings: { fontStyle: "italic", foreground: "#FFF" },
+    },
+    {
+      name: "Markup - Bold",
+      scope: ["markup.bold", "markup.bold string"],
+      settings: { fontStyle: "bold", foreground: "#FFF" },
+    },
+    {
+      name: "Markup - Underline",
+      scope: ["markup.underline"],
+      settings: { fontStyle: "underline", foreground: "#FFC799" },
+    },
+    {
+      name: "Markdown - Blockquote",
+      scope: ["markup.quote punctuation.definition.blockquote.markdown"],
+      settings: { foreground: "#FFF" },
+    },
+    {
+      name: "Markdown - Link",
+      scope: ["string.other.link.title.markdown"],
+      settings: { foreground: "#FFF" },
+    },
+    {
+      name: "Markdown - Link Description",
+      scope: ["string.other.link.description.title.markdown"],
+      settings: { foreground: "#A0A0A0" },
+    },
+    {
+      name: "Markdown - Link Anchor",
+      scope: ["constant.other.reference.link.markdown"],
+      settings: { foreground: "#FFC799" },
+    },
+    {
+      name: "Markup - Raw Block",
+      scope: ["markup.raw.block"],
+      settings: { foreground: "#A0A0A0" },
+    },
+    {
+      name: "Markdown - Fenced Code Block Variable",
+      scope: [
+        "markup.raw.block.fenced.markdown",
+        "variable.language.fenced.markdown",
+        "punctuation.section.class.end",
+      ],
+      settings: { foreground: "#FFF" },
+    },
+    {
+      name: "Markdown - Separator",
+      scope: ["meta.separator"],
+      settings: { fontStyle: "bold", foreground: "#65737E" },
+    },
+    {
+      name: "Markup - Table",
+      scope: ["markup.table"],
+      settings: { foreground: "#FFF" },
+    },
+  ],
 }
 
 /**
