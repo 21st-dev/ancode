@@ -488,6 +488,7 @@ type TokenData = {
   cacheWriteTokens: number
   reasoningTokens: number
   totalTokens: number
+  totalCostUsd: number
   messageCount: number
   // Track last message's output tokens to detect when streaming completes
   lastMsgOutputTokens: number
@@ -523,6 +524,7 @@ export const messageTokenDataAtom = atom((get) => {
   let cacheReadTokens = 0
   let cacheWriteTokens = 0
   let reasoningTokens = 0
+  let totalCostUsd = 0
 
   for (const id of ids) {
     const msg = get(messageAtomFamily(id))
@@ -532,6 +534,7 @@ export const messageTokenDataAtom = atom((get) => {
     if (metadata) {
       inputTokens += metadata.inputTokens || 0
       outputTokens += metadata.outputTokens || 0
+      totalCostUsd += metadata.totalCostUsd || 0
       // These fields are not in current MessageMetadata but kept for future compatibility
       cacheReadTokens += metadata.cacheReadInputTokens || 0
       cacheWriteTokens += metadata.cacheCreationInputTokens || 0
@@ -546,6 +549,7 @@ export const messageTokenDataAtom = atom((get) => {
     cacheWriteTokens,
     reasoningTokens,
     totalTokens: inputTokens + outputTokens,
+    totalCostUsd,
     messageCount: ids.length,
     lastMsgOutputTokens,
   }
@@ -715,10 +719,17 @@ export const syncMessagesWithStatusAtom = atom(
       // CRITICAL FIX: Also update if atom is null (not yet populated)
       if (msgChanged || !currentAtomValue) {
         // Deep clone message with new parts array and new part objects
-        // Only clone parts that exist to avoid unnecessary allocations
+        // Clone all nested objects (input, output, result, error) to ensure
+        // Jotai detects changes and components re-render properly
         const clonedMsg = {
           ...msg,
-          parts: msg.parts?.map((part: any) => ({ ...part, input: part.input ? { ...part.input } : undefined })),
+          parts: msg.parts?.map((part: any) => ({
+            ...part,
+            input: part.input ? { ...part.input } : undefined,
+            output: part.output ? { ...part.output } : undefined,
+            result: part.result ? { ...part.result } : undefined,
+            error: part.error ? { ...part.error } : undefined,
+          })),
         }
         set(messageAtomFamily(msg.id), clonedMsg)
       }

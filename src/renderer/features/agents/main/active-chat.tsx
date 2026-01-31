@@ -183,7 +183,7 @@ import {
 } from "../search"
 import { agentChatStore } from "../stores/agent-chat-store"
 import { EMPTY_QUEUE, useMessageQueueStore } from "../stores/message-queue-store"
-import { clearSubChatCaches, isRollingBackAtom, rollbackHandlerAtom, syncMessagesWithStatusAtom } from "../stores/message-store"
+import { clearSubChatCaches, isRollingBackAtom, messageTokenDataAtom, rollbackHandlerAtom, syncMessagesWithStatusAtom } from "../stores/message-store"
 import { useStreamingStatusStore } from "../stores/streaming-status-store"
 import {
   useAgentSubChatStore,
@@ -2572,21 +2572,16 @@ const ChatViewInner = memo(function ChatViewInner({
     [messages],
   )
 
-  // Pre-compute token data for ChatInputArea to avoid passing unstable messages array
-  // This prevents ChatInputArea from re-rendering on every streaming chunk
-  const messageTokenData = useMemo(() => {
-    let totalInputTokens = 0
-    let totalOutputTokens = 0
-    let totalCostUsd = 0
-    for (const msg of messages) {
-      if (msg.metadata) {
-        totalInputTokens += msg.metadata.inputTokens || 0
-        totalOutputTokens += msg.metadata.outputTokens || 0
-        totalCostUsd += msg.metadata.totalCostUsd || 0
-      }
-    }
-    return { totalInputTokens, totalOutputTokens, totalCostUsd, messageCount: messages.length }
-  }, [messages])
+  // Token data from centralized store - uses cached O(1) lookup during streaming
+  // Only recalculates when message count changes or last message's metadata updates
+  const storeTokenData = useAtomValue(messageTokenDataAtom)
+  // Map to expected field names for ChatInputArea
+  const messageTokenData = useMemo(() => ({
+    totalInputTokens: storeTokenData.inputTokens,
+    totalOutputTokens: storeTokenData.outputTokens,
+    totalCostUsd: storeTokenData.totalCostUsd,
+    messageCount: storeTokenData.messageCount,
+  }), [storeTokenData.inputTokens, storeTokenData.outputTokens, storeTokenData.totalCostUsd, storeTokenData.messageCount])
 
   // Track previous streaming state to detect stream stop
   const prevIsStreamingRef = useRef(isStreaming)
