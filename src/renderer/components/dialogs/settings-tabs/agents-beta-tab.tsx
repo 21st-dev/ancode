@@ -1,14 +1,21 @@
-import { useAtom, useAtomValue } from "jotai"
-import { useState, useEffect } from "react"
+import { useAtom } from "jotai"
+import { Check, Copy, RefreshCw } from "lucide-react"
+import { useEffect, useState } from "react"
+import { useQuery } from "@tanstack/react-query"
 import {
-  historyEnabledAtom,
-  showOfflineModeFeaturesAtom,
   autoOfflineModeAtom,
-  selectedOllamaModelAtom,
+  betaAutomationsEnabledAtom,
   betaKanbanEnabledAtom,
+  enableTasksAtom,
+  historyEnabledAtom,
+  selectedOllamaModelAtom,
+  showOfflineModeFeaturesAtom,
 } from "../../../lib/atoms"
 import { trpc } from "../../../lib/trpc"
-import { Switch } from "../../ui/switch"
+import { remoteTrpc } from "../../../lib/remote-trpc"
+import { cn } from "../../../lib/utils"
+import { Button } from "../../ui/button"
+import { ExternalLinkIcon } from "../../ui/icons"
 import {
   Select,
   SelectContent,
@@ -16,10 +23,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "../../ui/select"
-import { ExternalLinkIcon } from "../../ui/icons"
-import { Copy, Check, RefreshCw } from "lucide-react"
-import { Button } from "../../ui/button"
-import { cn } from "../../../lib/utils"
+import { Switch } from "../../ui/switch"
 
 // Hook to detect narrow screen
 function useIsNarrowScreen(): boolean {
@@ -48,6 +52,17 @@ export function AgentsBetaTab() {
   const [autoOffline, setAutoOffline] = useAtom(autoOfflineModeAtom)
   const [selectedOllamaModel, setSelectedOllamaModel] = useAtom(selectedOllamaModelAtom)
   const [kanbanEnabled, setKanbanEnabled] = useAtom(betaKanbanEnabledAtom)
+  const [automationsEnabled, setAutomationsEnabled] = useAtom(betaAutomationsEnabledAtom)
+  const [enableTasks, setEnableTasks] = useAtom(enableTasksAtom)
+
+  // Check subscription to gate automations behind paid plan
+  const { data: subscription } = useQuery({
+    queryKey: ["agents", "subscription"],
+    queryFn: () => remoteTrpc.agents.getAgentsSubscription.query(),
+  })
+  const isPaidPlan = subscription?.type !== "free" && !!subscription?.type
+  const isDev = process.env.NODE_ENV === "development"
+  const canEnableAutomations = isPaidPlan || isDev
   const [copied, setCopied] = useState(false)
   const [updateStatus, setUpdateStatus] = useState<"idle" | "checking" | "available" | "not-available" | "error">("idle")
   const [updateVersion, setUpdateVersion] = useState<string | null>(null)
@@ -156,6 +171,45 @@ export function AgentsBetaTab() {
             <Switch
               checked={kanbanEnabled}
               onCheckedChange={setKanbanEnabled}
+            />
+          </div>
+
+          {/* Automations & Inbox Toggle */}
+          <div className="flex items-start justify-between">
+            <div className="flex flex-col space-y-1">
+              <span className={cn("text-sm font-medium", canEnableAutomations ? "text-foreground" : "text-muted-foreground")}>
+                Automations & Inbox
+              </span>
+              <span className="text-xs text-muted-foreground">
+                {canEnableAutomations
+                  ? "Automate workflows with GitHub and Linear triggers, and manage inbox notifications."
+                  : "Requires a paid plan. Upgrade to enable automations and inbox."}
+              </span>
+            </div>
+            <Switch
+              checked={automationsEnabled && canEnableAutomations}
+              onCheckedChange={(checked) => {
+                if (canEnableAutomations) {
+                  setAutomationsEnabled(checked)
+                }
+              }}
+              disabled={!canEnableAutomations}
+            />
+          </div>
+
+          {/* Agent Tasks Toggle */}
+          <div className="flex items-start justify-between">
+            <div className="flex flex-col space-y-1">
+              <span className="text-sm font-medium text-foreground">
+                Agent Tasks
+              </span>
+              <span className="text-xs text-muted-foreground">
+                Enable Task instead of legacy Todo system.
+              </span>
+            </div>
+            <Switch
+              checked={enableTasks}
+              onCheckedChange={setEnableTasks}
             />
           </div>
         </div>

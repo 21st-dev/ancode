@@ -1,8 +1,4 @@
 /**
- * Shared utility functions for file viewers
- */
-
-/**
  * Get file name from path
  */
 export function getFileName(filePath: string): string {

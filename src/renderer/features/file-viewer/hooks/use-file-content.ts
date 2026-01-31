@@ -4,11 +4,7 @@ import { trpc } from "../../../lib/trpc"
 /**
  * Error reasons for file loading failures
  */
-export type FileLoadError =
-  | "not-found"
-  | "too-large"
-  | "binary"
-  | "unknown"
+export type FileLoadError = "not-found" | "too-large" | "binary" | "unknown"
 
 /**
  * Result of file content loading
@@ -41,19 +37,17 @@ export function getErrorMessage(error: FileLoadError): string {
 /**
  * Hook to fetch file content from the backend
  * Uses the files.readTextFile procedure with absolute path
+ * Auto-refetches when the file changes on disk
  */
 export function useFileContent(
   projectPath: string | null,
   filePath: string | null,
 ): FileContentResult {
-  // Build absolute path like DataViewerSidebar does
   const absolutePath = useMemo(() => {
     if (!projectPath || !filePath) return null
-    const path = filePath.startsWith("/")
+    return filePath.startsWith("/")
       ? filePath
       : `${projectPath}/${filePath}`
-    // console.log("[useFileContent] Building path:", { projectPath, filePath, absolutePath: path })
-    return path
   }, [projectPath, filePath])
 
   const enabled = !!absolutePath
@@ -62,12 +56,11 @@ export function useFileContent(
     { filePath: absolutePath || "" },
     {
       enabled,
-      staleTime: 30000, // Cache for 30 seconds
+      staleTime: 30000,
       refetchOnWindowFocus: false,
     },
   )
 
-  // Store refetch in a ref so subscription callback always has current refetch
   const refetchRef = useRef(refetch)
   useEffect(() => {
     refetchRef.current = refetch
@@ -76,18 +69,12 @@ export function useFileContent(
   // Compute relative path for matching against file change events
   const relativePath = useMemo(() => {
     if (!projectPath || !filePath) return null
-    // If filePath is already relative, return it
     if (!filePath.startsWith("/")) return filePath
-    // If filePath starts with projectPath, extract the relative part
-    // Ensure we match the full directory path by checking for trailing separator
     const projectPathWithSep = projectPath.endsWith("/") ? projectPath : `${projectPath}/`
     if (filePath.startsWith(projectPathWithSep)) {
       return filePath.slice(projectPathWithSep.length)
     }
-    // Handle exact match (filePath equals projectPath)
-    if (filePath === projectPath) {
-      return ""
-    }
+    if (filePath === projectPath) return ""
     return filePath
   }, [projectPath, filePath])
 
@@ -97,7 +84,6 @@ export function useFileContent(
     {
       enabled: !!projectPath && !!relativePath,
       onData: (change) => {
-        // Check if the changed file matches the one we're viewing
         if (change.filename === relativePath) {
           refetchRef.current()
         }
@@ -105,33 +91,16 @@ export function useFileContent(
     },
   )
 
-  // Return result based on query state
   return useMemo((): FileContentResult => {
-    // console.log("[useFileContent] Computing result:", { enabled, isLoading, error, data })
-
     if (!enabled) {
-      return {
-        content: null,
-        isLoading: false,
-        error: null,
-        byteLength: null,
-        refetch: () => {},
-      }
+      return { content: null, isLoading: false, error: null, byteLength: null, refetch: () => {} }
     }
 
     if (isLoading) {
-      return {
-        content: null,
-        isLoading: true,
-        error: null,
-        byteLength: null,
-        refetch,
-      }
+      return { content: null, isLoading: true, error: null, byteLength: null, refetch }
     }
 
     if (error) {
-      console.error("[useFileContent] Query error:", error)
-      // Check if it's a file not found error
       const errorMessage = error.message?.toLowerCase() || ""
       const isNotFound = errorMessage.includes("enoent") ||
                          errorMessage.includes("not found") ||
@@ -146,28 +115,13 @@ export function useFileContent(
     }
 
     if (!data) {
-      // console.log("[useFileContent] No data returned")
-      return {
-        content: null,
-        isLoading: false,
-        error: "unknown",
-        byteLength: null,
-        refetch,
-      }
+      return { content: null, isLoading: false, error: "unknown", byteLength: null, refetch }
     }
 
     if (data.ok) {
-      // console.log("[useFileContent] Success:", data.byteLength, "bytes")
-      return {
-        content: data.content,
-        isLoading: false,
-        error: null,
-        byteLength: data.byteLength,
-        refetch,
-      }
+      return { content: data.content, isLoading: false, error: null, byteLength: data.byteLength, refetch }
     }
 
-    // console.log("[useFileContent] Server returned error:", data.reason)
     return {
       content: null,
       isLoading: false,

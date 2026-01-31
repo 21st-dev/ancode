@@ -4,7 +4,7 @@ import { memo, useMemo, useState, useCallback } from "react"
 import { useAtomValue } from "jotai"
 import { cn } from "@/lib/utils"
 import { PlanIcon, CheckIcon, IconArrowRight, ExpandIcon, CollapseIcon } from "@/components/ui/icons"
-import { currentTodosAtomFamily } from "@/features/agents/atoms"
+import { currentTodosAtomFamily, currentTaskToolsAtomFamily } from "@/features/agents/atoms"
 
 interface TodoItem {
   content: string
@@ -154,18 +154,38 @@ const TodoListItem = ({
 
 /**
  * To-do list Widget for Overview Sidebar
- * Shows active todos from selected sub-chat
- * Matches the visual style of AgentTodoTool exactly
- * Memoized to prevent re-renders when parent updates
+ * Shows active todos from selected sub-chat.
+ * Supports both legacy TodoWrite tool and new TaskCreate/TaskUpdate tools.
+ * Prefers new task tools data when available.
+ * Memoized to prevent re-renders when parent updates.
  */
 export const TodoWidget = memo(function TodoWidget({ subChatId }: TodoWidgetProps) {
-  // Get todos from the active sub-chat
+  // Get todos from the legacy TodoWrite tool
   const todosAtom = useMemo(
     () => currentTodosAtomFamily(subChatId || "default"),
     [subChatId],
   )
   const todoState = useAtomValue(todosAtom)
-  const todos = todoState.todos
+  const legacyTodos = todoState.todos
+
+  // Get tasks from the new TaskCreate/TaskUpdate tools
+  const taskToolsAtom = useMemo(
+    () => currentTaskToolsAtomFamily(subChatId || "default"),
+    [subChatId],
+  )
+  const taskToolsState = useAtomValue(taskToolsAtom)
+
+  // Merge: prefer new task tools if they have data, otherwise fall back to legacy todos
+  const todos: TodoItem[] = useMemo(() => {
+    if (taskToolsState.tasks.length > 0) {
+      return taskToolsState.tasks.map((task) => ({
+        content: `${task.id}. ${task.subject}`,
+        status: task.status,
+        activeForm: task.activeForm,
+      }))
+    }
+    return legacyTodos
+  }, [taskToolsState.tasks, legacyTodos])
 
   // Expanded/collapsed state
   const [isExpanded, setIsExpanded] = useState(true)

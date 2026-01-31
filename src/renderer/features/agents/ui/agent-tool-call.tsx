@@ -16,6 +16,7 @@ interface AgentToolCallProps {
   isPending: boolean
   isError: boolean
   isNested?: boolean
+  onClick?: () => void
 }
 
 export const AgentToolCall = memo(
@@ -27,19 +28,25 @@ export const AgentToolCall = memo(
     isPending,
     isError: _isError,
     isNested,
+    onClick,
   }: AgentToolCallProps) {
     // Ensure title and subtitle are strings (copied from canvas)
     const titleStr = String(title)
     const subtitleStr = subtitle ? String(subtitle) : undefined
 
     // Render subtitle with optional tooltip
+    const clickableClass = onClick
+      ? " cursor-pointer hover:text-muted-foreground transition-colors"
+      : ""
+
     const subtitleElement = subtitleStr ? (
       tooltipContent ? (
         <Tooltip>
           <TooltipTrigger asChild>
             <span
-              className="text-muted-foreground/60 font-normal truncate min-w-0"
+              className={`text-muted-foreground/60 font-normal truncate min-w-0${clickableClass}`}
               dangerouslySetInnerHTML={{ __html: subtitleStr }}
+              onClick={onClick}
             />
           </TooltipTrigger>
           <TooltipContent
@@ -53,8 +60,9 @@ export const AgentToolCall = memo(
         </Tooltip>
       ) : (
         <span
-          className="text-muted-foreground/60 font-normal truncate min-w-0"
+          className={`text-muted-foreground/60 font-normal truncate min-w-0${clickableClass}`}
           dangerouslySetInnerHTML={{ __html: subtitleStr }}
+          onClick={onClick}
         />
       )
     ) : null
@@ -100,7 +108,8 @@ export const AgentToolCall = memo(
       prevProps.tooltipContent === nextProps.tooltipContent &&
       prevProps.isPending === nextProps.isPending &&
       prevProps.isError === nextProps.isError &&
-      prevProps.isNested === nextProps.isNested
+      prevProps.isNested === nextProps.isNested &&
+      prevProps.onClick === nextProps.onClick
     )
   },
 )

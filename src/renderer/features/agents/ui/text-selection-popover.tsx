@@ -78,8 +78,8 @@ export function TextSelectionPopover({
     }
   }, [isMouseDown, selectedText, source, selectionRect])
 
-  // Don't render if not visible
-  if (!isVisible || !selectedText || !source || !selectionRect) {
+  // Don't render if not visible or if source is file-viewer (uses context menu instead)
+  if (!isVisible || !selectedText || !source || !selectionRect || source.type === "file-viewer") {
     return null
   }
 

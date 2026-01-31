@@ -16,6 +16,7 @@ export type TextSelectionSource =
   | { type: "diff"; filePath: string; lineNumber?: number; lineType?: "old" | "new" }
   | { type: "tool-edit"; filePath: string; isWrite: boolean }
   | { type: "plan"; planPath: string }
+  | { type: "file-viewer"; filePath: string }
 
 export interface TextSelectionState {
   selectedText: string | null
@@ -180,16 +181,29 @@ export function TextSelectionProvider({
           "[data-diff-file-path]"
         ) as HTMLElement | null
 
+        // Check for file viewer content
+        const fileViewerElement = element?.closest?.(
+          "[data-file-viewer-path]"
+        ) as HTMLElement | null
+
         // Check for plan sidebar content
         const planElement = element?.closest?.(
           "[data-plan-path]"
         ) as HTMLElement | null
 
         // Build the source based on what we found
-        // Priority: plan > tool-edit > diff > assistant-message
+        // Priority: file-viewer > plan > tool-edit > diff > assistant-message
         let source: TextSelectionSource | null = null
 
-        if (planElement) {
+        if (fileViewerElement) {
+          const filePath = fileViewerElement.getAttribute("data-file-viewer-path") || "unknown"
+          source = {
+            type: "file-viewer",
+            filePath,
+          }
+        }
+
+        if (!source && planElement) {
           // Plan selection - extract plan path from data attribute
           const planPath = planElement.getAttribute("data-plan-path") || "unknown"
           source = {
@@ -255,8 +269,29 @@ export function TextSelectionProvider({
 
     document.addEventListener("selectionchange", handleSelectionChange)
 
+    // Listen for Monaco editor selection changes (Monaco doesn't fire native selectionchange)
+    const handleMonacoSelection = (e: Event) => {
+      const detail = (e as CustomEvent).detail as {
+        text: string | null
+        source: TextSelectionSource | null
+        rect: DOMRect | null
+      }
+      if (!detail.text) {
+        setState({ selectedText: null, source: null, selectionRect: null })
+      } else {
+        setState({
+          selectedText: detail.text,
+          source: detail.source,
+          selectionRect: detail.rect,
+        })
+      }
+    }
+
+    window.addEventListener("monaco-selection-change", handleMonacoSelection)
+
     return () => {
       document.removeEventListener("selectionchange", handleSelectionChange)
+      window.removeEventListener("monaco-selection-change", handleMonacoSelection)
       if (rafId !== null) {
         cancelAnimationFrame(rafId)
       }

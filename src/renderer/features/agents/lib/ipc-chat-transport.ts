@@ -3,27 +3,30 @@ import type { ChatTransport, UIMessage } from "ai"
 import { toast } from "sonner"
 import {
   agentsLoginModalOpenAtom,
-  customClaudeConfigAtom,
-  extendedThinkingEnabledAtom,
-  historyEnabledAtom,
-  sessionInfoAtom,
-  selectedOllamaModelAtom,
-  showOfflineModeFeaturesAtom,
   autoOfflineModeAtom,
   type CustomClaudeConfig,
+  customClaudeConfigAtom,
+  enableTasksAtom,
+  extendedThinkingEnabledAtom,
+  historyEnabledAtom,
   normalizeCustomClaudeConfig,
+  selectedOllamaModelAtom,
+  sessionInfoAtom,
+  showOfflineModeFeaturesAtom,
 } from "../../../lib/atoms"
 import { appStore } from "../../../lib/jotai-store"
 import { trpcClient } from "../../../lib/trpc"
 import {
   askUserQuestionResultsAtom,
   compactingSubChatsAtom,
+  expiredUserQuestionsAtom,
   lastSelectedModelIdAtom,
   MODEL_ID_MAP,
   pendingAuthRetryMessageAtom,
   pendingUserQuestionsAtom,
 } from "../atoms"
 import { useAgentSubChatStore } from "../stores/sub-chat-store"
+import type { AgentMessageMetadata } from "../ui/agent-message-usage"
 
 // Error categories and their user-friendly messages
 const ERROR_TOAST_CONFIG: Record<
@@ -149,11 +152,13 @@ export class IPCChatTransport implements ChatTransport<UIMessage> {
     const prompt = this.extractText(lastUser)
     const images = this.extractImages(lastUser)
 
-    // Get sessionId for resume
+    // Get sessionId for resume (server preserves sessionId on abort so
+    // the next message can resume with full conversation context)
     const lastAssistant = [...options.messages]
       .reverse()
       .find((m) => m.role === "assistant")
-    const sessionId = (lastAssistant as any)?.metadata?.sessionId
+    const metadata = lastAssistant?.metadata as AgentMessageMetadata | undefined
+    const sessionId = metadata?.sessionId
 
     // Read extended thinking setting dynamically (so toggle applies to existing chats)
     const thinkingEnabled = appStore.get(extendedThinkingEnabledAtom)
@@ -162,10 +167,11 @@ export class IPCChatTransport implements ChatTransport<UIMessage> {
     // Using 32000 to stay safely under the 64000 max output tokens limit
     const maxThinkingTokens = thinkingEnabled ? 32_000 : undefined
     const historyEnabled = appStore.get(historyEnabledAtom)
+    const enableTasks = appStore.get(enableTasksAtom)
 
     // Read model selection dynamically (so model changes apply to existing chats)
     const selectedModelId = appStore.get(lastSelectedModelIdAtom)
-    const modelString = MODEL_ID_MAP[selectedModelId]
+    const modelString = MODEL_ID_MAP[selectedModelId] || MODEL_ID_MAP["opus"]
 
     const storedCustomConfig = appStore.get(
       customClaudeConfigAtom,
@@ -208,6 +214,7 @@ export class IPCChatTransport implements ChatTransport<UIMessage> {
             ...(selectedOllamaModel && { selectedOllamaModel }),
             historyEnabled,
             offlineModeEnabled,
+            enableTasks,
             ...(images.length > 0 && { images }),
           },
           {
@@ -226,16 +233,31 @@ export class IPCChatTransport implements ChatTransport<UIMessage> {
                   questions: chunk.questions,
                 })
                 appStore.set(pendingUserQuestionsAtom, newMap)
+
+                // Clear any expired question (new question replaces it)
+                const currentExpired = appStore.get(expiredUserQuestionsAtom)
+                if (currentExpired.has(this.config.subChatId)) {
+                  const newExpiredMap = new Map(currentExpired)
+                  newExpiredMap.delete(this.config.subChatId)
+                  appStore.set(expiredUserQuestionsAtom, newExpiredMap)
+                }
               }
 
-              // Handle AskUserQuestion timeout - clear pending question immediately
+              // Handle AskUserQuestion timeout - move to expired (keep UI visible)
               if (chunk.type === "ask-user-question-timeout") {
                 const currentMap = appStore.get(pendingUserQuestionsAtom)
                 const pending = currentMap.get(this.config.subChatId)
                 if (pending && pending.toolUseId === chunk.toolUseId) {
-                  const newMap = new Map(currentMap)
-                  newMap.delete(this.config.subChatId)
-                  appStore.set(pendingUserQuestionsAtom, newMap)
+                  // Remove from pending
+                  const newPendingMap = new Map(currentMap)
+                  newPendingMap.delete(this.config.subChatId)
+                  appStore.set(pendingUserQuestionsAtom, newPendingMap)
+
+                  // Move to expired (so UI keeps showing the question)
+                  const currentExpired = appStore.get(expiredUserQuestionsAtom)
+                  const newExpiredMap = new Map(currentExpired)
+                  newExpiredMap.set(this.config.subChatId, pending)
+                  appStore.set(expiredUserQuestionsAtom, newExpiredMap)
                 }
               }
 
@@ -297,6 +319,10 @@ export class IPCChatTransport implements ChatTransport<UIMessage> {
                   newMap.delete(this.config.subChatId)
                   appStore.set(pendingUserQuestionsAtom, newMap)
                 }
+                // NOTE: Do NOT clear expired questions here. After a timeout,
+                // the agent continues and emits new chunks — that's expected.
+                // Expired questions should persist until the user answers,
+                // dismisses, or sends a new message.
               }
 
               // Handle authentication errors - show Claude login modal
@@ -441,7 +467,7 @@ export class IPCChatTransport implements ChatTransport<UIMessage> {
         options.abortSignal?.addEventListener("abort", () => {
           console.log(`[SD] R:ABORT sub=${subId} n=${chunkCount} last=${lastChunkType}`)
           sub.unsubscribe()
-          trpcClient.claude.cancel.mutate({ subChatId: this.config.subChatId })
+          // trpcClient.claude.cancel.mutate({ subChatId: this.config.subChatId })
           try {
             controller.close()
           } catch {

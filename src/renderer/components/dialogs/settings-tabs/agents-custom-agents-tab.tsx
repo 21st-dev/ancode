@@ -1,6 +1,8 @@
 import { useState, useEffect } from "react"
+import { useAtomValue } from "jotai"
 import { ChevronRight, Trash2 } from "lucide-react"
 import { motion, AnimatePresence } from "motion/react"
+import { selectedProjectAtom } from "../../../features/agents/atoms"
 import { trpc } from "../../../lib/trpc"
 import { cn } from "../../../lib/utils"
 import { AgentIcon } from "../../ui/icons"
@@ -36,10 +38,11 @@ interface FileAgent {
 export function AgentsCustomAgentsTab() {
   const isNarrowScreen = useIsNarrowScreen()
   const [expandedAgentName, setExpandedAgentName] = useState<string | null>(null)
+  const selectedProject = useAtomValue(selectedProjectAtom)
 
   const utils = trpc.useUtils()
-  const { data: agents = [], isLoading } = trpc.agents.listEnabled.useQuery(
-    undefined,
+  const { data: agents = [], isLoading } = trpc.agents.list.useQuery(
+    selectedProject?.path ? { cwd: selectedProject.path } : undefined,
     { staleTime: 0 } // Always refetch when settings opens
   )
 
@@ -47,7 +50,7 @@ export function AgentsCustomAgentsTab() {
 
   const deleteAgentMutation = trpc.agents.delete.useMutation({
     onSuccess: () => {
-      utils.agents.listEnabled.invalidate()
+      utils.agents.list.invalidate()
     },
     onError: (error) => {
       console.error("Failed to delete agent:", error.message)

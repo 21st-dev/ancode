@@ -2,6 +2,7 @@
 
 import { memo, useState, useMemo } from "react"
 import { Check, X } from "lucide-react"
+import { useAtomValue } from "jotai"
 import {
   IconSpinner,
   ExpandIcon,
@@ -12,6 +13,7 @@ import { getToolStatus } from "./agent-tool-registry"
 import { AgentToolInterrupted } from "./agent-tool-interrupted"
 import { areToolPropsEqual } from "./agent-tool-utils"
 import { cn } from "../../../lib/utils"
+import { selectedProjectAtom } from "../atoms"
 
 interface AgentBashToolProps {
   part: any
@@ -34,6 +36,13 @@ function extractCommandSummary(command: string): string {
   return limited.join(", ")
 }
 
+// Replace absolute project paths with relative paths in a string
+function shortenPaths(text: string, projectPath: string | undefined): string {
+  if (!text || !projectPath) return text
+  // Replace project path (with trailing slash) with empty string
+  return text.replaceAll(projectPath + "/", "").replaceAll(projectPath, ".")
+}
+
 // Limit output to first N lines
 function limitLines(text: string, maxLines: number): { text: string; truncated: boolean } {
   if (!text) return { text: "", truncated: false }
@@ -52,6 +61,8 @@ export const AgentBashTool = memo(function AgentBashTool({
 }: AgentBashToolProps) {
   const [isOutputExpanded, setIsOutputExpanded] = useState(false)
   const { isPending } = getToolStatus(part, chatStatus)
+  const selectedProject = useAtomValue(selectedProjectAtom)
+  const projectPath = selectedProject?.path
 
   const command = part.input?.command || ""
   const stdout = part.output?.stdout || part.output?.output || ""
@@ -72,10 +83,16 @@ export const AgentBashTool = memo(function AgentBashTool({
   const stderrLimited = useMemo(() => limitLines(stderr, MAX_OUTPUT_LINES), [stderr])
   const hasMoreOutput = stdoutLimited.truncated || stderrLimited.truncated
 
+  // Shorten paths in the displayed command
+  const displayCommand = useMemo(
+    () => shortenPaths(command, projectPath),
+    [command, projectPath],
+  )
+
   // Memoize command summary to avoid recalculation on every render
   const commandSummary = useMemo(
-    () => extractCommandSummary(command),
-    [command],
+    () => extractCommandSummary(displayCommand),
+    [displayCommand],
   )
 
   // Check if command input is still being streamed
@@ -131,40 +148,44 @@ export const AgentBashTool = memo(function AgentBashTool({
         </span>
 
         {/* Status and expand button */}
-        <div className="flex items-center gap-2 flex-shrink-0 ml-2">
-          {/* Status - min-width ensures no layout shift */}
-          <div className="flex items-center gap-1 text-xs text-muted-foreground min-w-[60px] justify-end">
+        <div className="flex items-center gap-1.5 flex-shrink-0 ml-2">
+          {/* Status */}
+          {!isPending && (
+            <div className="flex items-center gap-1 text-xs text-muted-foreground">
+              {isSuccess ? (
+                <>
+                  <Check className="w-3 h-3" />
+                  <span>Success</span>
+                </>
+              ) : isError ? (
+                <>
+                  <X className="w-3 h-3" />
+                  <span>Failed</span>
+                </>
+              ) : null}
+            </div>
+          )}
+
+          {/* Expand/Collapse button or spinner */}
+          <div className="w-6 h-6 flex items-center justify-center">
             {isPending ? (
               <IconSpinner className="w-3 h-3" />
-            ) : isSuccess ? (
-              <>
-                <Check className="w-3 h-3" />
-                <span>Success</span>
-              </>
-            ) : isError ? (
-              <>
-                <X className="w-3 h-3" />
-                <span>Failed</span>
-              </>
+            ) : hasOutput && hasMoreOutput ? (
+              <button
+                onClick={(e) => {
+                  e.stopPropagation()
+                  setIsOutputExpanded(!isOutputExpanded)
+                }}
+                className="p-1 rounded-md hover:bg-accent transition-[background-color,transform] duration-150 ease-out active:scale-95"
+              >
+                {isOutputExpanded ? (
+                  <CollapseIcon className="w-4 h-4 text-muted-foreground" />
+                ) : (
+                  <ExpandIcon className="w-4 h-4 text-muted-foreground" />
+                )}
+              </button>
             ) : null}
           </div>
-
-          {/* Expand/Collapse button - only show when not pending and has output that can be expanded */}
-          {!isPending && hasOutput && hasMoreOutput && (
-            <button
-              onClick={(e) => {
-                e.stopPropagation()
-                setIsOutputExpanded(!isOutputExpanded)
-              }}
-              className="p-1 rounded-md hover:bg-accent transition-[background-color,transform] duration-150 ease-out active:scale-95"
-            >
-              {isOutputExpanded ? (
-                <CollapseIcon className="w-4 h-4 text-muted-foreground" />
-              ) : (
-                <ExpandIcon className="w-4 h-4 text-muted-foreground" />
-              )}
-            </button>
-          )}
         </div>
       </div>
 
@@ -182,7 +203,7 @@ export const AgentBashTool = memo(function AgentBashTool({
         <div className="font-mono text-xs">
           <span className="text-amber-600 dark:text-amber-400">$ </span>
           <span className="text-foreground whitespace-pre-wrap break-all">
-            {command}
+            {displayCommand}
           </span>
         </div>
 

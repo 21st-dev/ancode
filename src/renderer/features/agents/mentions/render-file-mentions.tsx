@@ -1,6 +1,6 @@
 "use client"
 
-import { useMemo } from "react"
+import { createContext, useContext, useMemo } from "react"
 import { getFileIconByExtension } from "./agents-file-mention"
 import { FilesIcon, SkillIcon, CustomAgentIcon, OriginalMCPIcon } from "../../../components/ui/icons"
 import { MENTION_PREFIXES } from "./agents-mentions-editor"
@@ -9,6 +9,35 @@ import {
   HoverCardContent,
   HoverCardTrigger,
 } from "../../../components/ui/hover-card"
+
+/**
+ * Context for opening files in the file viewer sidebar.
+ * Provided by ChatView, consumed by MentionChip.
+ */
+type FileOpenHandler = (filePath: string) => void
+const FileOpenContext = createContext<FileOpenHandler | null>(null)
+
+export function FileOpenProvider({
+  onOpenFile,
+  children,
+}: {
+  onOpenFile: FileOpenHandler
+  children: React.ReactNode
+}) {
+  return (
+    <FileOpenContext.Provider value={onOpenFile}>
+      {children}
+    </FileOpenContext.Provider>
+  )
+}
+
+/**
+ * Hook to access the file open handler from any child component.
+ * Returns null if not inside a FileOpenProvider.
+ */
+export function useFileOpen(): FileOpenHandler | null {
+  return useContext(FileOpenContext)
+}
 
 // UTF-8 safe base64 decoding (atob doesn't support Unicode)
 function base64ToUtf8(base64: string): string {
@@ -291,6 +320,9 @@ function MentionChip({ mention }: { mention: ParsedMention }) {
     )
   }
 
+  const onOpenFile = useContext(FileOpenContext)
+  const isClickable = (mention.type === "file" || mention.type === "folder") && !!onOpenFile
+
   const Icon = mention.type === "skill"
     ? SkillIcon
     : mention.type === "agent"
@@ -311,8 +343,9 @@ function MentionChip({ mention }: { mention: ParsedMention }) {
 
   return (
     <span
-      className="inline-flex items-center gap-1 px-[6px] rounded-[6px] text-sm align-middle bg-black/[0.04] dark:bg-white/[0.08] text-foreground/80 select-none"
+      className={`inline-flex items-center gap-1 px-[6px] rounded-[6px] text-sm align-middle bg-black/[0.04] dark:bg-white/[0.08] text-foreground/80 select-none${isClickable ? " cursor-pointer hover:bg-black/[0.08] dark:hover:bg-white/[0.12] transition-colors" : ""}`}
       title={title}
+      onClick={isClickable ? () => onOpenFile(mention.path) : undefined}
     >
       <Icon className={mention.type === "tool" ? "h-3.5 w-3.5 text-muted-foreground flex-shrink-0" : "h-3 w-3 text-muted-foreground flex-shrink-0"} />
       <span>{mention.label}</span>

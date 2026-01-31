@@ -39,6 +39,23 @@ export const terminalCwdAtom = atomWithWindowStorage<Record<string, string>>(
   { getOnInit: true },
 )
 
+// Terminal display mode - sidebar (right) or bottom panel
+export type TerminalDisplayMode = "side-peek" | "bottom"
+
+export const terminalDisplayModeAtom = atomWithStorage<TerminalDisplayMode>(
+  "terminal-display-mode",
+  "side-peek",
+  undefined,
+  { getOnInit: true },
+)
+
+export const terminalBottomHeightAtom = atomWithStorage<number>(
+  "terminal-bottom-height",
+  300,
+  undefined,
+  { getOnInit: true },
+)
+
 // Terminal search open state - maps paneId to search visibility
 export const terminalSearchOpenAtom = atom<Record<string, boolean>>({})
 

@@ -2,6 +2,7 @@
 
 import { memo, useState, useEffect, useRef } from "react"
 import { ChevronRight } from "lucide-react"
+import { useFileOpen } from "../mentions"
 import { AgentToolRegistry, getToolStatus } from "./agent-tool-registry"
 import { AgentToolCall } from "./agent-tool-call"
 import { areExploringGroupPropsEqual } from "./agent-tool-utils"
@@ -22,6 +23,7 @@ export const AgentExploringGroup = memo(function AgentExploringGroup({
   chatStatus,
   isStreaming,
 }: AgentExploringGroupProps) {
+  const onOpenFile = useFileOpen()
   // Default: expanded while streaming, collapsed when done
   const [isExpanded, setIsExpanded] = useState(isStreaming)
   const scrollRef = useRef<HTMLDivElement>(null)
@@ -129,6 +131,9 @@ export const AgentExploringGroup = memo(function AgentExploringGroup({
                 )
               }
               const { isPending, isError } = getToolStatus(part, chatStatus)
+              const handleClick = part.type === "tool-Read" && onOpenFile && part.input?.file_path
+                ? () => onOpenFile(part.input.file_path)
+                : undefined
               return (
                 <AgentToolCall
                   key={idx}
@@ -138,6 +143,7 @@ export const AgentExploringGroup = memo(function AgentExploringGroup({
                   tooltipContent={meta.tooltipContent?.(part)}
                   isPending={isPending}
                   isError={isError}
+                  onClick={handleClick}
                 />
               )
             })}

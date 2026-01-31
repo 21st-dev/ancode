@@ -47,7 +47,10 @@ const SHORTCUT_TO_ACTION_MAP: Record<ShortcutActionId, string> = {
   "toggle-terminal": "toggle-terminal",
   "open-diff": "open-diff",
   "create-pr": "create-pr",
+  "file-search": "file-search",
   "voice-input": "voice-input", // Handled directly in chat-input-area.tsx
+  "open-in-editor": "open-in-editor",
+  "open-file-in-editor": "open-file-in-editor",
 }
 
 // Reverse mapping: action ID -> shortcut ID
@@ -104,9 +107,11 @@ export interface AgentsHotkeysManagerConfig {
   setSelectedChatId?: (id: string | null) => void
   setSelectedDraftId?: (id: string | null) => void
   setShowNewChatForm?: (show: boolean) => void
+  setDesktopView?: (view: import("../atoms").DesktopView) => void
   setSidebarOpen?: (open: boolean | ((prev: boolean) => boolean)) => void
   setSettingsDialogOpen?: (open: boolean) => void
   setSettingsActiveTab?: (tab: SettingsTab) => void
+  setFileSearchDialogOpen?: (open: boolean) => void
   toggleChatSearch?: () => void
   selectedChatId?: string | null
   customHotkeysConfig?: CustomHotkeysConfig
@@ -137,9 +142,11 @@ export function useAgentsHotkeys(
       setSelectedChatId: config.setSelectedChatId,
       setSelectedDraftId: config.setSelectedDraftId,
       setShowNewChatForm: config.setShowNewChatForm,
+      setDesktopView: config.setDesktopView,
       setSidebarOpen: config.setSidebarOpen,
       setSettingsDialogOpen: config.setSettingsDialogOpen,
       setSettingsActiveTab: config.setSettingsActiveTab,
+      setFileSearchDialogOpen: config.setFileSearchDialogOpen,
       toggleChatSearch: config.toggleChatSearch,
       selectedChatId: config.selectedChatId,
     }),
@@ -147,9 +154,11 @@ export function useAgentsHotkeys(
       config.setSelectedChatId,
       config.setSelectedDraftId,
       config.setShowNewChatForm,
+      config.setDesktopView,
       config.setSidebarOpen,
       config.setSettingsDialogOpen,
       config.setSettingsActiveTab,
+      config.setFileSearchDialogOpen,
       config.toggleChatSearch,
       config.selectedChatId,
     ],
@@ -232,11 +241,25 @@ export function useAgentsHotkeys(
       }
 
       // Check search-in-chat hotkey
+      // Skip if focus is inside a file viewer Monaco editor so Cmd+F triggers editor find
       const searchInChatHotkey = getHotkeyForAction("search-in-chat")
       if (searchInChatHotkey && matchesHotkey(e, searchInChatHotkey)) {
+        const active = document.activeElement
+        const isInFileViewer = active?.closest?.("[data-file-viewer-path]")
+        if (!isInFileViewer) {
+          e.preventDefault()
+          e.stopPropagation()
+          handleHotkeyAction("toggle-chat-search")
+          return
+        }
+      }
+
+      // Check file-search hotkey (Cmd+P)
+      const fileSearchHotkey = getHotkeyForAction("file-search")
+      if (fileSearchHotkey && matchesHotkey(e, fileSearchHotkey)) {
         e.preventDefault()
         e.stopPropagation()
-        handleHotkeyAction("toggle-chat-search")
+        handleHotkeyAction("file-search")
         return
       }
 
@@ -249,6 +272,14 @@ export function useAgentsHotkeys(
           handleHotkeyAction("open-kanban")
           return
         }
+      }
+
+      // Check new-workspace alt hotkey ("C") — only when not in input
+      if (!isInputFocused && matchesHotkey(e, "c")) {
+        e.preventDefault()
+        e.stopPropagation()
+        handleHotkeyAction("create-new-agent")
+        return
       }
     }
 

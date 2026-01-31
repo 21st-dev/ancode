@@ -1,9 +1,7 @@
 /**
  * Map file extensions to Monaco Editor language IDs
- * Monaco uses slightly different language IDs than Shiki in some cases
  */
 
-// Extension to Monaco language ID mapping
 const extensionToMonacoLanguage: Record<string, string> = {
   // JavaScript/TypeScript
   ".ts": "typescript",
@@ -21,8 +19,8 @@ const extensionToMonacoLanguage: Record<string, string> = {
   ".css": "css",
   ".scss": "scss",
   ".less": "less",
-  ".vue": "html", // Monaco doesn't have Vue, use HTML
-  ".svelte": "html", // Monaco doesn't have Svelte, use HTML
+  ".vue": "html",
+  ".svelte": "html",
 
   // Data formats
   ".json": "json",
@@ -30,7 +28,7 @@ const extensionToMonacoLanguage: Record<string, string> = {
   ".json5": "json",
   ".yaml": "yaml",
   ".yml": "yaml",
-  ".toml": "ini", // Monaco uses 'ini' for TOML-like formats
+  ".toml": "ini",
   ".xml": "xml",
   ".svg": "xml",
 
@@ -51,7 +49,7 @@ const extensionToMonacoLanguage: Record<string, string> = {
 
   // Go
   ".go": "go",
-  ".mod": "go", // go.mod
+  ".mod": "go",
 
   // Rust
   ".rs": "rust",
@@ -164,7 +162,6 @@ const extensionToMonacoLanguage: Record<string, string> = {
   ".patch": "plaintext",
 }
 
-// Special filename mappings (no extension or special names)
 const filenameToMonacoLanguage: Record<string, string> = {
   "dockerfile": "dockerfile",
   "Dockerfile": "dockerfile",
@@ -194,15 +191,12 @@ const filenameToMonacoLanguage: Record<string, string> = {
  * Get Monaco Editor language ID from file path
  */
 export function getMonacoLanguage(filePath: string): string {
-  // Get filename from path
   const filename = filePath.split("/").pop() || filePath
 
-  // Check special filenames first
   if (filenameToMonacoLanguage[filename]) {
     return filenameToMonacoLanguage[filename]
   }
 
-  // Check extension
   const ext = filename.toLowerCase().match(/\.[^.]+$/)?.[0] || ""
   if (extensionToMonacoLanguage[ext]) {
     return extensionToMonacoLanguage[ext]
@@ -217,18 +211,9 @@ export function getMonacoLanguage(filePath: string): string {
 export function isDataFile(filePath: string): boolean {
   const ext = filePath.toLowerCase().match(/\.[^.]+$/)?.[0] || ""
   const dataExtensions = [
-    ".csv",
-    ".tsv",
-    ".db",
-    ".sqlite",
-    ".sqlite3",
-    ".parquet",
-    ".pq",
-    ".xlsx",
-    ".xls",
-    ".arrow",
-    ".feather",
-    ".ipc",
+    ".csv", ".tsv", ".db", ".sqlite", ".sqlite3",
+    ".parquet", ".pq", ".xlsx", ".xls",
+    ".arrow", ".feather", ".ipc",
   ]
   return dataExtensions.includes(ext)
 }
@@ -236,17 +221,14 @@ export function isDataFile(filePath: string): boolean {
 /**
  * File viewer type - determines which viewer component to use
  */
-export type FileViewerType = "code" | "image" | "markdown" | "pdf" | "html" | "unsupported"
+export type FileViewerType = "code" | "image" | "markdown" | "unsupported"
 
-/**
- * Image file extensions
- */
 const IMAGE_EXTENSIONS = [".png", ".jpg", ".jpeg", ".gif", ".svg", ".webp", ".ico", ".bmp"]
 
-/**
- * Binary/unsupported file extensions
- */
-const UNSUPPORTED_EXTENSIONS = [".exe", ".dll", ".so", ".dylib", ".bin", ".dat", ".zip", ".tar", ".gz", ".7z", ".rar"]
+const UNSUPPORTED_EXTENSIONS = [
+  ".pdf", ".exe", ".dll", ".so", ".dylib", ".bin", ".dat",
+  ".zip", ".tar", ".gz", ".7z", ".rar",
+]
 
 /**
  * Get the appropriate viewer type for a file
@@ -254,21 +236,9 @@ const UNSUPPORTED_EXTENSIONS = [".exe", ".dll", ".so", ".dylib", ".bin", ".dat",
 export function getFileViewerType(filePath: string): FileViewerType {
   const ext = filePath.toLowerCase().match(/\.[^.]+$/)?.[0] || ""
 
-  if (IMAGE_EXTENSIONS.includes(ext)) {
-    return "image"
-  }
-  if (UNSUPPORTED_EXTENSIONS.includes(ext)) {
-    return "unsupported"
-  }
-  if ([".md", ".mdx", ".markdown"].includes(ext)) {
-    return "markdown"
-  }
-  if (ext === ".pdf") {
-    return "pdf"
-  }
-  if (ext === ".html" || ext === ".htm") {
-    return "html"
-  }
+  if (IMAGE_EXTENSIONS.includes(ext)) return "image"
+  if (UNSUPPORTED_EXTENSIONS.includes(ext)) return "unsupported"
+  if ([".md", ".mdx", ".markdown"].includes(ext)) return "markdown"
   return "code"
 }
 

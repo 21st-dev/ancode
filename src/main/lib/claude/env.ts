@@ -1,15 +1,13 @@
+import { app } from "electron"
 import { execSync } from "node:child_process"
 import fs from "node:fs"
-import path from "node:path"
 import os from "node:os"
-import { app } from "electron"
+import path from "node:path"
 import { stripVTControlCharacters } from "node:util"
 import {
-  platform,
-  buildExtendedPath,
   getDefaultShell,
   isWindows,
-  isMacOS,
+  platform
 } from "../platform"
 
 // Cache the shell environment
@@ -215,6 +213,7 @@ export function getClaudeShellEnvironment(): Record<string, string> {
 export function buildClaudeEnv(options?: {
   ghToken?: string
   customEnv?: Record<string, string>
+  enableTasks?: boolean
 }): Record<string, string> {
   const env: Record<string, string> = {}
 
@@ -266,6 +265,8 @@ export function buildClaudeEnv(options?: {
 
   // 5. Mark as SDK entry
   env.CLAUDE_CODE_ENTRYPOINT = "sdk-ts"
+  // Enable/disable task management tools based on user preference (default: enabled)
+  env.CLAUDE_CODE_ENABLE_TASKS = options?.enableTasks !== false ? "true" : "false"
 
   return env
 }

@@ -98,6 +98,8 @@ import {
   GitIcon,
   LockFileIcon,
   LicenseIcon,
+  TxtIcon,
+  NpmIcon,
 } from "../../../icons/framework-icons"
 
 interface ChangedFile {
@@ -211,6 +213,7 @@ const KNOWN_FILE_ICON_EXTENSIONS = new Set([
   "webp",
   "ico",
   "bmp",
+  "txt",
 ])
 
 // Get file icon component based on file extension
@@ -237,6 +240,16 @@ export function getFileIconByExtension(
     baseFilename === ".gitkeep"
   ) {
     return GitIcon
+  }
+
+  // Special handling for .npmrc
+  if (baseFilename === ".npmrc") {
+    return NpmIcon
+  }
+
+  // Special handling for .prettierrc
+  if (baseFilename === ".prettierrc") {
+    return JSONIcon
   }
 
   // Special handling for LICENSE files (with or without extension)
@@ -426,6 +439,8 @@ export function getFileIconByExtension(
       return ImageFileIcon
     case "svg":
       return SVGIcon
+    case "txt":
+      return TxtIcon
     default:
       return returnNullForUnknown ? null : FilesIcon
   }
@@ -805,10 +820,13 @@ export const AgentsFileMention = memo(function AgentsFileMention({
   const sessionInfo = useAtomValue(sessionInfoAtom)
 
   // Fetch skills from filesystem (cached for 5 minutes)
-  const { data: skills = [], isFetching: isFetchingSkills } = trpc.skills.listEnabled.useQuery(undefined, {
-    enabled: isOpen,
-    staleTime: 5 * 60 * 1000, // 5 minutes - skills don't change frequently
-  })
+  const { data: skills = [], isFetching: isFetchingSkills } = trpc.skills.listEnabled.useQuery(
+    projectPath ? { cwd: projectPath } : undefined,
+    {
+      enabled: isOpen,
+      staleTime: 5 * 60 * 1000, // 5 minutes - skills don't change frequently
+    },
+  )
 
   // Fetch custom agents from filesystem (cached for 5 minutes)
   const { data: customAgents = [], isFetching: isFetchingAgents } = trpc.agents.listEnabled.useQuery(
@@ -816,7 +834,7 @@ export const AgentsFileMention = memo(function AgentsFileMention({
     {
       enabled: isOpen,
       staleTime: 5 * 60 * 1000, // 5 minutes - agents don't change frequently
-    }
+    },
   )
 
   // Debounce search text (300ms to match canvas implementation)
